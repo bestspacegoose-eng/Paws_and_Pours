@@ -2,7 +2,10 @@ import { io, type Socket } from "socket.io-client";
 import { RECIPES, recipeById, type CatRole, type GameState, type Player, type Station } from "../shared/game";
 import "./style.css";
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
+// Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
+// same public origin for both the page and WebSocket connection.
+const SERVER_URL = import.meta.env.VITE_SERVER_URL ??
+  (location.hostname === "localhost" && location.port === "5173" ? "http://localhost:3001" : location.origin);
 const tokenKey = "paws-pours-player-token";
 const token = sessionStorage.getItem(tokenKey) ?? crypto.randomUUID();
 sessionStorage.setItem(tokenKey, token);

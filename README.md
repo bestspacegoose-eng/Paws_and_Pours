@@ -13,6 +13,18 @@ npm run dev
 
 Open `http://localhost:5173` in two browser windows. In the first, create a room; in the second, enter the four-letter room code and join. The lobby handles up to four players.
 
+## Deploy online
+
+This repository is ready to deploy as **one Node/Docker web service**. The production process serves the compiled browser game and Socket.IO multiplayer server from the same domain.
+
+1. Push this project to a Git repository.
+2. Create a new web service on any host that supports Docker or Node.js (for example, Render, Railway, Fly.io, or a container service).
+3. Point it at the repository. If the host detects the included `Dockerfile`, it needs no custom build or start command.
+4. Ensure the host exposes the service's `PORT` environment variable. The game uses port `3001` locally and automatically respects the platform-provided port online.
+5. Open the public HTTPS URL and share it with players. The browser and WebSocket server use the same origin, so no URL configuration is required.
+
+Do not use GitHub Pages for the complete multiplayer game: it can host the built client only, not this game's Node.js/Socket.IO server.
+
 To run the automated core-logic checks:
 
 ```bash

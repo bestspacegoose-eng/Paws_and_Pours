@@ -1,5 +1,8 @@
 import express from "express";
 import { createServer } from "node:http";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import {
   INGREDIENTS, type CatRole, type GameState, initialState, makeOrder, makeTavern,
@@ -174,6 +177,15 @@ setInterval(() => {
     broadcast(state);
   }
 }, 1000);
+
+// In production, this turns the game into one deployable service: the Node process
+// serves both the Vite-built client and its authoritative Socket.IO game server.
+const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+const clientDirectory = join(moduleDirectory, "../../dist");
+if (existsSync(clientDirectory)) {
+  app.use(express.static(clientDirectory));
+  app.get("/{*splat}", (_request, response) => response.sendFile(join(clientDirectory, "index.html")));
+}
 
 const port = Number(process.env.PORT ?? 3001);
 httpServer.listen(port, () => console.log(`Paws & Pours server listening on http://localhost:${port}`));
