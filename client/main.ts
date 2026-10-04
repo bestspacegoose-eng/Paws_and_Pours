@@ -28,6 +28,9 @@ const catPhotos: Record<CatRole, string> = {
   "Tabby": tabbyUrl, "Siamese": siameseUrl, "Maine Coon": maineCoonUrl,
   "Black Cat": blackCatUrl, "Calico": calicoUrl
 };
+const catSprites = Object.fromEntries(Object.entries(catPhotos).map(([role, source]) => {
+  const image = new Image(); image.src = source; return [role, image];
+})) as Record<CatRole, HTMLImageElement>;
 
 const roles: { role: CatRole; perk: string }[] = [
   { role: "Tabby", perk: "Balanced" }, { role: "Siamese", perk: "Quick paws" },
@@ -152,47 +155,79 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("keyup", (event) => { const axis = movementKeys[event.key]; if (axis) move[axis] = 0; });
 
+type Point = { x: number; y: number };
+const ingredientColors: Record<string, string> = { catnip: "#91dd7d", lime: "#c7e65b", fizz: "#a4e9f3", moonmilk: "#e2dcff", cream: "#fff4d5", stardust: "#f0bdff", tuna: "#ec9b8e", tonic: "#86d2ce", kelp: "#4daf74" };
+const tavernPalettes: Record<string, { wall: string; floor: string; tile: string; trim: string }> = {
+  "Cozy Village Pub": { wall: "#5a3640", floor: "#b86f50", tile: "#d8916a", trim: "#f2c779" },
+  "Haunted Moonlit Inn": { wall: "#302c58", floor: "#55507d", tile: "#7772a7", trim: "#bcb7ff" },
+  "Pirate Cat Tavern": { wall: "#174b5c", floor: "#447f82", tile: "#61a69f", trim: "#f5c16b" }
+};
+
+function iso(x: number, y: number, z = 0): Point { return { x: 400 + (x - y) * 0.54, y: 48 + (x + y) * 0.29 - z }; }
+function polygon(points: Point[], fill: string, stroke?: string) {
+  context.beginPath(); context.moveTo(points[0].x, points[0].y); points.slice(1).forEach((point) => context.lineTo(point.x, point.y)); context.closePath();
+  context.fillStyle = fill; context.fill(); if (stroke) { context.strokeStyle = stroke; context.lineWidth = 1; context.stroke(); }
+}
+function prism(x: number, y: number, width: number, depth: number, height: number, top: string, left: string, right: string, baseZ = 0) {
+  const northwest = iso(x - width / 2, y - depth / 2, baseZ), northeast = iso(x + width / 2, y - depth / 2, baseZ);
+  const southeast = iso(x + width / 2, y + depth / 2, baseZ), southwest = iso(x - width / 2, y + depth / 2, baseZ);
+  const topNorthwest = iso(x - width / 2, y - depth / 2, baseZ + height), topNortheast = iso(x + width / 2, y - depth / 2, baseZ + height);
+  const topSoutheast = iso(x + width / 2, y + depth / 2, baseZ + height), topSouthwest = iso(x - width / 2, y + depth / 2, baseZ + height);
+  polygon([topSouthwest, topSoutheast, southeast, southwest], left, "rgba(31,20,36,.55)");
+  polygon([topNortheast, topSoutheast, southeast, northeast], right, "rgba(31,20,36,.55)");
+  polygon([topNorthwest, topNortheast, topSoutheast, topSouthwest], top, "rgba(31,20,36,.55)");
+}
+function drawFloor(theme: string) {
+  const palette = tavernPalettes[theme];
+  context.fillStyle = palette.wall; context.fillRect(0, 0, 800, 480);
+  context.fillStyle = "rgba(255,255,255,.06)"; context.fillRect(0, 0, 800, 106);
+  context.fillStyle = palette.trim; context.fillRect(0, 100, 800, 7);
+  for (let x = 0; x < 800; x += 100) for (let y = 0; y < 500; y += 100) {
+    const a = iso(x, y), b = iso(x + 100, y), c = iso(x + 100, y + 100), d = iso(x, y + 100);
+    polygon([a, b, c, d], (Math.floor(x / 100) + Math.floor(y / 100)) % 2 ? palette.floor : palette.tile, "rgba(61,33,46,.21)");
+  }
+  const sign = iso(404, 14); context.fillStyle = "rgba(33,20,43,.76)"; context.fillRect(sign.x - 138, 22, 276, 44);
+  context.fillStyle = "#fff2d0"; context.font = "bold 16px system-ui"; context.textAlign = "center"; context.fillText("PAWS & POURS • NIGHT SHIFT", sign.x, 50);
+}
+function drawIngredientTable(items: Station[]) {
+  if (!items.length) return;
+  const minX = Math.min(...items.map((station) => station.x)), maxX = Math.max(...items.map((station) => station.x));
+  const minY = Math.min(...items.map((station) => station.y)), maxY = Math.max(...items.map((station) => station.y));
+  const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2;
+  prism(centerX, centerY, maxX - minX + 85, maxY - minY + 82, 30, "#c77b4c", "#7a4134", "#9b573d");
+  const label = iso(centerX, minY - 47, 40); context.fillStyle = "#fff0cf"; context.font = "bold 11px system-ui"; context.textAlign = "center"; context.fillText("SELECT INGREDIENTS", label.x, label.y);
+}
 function drawStation(station: Station) {
   if (station.ingredient) {
-    const ingredientColors: Record<string, string> = { catnip: "#91dd7d", lime: "#c7e65b", fizz: "#a4e9f3", moonmilk: "#e2dcff", cream: "#fff4d5", stardust: "#f0bdff", tuna: "#ec9b8e", tonic: "#86d2ce", kelp: "#4daf74" };
-    context.save(); context.translate(station.x, station.y);
-    context.fillStyle = "#472f26"; context.fillRect(-24, -19, 48, 38);
-    context.fillStyle = ingredientColors[station.ingredient]; context.fillRect(-20, -15, 40, 30);
-    context.fillStyle = "#2b2033"; context.font = "bold 9px system-ui"; context.textAlign = "center";
-    context.fillText(station.ingredient.toUpperCase(), 0, 4); context.restore(); return;
+    const color = ingredientColors[station.ingredient];
+    prism(station.x, station.y, 38, 34, 13, color, "#684747", "#5c3c3d", 30);
+    const label = iso(station.x, station.y, 51); context.fillStyle = "#251a2b"; context.font = "bold 8px system-ui"; context.textAlign = "center"; context.fillText(station.ingredient.toUpperCase(), label.x, label.y + 7); return;
   }
-  const colors = { pantry: "#db9b47", mix: "#a48ee8", serve: "#68c7b3", mop: "#70a4ed" };
-  context.save(); context.translate(station.x, station.y);
-  context.fillStyle = "#251a2b"; context.fillRect(-48, -26, 96, 52);
-  context.fillStyle = colors[station.kind]; context.fillRect(-45, -23, 90, 46);
-  context.fillStyle = "#fff4d6"; context.font = "22px sans-serif"; context.textAlign = "center";
-  context.fillText(station.kind === "pantry" ? "🥫" : station.kind === "mix" ? "🍹" : station.kind === "serve" ? "🔔" : "🪣", 0, 8);
-  context.fillStyle = "#33223e"; context.font = "bold 11px system-ui"; context.fillText(station.label.toUpperCase(), 0, 44); context.restore();
+  const colors = { mix: ["#b29aef", "#6e529b", "#8a6cc1"], serve: ["#7ad1be", "#397967", "#559c87"], mop: ["#74a9ed", "#3d629f", "#5680bd"], pantry: ["#db9b47", "#8e5d31", "#b8783b"] } as const;
+  const [top, left, right] = colors[station.kind]; prism(station.x, station.y, 115, 80, 48, top, left, right);
+  const icon = station.kind === "mix" ? "🍹" : station.kind === "serve" ? "🔔" : "🪣";
+  const label = iso(station.x, station.y, 68); context.font = "25px sans-serif"; context.textAlign = "center"; context.fillText(icon, label.x, label.y + 6);
+  context.fillStyle = "#2b2033"; context.font = "bold 10px system-ui"; context.fillText(station.label.toUpperCase(), label.x, label.y - 16);
 }
 function drawPlayer(player: Player) {
-  context.save(); context.translate(player.x, player.y); context.fillStyle = player.fur; context.beginPath(); context.arc(0, 0, 22, 0, Math.PI * 2); context.fill();
-  context.fillStyle = "#322437"; context.beginPath(); context.moveTo(-17, -14); context.lineTo(-12, -33); context.lineTo(-1, -18); context.moveTo(1, -18); context.lineTo(12, -33); context.lineTo(17, -14); context.fill();
-  context.fillStyle = "#fff7e9"; context.font = "19px sans-serif"; context.textAlign = "center"; context.fillText("🐱", 0, 8);
-  context.fillStyle = "#fff7e9"; context.font = "bold 11px system-ui"; context.fillText(player.name, 0, 43); if (!player.connected) { context.fillStyle = "#f07777"; context.fillText("reconnecting…", 0, 57); }
-  if (player.drink) { context.font = "16px sans-serif"; context.fillText("🍸", 28, -15); } context.restore();
+  const point = iso(player.x, player.y); const sprite = catSprites[player.role];
+  context.save(); context.fillStyle = "rgba(25,15,30,.34)"; context.beginPath(); context.ellipse(point.x, point.y + 6, 23, 8, 0, 0, Math.PI * 2); context.fill();
+  context.beginPath(); context.ellipse(point.x, point.y - 23, 21, 25, 0, 0, Math.PI * 2); context.clip();
+  if (sprite.complete) context.drawImage(sprite, point.x - 29, point.y - 51, 58, 58); else { context.fillStyle = player.fur; context.fillRect(point.x - 21, point.y - 48, 42, 50); }
+  context.restore(); context.strokeStyle = player.id === token ? "#ffd26d" : "#fff3d2"; context.lineWidth = 2; context.beginPath(); context.ellipse(point.x, point.y - 23, 21, 25, 0, 0, Math.PI * 2); context.stroke();
+  context.fillStyle = "#fff7e9"; context.font = "bold 11px system-ui"; context.textAlign = "center"; context.fillText(player.name, point.x, point.y + 25);
+  if (!player.connected) { context.fillStyle = "#f07777"; context.font = "10px system-ui"; context.fillText("reconnecting…", point.x, point.y + 38); }
+  if (player.drink) { context.font = "16px sans-serif"; context.fillText("🍸", point.x + 24, point.y - 41); }
 }
 function renderBoard() {
-  requestAnimationFrame(renderBoard); movePlayer();
-  const theme = state?.tavern.theme ?? "Cozy Village Pub";
-  const backgrounds: Record<string, string> = { "Cozy Village Pub": "#c66c45", "Haunted Moonlit Inn": "#38305c", "Pirate Cat Tavern": "#298b96" };
-  context.fillStyle = backgrounds[theme]; context.fillRect(0, 0, 800, 480);
-  context.fillStyle = "rgba(255,238,196,.26)"; for (let x = 0; x < 800; x += 60) for (let y = 80; y < 480; y += 60) context.fillRect(x + 2, y + 2, 56, 56);
-  if (!state) return;
-  context.fillStyle = "rgba(35,18,38,.65)"; context.fillRect(0, 0, 800, 64); context.fillStyle = "#fff4d6"; context.font = "28px sans-serif"; context.textAlign = "center"; context.fillText(state.tavern.decoration.join("     "), 400, 41);
-  const tableItems = state.tavern.stations.filter((station) => station.ingredient);
-  if (tableItems.length) {
-    const left = Math.min(...tableItems.map((station) => station.x)) - 38;
-    const top = Math.min(...tableItems.map((station) => station.y)) - 31;
-    context.fillStyle = "#6a412c"; context.fillRect(left, top, 196, 165);
-    context.fillStyle = "#9d6542"; context.fillRect(left + 7, top + 7, 182, 151);
-    context.fillStyle = "#fff0cf"; context.font = "bold 11px system-ui"; context.fillText("PICK AN INGREDIENT", left + 98, top - 10);
-  }
-  state.tavern.stations.forEach(drawStation); Object.values(state.players).forEach(drawPlayer);
-  if (state.hazard) { context.fillStyle = "rgba(236,91,78,.92)"; context.fillRect(210, 445, 380, 28); context.fillStyle = "white"; context.font = "bold 13px system-ui"; context.fillText(`⚠ ${state.hazard}`, 400, 464); }
+  requestAnimationFrame(renderBoard); movePlayer(); context.imageSmoothingEnabled = false;
+  const theme = state?.tavern.theme ?? "Cozy Village Pub"; drawFloor(theme); if (!state) return;
+  const ingredients = state.tavern.stations.filter((station) => station.ingredient); drawIngredientTable(ingredients);
+  const objects = [
+    ...state.tavern.stations.map((station) => ({ depth: station.x + station.y, draw: () => drawStation(station) })),
+    ...Object.values(state.players).map((player) => ({ depth: player.x + player.y + 16, draw: () => drawPlayer(player) }))
+  ].sort((left, right) => left.depth - right.depth);
+  objects.forEach((object) => object.draw());
+  if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(175, 433, 450, 31); context.fillStyle = "white"; context.font = "bold 13px system-ui"; context.textAlign = "center"; context.fillText(`⚠ ${state.hazard}`, 400, 454); }
 }
 renderBoard();
