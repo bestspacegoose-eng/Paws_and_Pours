@@ -12,8 +12,11 @@ test("a tavern seed produces a stable, readable layout", () => {
   const first = makeTavern(123456, 2);
   const second = makeTavern(123456, 2);
   assert.deepEqual(first, second);
-  assert.equal(first.stations.length, 4);
-  assert.deepEqual(first.stations.map((station) => station.kind), ["pantry", "mix", "serve", "mop"]);
+  assert.equal(first.stations.length, 12);
+  assert.deepEqual(first.stations.slice(0, 9).map((station) => station.ingredient), [
+    "catnip", "lime", "fizz", "moonmilk", "cream", "stardust", "tuna", "tonic", "kelp"
+  ]);
+  assert.deepEqual(first.stations.slice(-3).map((station) => station.kind), ["mix", "serve", "mop"]);
 });
 
 test("upgrade choices are deterministic and offer three distinct options", () => {

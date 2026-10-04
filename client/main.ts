@@ -1,5 +1,11 @@
 import { io, type Socket } from "socket.io-client";
 import { RECIPES, recipeById, type CatRole, type GameState, type Player, type Station } from "../shared/game";
+import tabbyCutoutUrl from "./assets/cats/tabby-cutout.png";
+import tabbyUrl from "./assets/cats/tabby.png";
+import siameseUrl from "./assets/cats/siamese.png";
+import maineCoonUrl from "./assets/cats/maine-coon.png";
+import blackCatUrl from "./assets/cats/black-cat.png";
+import calicoUrl from "./assets/cats/calico.png";
 import "./style.css";
 
 // Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
@@ -16,11 +22,17 @@ let toast = "Welcome, bartender. Invite a friend with a room code!";
 let selectedRole: CatRole = "Tabby";
 let move = { x: 0, y: 0 };
 let lastMove = 0;
+let lastStateMessage = "";
 
-const roles: { role: CatRole; perk: string; emoji: string }[] = [
-  { role: "Tabby", perk: "Balanced", emoji: "🐱" }, { role: "Siamese", perk: "Quick paws", emoji: "🐈" },
-  { role: "Maine Coon", perk: "Heavy lifter", emoji: "🦁" }, { role: "Black Cat", perk: "Lucky tips", emoji: "🐈‍⬛" },
-  { role: "Calico", perk: "Team spirit", emoji: "🐱" }
+const catPhotos: Record<CatRole, string> = {
+  "Tabby": tabbyUrl, "Siamese": siameseUrl, "Maine Coon": maineCoonUrl,
+  "Black Cat": blackCatUrl, "Calico": calicoUrl
+};
+
+const roles: { role: CatRole; perk: string }[] = [
+  { role: "Tabby", perk: "Balanced" }, { role: "Siamese", perk: "Quick paws" },
+  { role: "Maine Coon", perk: "Heavy lifter" }, { role: "Black Cat", perk: "Lucky tips" },
+  { role: "Calico", perk: "Team spirit" }
 ];
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -28,7 +40,7 @@ app.innerHTML = `
   <main class="shell">
     <header class="topbar"><a class="brand" href="/"><span>🐾</span> Paws <i>&</i> Pours</a><span class="tag">Co-op roguelike bartending</span></header>
     <section id="menu" class="menu card">
-      <div class="hero"><div><p class="eyebrow">A traveling tavern awaits</p><h1>Shake, serve, survive.</h1><p>Team up as charming cat bartenders in a procedurally generated fantasy tavern.</p></div><div class="hero-cat">🐈<span>🍸</span></div></div>
+      <div class="hero"><div><p class="eyebrow">A traveling tavern awaits</p><h1>Shake, serve, survive.</h1><p>Team up as charming cat bartenders in a procedurally generated fantasy tavern.</p></div><div class="hero-cat"><img src="${tabbyCutoutUrl}" alt="Pixelated orange tabby bartender" /><span>🍸</span></div></div>
       <div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><label>Accessory<select id="accessory"><option>Bow tie</option><option>Wizard hat</option><option>Pirate patch</option><option>Flower crown</option></select></label></div>
       <p class="label">Choose your bartender</p><div class="roles" id="roles"></div>
       <div class="actions"><button class="primary" id="create">Create game</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" value="${roomCode}"/><button id="join">Join game</button></div></div>
@@ -38,7 +50,7 @@ app.innerHTML = `
       <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span>♥ <b id="health">3</b></span><span class="timer" id="timer">1:30</span></div><button class="leave" id="leave">Leave</button></div>
       <div class="canvas-card"><canvas id="board" width="800" height="480" aria-label="Paws and Pours game board"></canvas><div id="toast" class="toast"></div></div>
       <div class="hud"><section class="panel orders"><h2>Orders</h2><div id="orders"></div></section><section class="panel recipe"><h2>Tonight's recipes</h2><div id="recipes"></div></section><section class="panel crew"><h2>Crew</h2><div id="crew"></div></section></div>
-      <p class="controls"><kbd>WASD</kbd> or <kbd>← ↑ ↓ →</kbd> move · <kbd>E</kbd> interact · Pantry → Mixer → Service Bell · <span id="carry">Paws empty</span></p>
+      <p class="controls"><kbd>WASD</kbd> or <kbd>← ↑ ↓ →</kbd> move · <kbd>E</kbd> interact · Ingredient table → Mixer → Service Bell · <span id="carry">Paws empty</span></p>
     </section>
     <section id="overlay" class="overlay hidden"></section>
   </main>`;
@@ -57,7 +69,7 @@ function profile() {
   };
 }
 function renderRoles() {
-  document.querySelector("#roles")!.innerHTML = roles.map(({ role, perk, emoji }) => `<button class="role ${role === selectedRole ? "selected" : ""}" data-role="${role}"><span>${emoji}</span><b>${role}</b><small>${perk}</small></button>`).join("");
+  document.querySelector("#roles")!.innerHTML = roles.map(({ role, perk }) => `<button class="role ${role === selectedRole ? "selected" : ""}" data-role="${role}"><img class="role-photo" src="${catPhotos[role]}" alt="${role} cat" /><b>${role}</b><small>${perk}</small></button>`).join("");
   document.querySelectorAll<HTMLButtonElement>(".role").forEach((button) => button.onclick = () => { selectedRole = button.dataset.role as CatRole; renderRoles(); });
 }
 renderRoles();
@@ -102,7 +114,10 @@ function renderUi() {
   document.querySelector("#crew")!.innerHTML = Object.values(state.players).map((player) => `<article class="crew-line"><span style="color:${player.fur}">🐱</span><div><b>${player.name}${player.id === hostId ? " · host" : ""}</b><small>${player.role} · ${player.connected ? "ready" : "reconnecting…"}</small></div><em>${player.score}🪙</em></article>`).join("");
   const player = localPlayer();
   document.querySelector("#carry")!.textContent = player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.join(", ")}` : "Paws empty";
-  setToast(state.message);
+  if (state.message !== lastStateMessage) {
+    lastStateMessage = state.message;
+    setToast(state.message);
+  }
   renderOverlay();
 }
 function renderOverlay() {
@@ -138,6 +153,14 @@ window.addEventListener("keydown", (event) => {
 window.addEventListener("keyup", (event) => { const axis = movementKeys[event.key]; if (axis) move[axis] = 0; });
 
 function drawStation(station: Station) {
+  if (station.ingredient) {
+    const ingredientColors: Record<string, string> = { catnip: "#91dd7d", lime: "#c7e65b", fizz: "#a4e9f3", moonmilk: "#e2dcff", cream: "#fff4d5", stardust: "#f0bdff", tuna: "#ec9b8e", tonic: "#86d2ce", kelp: "#4daf74" };
+    context.save(); context.translate(station.x, station.y);
+    context.fillStyle = "#472f26"; context.fillRect(-24, -19, 48, 38);
+    context.fillStyle = ingredientColors[station.ingredient]; context.fillRect(-20, -15, 40, 30);
+    context.fillStyle = "#2b2033"; context.font = "bold 9px system-ui"; context.textAlign = "center";
+    context.fillText(station.ingredient.toUpperCase(), 0, 4); context.restore(); return;
+  }
   const colors = { pantry: "#db9b47", mix: "#a48ee8", serve: "#68c7b3", mop: "#70a4ed" };
   context.save(); context.translate(station.x, station.y);
   context.fillStyle = "#251a2b"; context.fillRect(-48, -26, 96, 52);
@@ -161,6 +184,14 @@ function renderBoard() {
   context.fillStyle = "rgba(255,238,196,.26)"; for (let x = 0; x < 800; x += 60) for (let y = 80; y < 480; y += 60) context.fillRect(x + 2, y + 2, 56, 56);
   if (!state) return;
   context.fillStyle = "rgba(35,18,38,.65)"; context.fillRect(0, 0, 800, 64); context.fillStyle = "#fff4d6"; context.font = "28px sans-serif"; context.textAlign = "center"; context.fillText(state.tavern.decoration.join("     "), 400, 41);
+  const tableItems = state.tavern.stations.filter((station) => station.ingredient);
+  if (tableItems.length) {
+    const left = Math.min(...tableItems.map((station) => station.x)) - 38;
+    const top = Math.min(...tableItems.map((station) => station.y)) - 31;
+    context.fillStyle = "#6a412c"; context.fillRect(left, top, 196, 165);
+    context.fillStyle = "#9d6542"; context.fillRect(left + 7, top + 7, 182, 151);
+    context.fillStyle = "#fff0cf"; context.font = "bold 11px system-ui"; context.fillText("PICK AN INGREDIENT", left + 98, top - 10);
+  }
   state.tavern.stations.forEach(drawStation); Object.values(state.players).forEach(drawPlayer);
   if (state.hazard) { context.fillStyle = "rgba(236,91,78,.92)"; context.fillRect(210, 445, 380, 28); context.fillStyle = "white"; context.font = "bold 13px system-ui"; context.fillText(`⚠ ${state.hazard}`, 400, 464); }
 }

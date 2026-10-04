@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import {
-  INGREDIENTS, type CatRole, type GameState, initialState, makeOrder, makeTavern,
+  type CatRole, type GameState, initialState, makeOrder, makeTavern,
   mulberry32, recipeById, recipeForIngredients, seededUpgrades, type Player
 } from "../shared/game.js";
 
@@ -100,13 +100,16 @@ io.on("connection", (socket) => {
   socket.on("interact", () => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.phase !== "shift") return;
-    const nearby = state.tavern.stations.find((station) => Math.hypot(station.x - player.x, station.y - player.y) < 74);
+    const nearby = state.tavern.stations
+      .filter((station) => Math.hypot(station.x - player.x, station.y - player.y) < 74)
+      .sort((left, right) => Math.hypot(left.x - player.x, left.y - player.y) - Math.hypot(right.x - player.x, right.y - player.y))[0];
     if (!nearby) return setMessage(state, "Walk up to a brightly colored station, then press E.");
     if (nearby.kind === "pantry") {
       if (player.carrying.length >= 3) setMessage(state, `${player.name}'s paws are full—mix those ingredients first.`);
       else {
-        const ingredient = INGREDIENTS[Math.floor(random() * INGREDIENTS.length)];
-        player.carrying.push(ingredient); setMessage(state, `${player.name} grabbed ${ingredient}.`);
+        const ingredient = nearby.ingredient;
+        if (!ingredient) return setMessage(state, "Choose an ingredient from the prep table.");
+        player.carrying.push(ingredient); setMessage(state, `${player.name} selected ${ingredient}.`);
       }
     }
     if (nearby.kind === "mix") {

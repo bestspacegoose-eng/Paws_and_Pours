@@ -4,7 +4,7 @@ export type StationKind = "pantry" | "mix" | "serve" | "mop";
 export type Phase = "lobby" | "shift" | "upgrades" | "complete";
 
 export interface Vec { x: number; y: number }
-export interface Station extends Vec { id: string; kind: StationKind; label: string }
+export interface Station extends Vec { id: string; kind: StationKind; label: string; ingredient?: string }
 export interface Recipe { id: string; name: string; ingredients: string[]; color: string; glass: string }
 export interface Order { id: string; recipeId: string; customer: string; patience: number; maxPatience: number }
 export interface Player {
@@ -46,8 +46,16 @@ export function makeTavern(seed: number, round = 1): Tavern {
   const themes: Theme[] = ["Cozy Village Pub", "Haunted Moonlit Inn", "Pirate Cat Tavern"];
   const theme = themes[Math.floor(random() * themes.length)];
   const y = 255 + Math.floor(random() * 55);
+  const ingredientTable = INGREDIENTS.map((ingredient, index): Station => ({
+    id: `ingredient-${ingredient}`,
+    kind: "pantry",
+    label: ingredient,
+    ingredient,
+    x: 85 + (index % 3) * 58,
+    y: y - 62 + Math.floor(index / 3) * 48
+  }));
   const stations: Station[] = [
-    { id: "pantry", kind: "pantry", label: "Ingredient Shelf", x: 105, y },
+    ...ingredientTable,
     { id: "mix", kind: "mix", label: "Shaker & Brewer", x: 385, y: y - 80 },
     { id: "serve", kind: "serve", label: "Service Bell", x: 665, y },
     { id: "mop", kind: "mop", label: "Mop Bucket", x: 725, y: y - 145 }
