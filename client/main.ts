@@ -6,6 +6,9 @@ import siameseUrl from "./assets/cats/siamese.png";
 import maineCoonUrl from "./assets/cats/maine-coon.png";
 import blackCatUrl from "./assets/cats/black-cat.png";
 import calicoUrl from "./assets/cats/calico.png";
+import counterTileUrl from "./assets/tilemap/purple-counter.png";
+import catBaseUrl from "./assets/tilemap/cat-base.png";
+import catEyesUrl from "./assets/tilemap/cat-eyes.png";
 import "./style.css";
 
 // Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
@@ -28,9 +31,9 @@ const catPhotos: Record<CatRole, string> = {
   "Tabby": tabbyUrl, "Siamese": siameseUrl, "Maine Coon": maineCoonUrl,
   "Black Cat": blackCatUrl, "Calico": calicoUrl
 };
-const catSprites = Object.fromEntries(Object.entries(catPhotos).map(([role, source]) => {
-  const image = new Image(); image.src = source; return [role, image];
-})) as Record<CatRole, HTMLImageElement>;
+const counterTile = new Image(); counterTile.src = counterTileUrl;
+const catBase = new Image(); catBase.src = catBaseUrl;
+const catEyes = new Image(); catEyes.src = catEyesUrl;
 
 const roles: { role: CatRole; perk: string }[] = [
   { role: "Tabby", perk: "Balanced" }, { role: "Siamese", perk: "Quick paws" },
@@ -155,79 +158,109 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("keyup", (event) => { const axis = movementKeys[event.key]; if (axis) move[axis] = 0; });
 
-type Point = { x: number; y: number };
 const ingredientColors: Record<string, string> = { catnip: "#91dd7d", lime: "#c7e65b", fizz: "#a4e9f3", moonmilk: "#e2dcff", cream: "#fff4d5", stardust: "#f0bdff", tuna: "#ec9b8e", tonic: "#86d2ce", kelp: "#4daf74" };
-const tavernPalettes: Record<string, { wall: string; floor: string; tile: string; trim: string }> = {
-  "Cozy Village Pub": { wall: "#5a3640", floor: "#b86f50", tile: "#d8916a", trim: "#f2c779" },
-  "Haunted Moonlit Inn": { wall: "#302c58", floor: "#55507d", tile: "#7772a7", trim: "#bcb7ff" },
-  "Pirate Cat Tavern": { wall: "#174b5c", floor: "#447f82", tile: "#61a69f", trim: "#f5c16b" }
+const tavernPalettes: Record<string, { grass: string; wall: string; floor: string; tile: string; trim: string }> = {
+  "Cozy Village Pub": { grass: "#55704b", wall: "#603947", floor: "#a95d47", tile: "#c97858", trim: "#f1bd76" },
+  "Haunted Moonlit Inn": { grass: "#30384f", wall: "#38305d", floor: "#4f4a75", tile: "#66608f", trim: "#b9a9e8" },
+  "Pirate Cat Tavern": { grass: "#315d62", wall: "#174b5c", floor: "#3e7b78", tile: "#559b91", trim: "#f5c16b" }
 };
+type Point = { x: number; y: number };
+const catTintCache = new Map<string, HTMLCanvasElement>();
 
-function iso(x: number, y: number, z = 0): Point { return { x: 400 + (x - y) * 0.54, y: 48 + (x + y) * 0.29 - z }; }
-function polygon(points: Point[], fill: string, stroke?: string) {
-  context.beginPath(); context.moveTo(points[0].x, points[0].y); points.slice(1).forEach((point) => context.lineTo(point.x, point.y)); context.closePath();
-  context.fillStyle = fill; context.fill(); if (stroke) { context.strokeStyle = stroke; context.lineWidth = 1; context.stroke(); }
+function boardPoint(x: number, y: number): Point {
+  return { x: 40 + x * 0.94, y: 52 + (y - 70) * 0.94 };
 }
-function prism(x: number, y: number, width: number, depth: number, height: number, top: string, left: string, right: string, baseZ = 0) {
-  const northwest = iso(x - width / 2, y - depth / 2, baseZ), northeast = iso(x + width / 2, y - depth / 2, baseZ);
-  const southeast = iso(x + width / 2, y + depth / 2, baseZ), southwest = iso(x - width / 2, y + depth / 2, baseZ);
-  const topNorthwest = iso(x - width / 2, y - depth / 2, baseZ + height), topNortheast = iso(x + width / 2, y - depth / 2, baseZ + height);
-  const topSoutheast = iso(x + width / 2, y + depth / 2, baseZ + height), topSouthwest = iso(x - width / 2, y + depth / 2, baseZ + height);
-  polygon([topSouthwest, topSoutheast, southeast, southwest], left, "rgba(31,20,36,.55)");
-  polygon([topNortheast, topSoutheast, southeast, northeast], right, "rgba(31,20,36,.55)");
-  polygon([topNorthwest, topNortheast, topSoutheast, topSouthwest], top, "rgba(31,20,36,.55)");
+function drawText(text: string, x: number, y: number, font: string, color: string) {
+  context.font = font; context.fillStyle = color; context.textAlign = "center"; context.fillText(text, x, y);
 }
 function drawFloor(theme: string) {
   const palette = tavernPalettes[theme];
-  context.fillStyle = palette.wall; context.fillRect(0, 0, 800, 480);
-  context.fillStyle = "rgba(255,255,255,.06)"; context.fillRect(0, 0, 800, 106);
-  context.fillStyle = palette.trim; context.fillRect(0, 100, 800, 7);
-  for (let x = 0; x < 800; x += 100) for (let y = 0; y < 500; y += 100) {
-    const a = iso(x, y), b = iso(x + 100, y), c = iso(x + 100, y + 100), d = iso(x, y + 100);
-    polygon([a, b, c, d], (Math.floor(x / 100) + Math.floor(y / 100)) % 2 ? palette.floor : palette.tile, "rgba(61,33,46,.21)");
+  context.fillStyle = palette.grass; context.fillRect(0, 0, 800, 480);
+  context.fillStyle = "rgba(255,255,255,.09)";
+  for (let x = 12; x < 800; x += 29) for (let y = 28; y < 480; y += 33) context.fillRect(x + (y % 3), y, 1, 6);
+  context.fillStyle = "rgba(21,15,29,.38)"; context.fillRect(23, 42, 754, 414);
+  context.fillStyle = palette.wall; context.fillRect(29, 48, 742, 400);
+  context.fillStyle = palette.trim; context.fillRect(34, 54, 732, 8);
+  context.fillStyle = palette.floor; context.fillRect(40, 67, 720, 370);
+  for (let x = 40; x < 760; x += 40) for (let y = 67; y < 437; y += 40) {
+    context.fillStyle = (Math.floor(x / 40) + Math.floor(y / 40)) % 2 ? palette.floor : palette.tile;
+    context.fillRect(x + 1, y + 1, 38, 38);
   }
-  const sign = iso(404, 14); context.fillStyle = "rgba(33,20,43,.76)"; context.fillRect(sign.x - 138, 22, 276, 44);
-  context.fillStyle = "#fff2d0"; context.font = "bold 16px system-ui"; context.textAlign = "center"; context.fillText("PAWS & POURS • NIGHT SHIFT", sign.x, 50);
+  context.fillStyle = "rgba(33,20,43,.76)"; context.fillRect(256, 10, 288, 33);
+  drawText("PAWS & POURS  •  NIGHT SHIFT", 400, 32, "bold 14px system-ui", "#fff2d0");
+  context.fillStyle = "rgba(43,25,48,.52)"; context.fillRect(48, 75, 242, 352);
+  context.fillStyle = "rgba(30,25,43,.45)"; context.fillRect(507, 75, 242, 352);
+  drawText("PATRON NOOK", 168, 94, "bold 10px system-ui", "#ffe6bc");
+  drawText("BARTENDER'S BAR", 628, 94, "bold 10px system-ui", "#ffe6bc");
+}
+function drawCounter(point: Point, width = 102, height = 92) {
+  context.save(); context.shadowColor = "rgba(29,14,35,.4)"; context.shadowBlur = 7; context.shadowOffsetY = 5;
+  if (counterTile.complete && counterTile.naturalWidth) context.drawImage(counterTile, point.x - width / 2, point.y - height / 2, width, height);
+  else { context.fillStyle = "#a98aa5"; context.fillRect(point.x - width / 2, point.y - height / 2, width, height); }
+  context.restore();
 }
 function drawIngredientTable(items: Station[]) {
   if (!items.length) return;
   const minX = Math.min(...items.map((station) => station.x)), maxX = Math.max(...items.map((station) => station.x));
   const minY = Math.min(...items.map((station) => station.y)), maxY = Math.max(...items.map((station) => station.y));
-  const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2;
-  prism(centerX, centerY, maxX - minX + 85, maxY - minY + 82, 30, "#c77b4c", "#7a4134", "#9b573d");
-  const label = iso(centerX, minY - 47, 40); context.fillStyle = "#fff0cf"; context.font = "bold 11px system-ui"; context.textAlign = "center"; context.fillText("SELECT INGREDIENTS", label.x, label.y);
+  const center = boardPoint((minX + maxX) / 2, (minY + maxY) / 2);
+  drawCounter(center, 188, 142);
+  drawText("INGREDIENTS", center.x, center.y - 58, "bold 10px system-ui", "#fff5df");
 }
 function drawStation(station: Station) {
+  const point = boardPoint(station.x, station.y);
   if (station.ingredient) {
     const color = ingredientColors[station.ingredient];
-    prism(station.x, station.y, 38, 34, 13, color, "#684747", "#5c3c3d", 30);
-    const label = iso(station.x, station.y, 51); context.fillStyle = "#251a2b"; context.font = "bold 8px system-ui"; context.textAlign = "center"; context.fillText(station.ingredient.toUpperCase(), label.x, label.y + 7); return;
+    context.fillStyle = "rgba(29,15,35,.35)"; context.beginPath(); context.ellipse(point.x, point.y + 8, 15, 5, 0, 0, Math.PI * 2); context.fill();
+    context.fillStyle = color; context.beginPath(); context.arc(point.x, point.y - 2, 11, 0, Math.PI * 2); context.fill();
+    context.strokeStyle = "rgba(49,27,53,.78)"; context.lineWidth = 2; context.stroke();
+    drawText(station.ingredient.toUpperCase(), point.x, point.y + 22, "bold 7px system-ui", "#2b2033"); return;
   }
-  const colors = { mix: ["#b29aef", "#6e529b", "#8a6cc1"], serve: ["#7ad1be", "#397967", "#559c87"], mop: ["#74a9ed", "#3d629f", "#5680bd"], pantry: ["#db9b47", "#8e5d31", "#b8783b"] } as const;
-  const [top, left, right] = colors[station.kind]; prism(station.x, station.y, 115, 80, 48, top, left, right);
+  drawCounter(point);
   const icon = station.kind === "mix" ? "🍹" : station.kind === "serve" ? "🔔" : "🪣";
-  const label = iso(station.x, station.y, 68); context.font = "25px sans-serif"; context.textAlign = "center"; context.fillText(icon, label.x, label.y + 6);
-  context.fillStyle = "#2b2033"; context.font = "bold 10px system-ui"; context.fillText(station.label.toUpperCase(), label.x, label.y - 16);
+  drawText(icon, point.x, point.y + 4, "28px sans-serif", "#ffffff");
+  drawText(station.label.toUpperCase(), point.x, point.y + 55, "bold 8px system-ui", "#2b2033");
+  if (station.kind === "mix") { context.fillStyle = "#d9c7ff"; context.fillRect(point.x - 17, point.y - 27, 34, 7); }
+  if (station.kind === "serve") { context.fillStyle = "#7ad1be"; context.fillRect(point.x - 17, point.y - 27, 34, 7); }
+}
+function tintedCat(fur: string) {
+  const cached = catTintCache.get(fur);
+  if (cached) return cached;
+  const result = document.createElement("canvas"); result.width = catBase.naturalWidth || 305; result.height = catBase.naturalHeight || 460;
+  const layer = result.getContext("2d")!;
+  layer.imageSmoothingEnabled = false; layer.drawImage(catBase, 0, 0);
+  layer.globalCompositeOperation = "source-atop"; layer.globalAlpha = .83; layer.fillStyle = fur; layer.fillRect(0, 0, result.width, result.height);
+  layer.globalAlpha = 1; layer.globalCompositeOperation = "source-over"; layer.drawImage(catEyes, 0, 0);
+  catTintCache.set(fur, result); return result;
 }
 function drawPlayer(player: Player) {
-  const point = iso(player.x, player.y); const sprite = catSprites[player.role];
-  context.save(); context.fillStyle = "rgba(25,15,30,.34)"; context.beginPath(); context.ellipse(point.x, point.y + 6, 23, 8, 0, 0, Math.PI * 2); context.fill();
-  context.beginPath(); context.ellipse(point.x, point.y - 23, 21, 25, 0, 0, Math.PI * 2); context.clip();
-  if (sprite.complete) context.drawImage(sprite, point.x - 29, point.y - 51, 58, 58); else { context.fillStyle = player.fur; context.fillRect(point.x - 21, point.y - 48, 42, 50); }
-  context.restore(); context.strokeStyle = player.id === token ? "#ffd26d" : "#fff3d2"; context.lineWidth = 2; context.beginPath(); context.ellipse(point.x, point.y - 23, 21, 25, 0, 0, Math.PI * 2); context.stroke();
-  context.fillStyle = "#fff7e9"; context.font = "bold 11px system-ui"; context.textAlign = "center"; context.fillText(player.name, point.x, point.y + 25);
-  if (!player.connected) { context.fillStyle = "#f07777"; context.font = "10px system-ui"; context.fillText("reconnecting…", point.x, point.y + 38); }
-  if (player.drink) { context.font = "16px sans-serif"; context.fillText("🍸", point.x + 24, point.y - 41); }
+  const point = boardPoint(player.x, player.y);
+  context.fillStyle = "rgba(25,15,30,.36)"; context.beginPath(); context.ellipse(point.x, point.y + 16, 20, 7, 0, 0, Math.PI * 2); context.fill();
+  if (catBase.complete && catBase.naturalWidth) context.drawImage(tintedCat(player.fur), point.x - 23, point.y - 48, 46, 69);
+  else { context.fillStyle = player.fur; context.fillRect(point.x - 17, point.y - 40, 34, 52); }
+  context.strokeStyle = player.id === token ? "#ffd26d" : "#fff3d2"; context.lineWidth = 2; context.beginPath(); context.ellipse(point.x, point.y + 3, 25, 29, 0, 0, Math.PI * 2); context.stroke();
+  drawText(player.name, point.x, point.y + 36, "bold 10px system-ui", "#fff7e9");
+  if (!player.connected) drawText("reconnecting…", point.x, point.y + 48, "9px system-ui", "#f07777");
+  if (player.drink) drawText("🍸", point.x + 24, point.y - 35, "16px sans-serif", "#ffffff");
+}
+function drawPatronNook() {
+  const seats = [[100, 143], [216, 143], [100, 341], [216, 341]];
+  seats.forEach(([x, y], index) => {
+    context.fillStyle = "rgba(43,25,48,.38)"; context.beginPath(); context.ellipse(x, y + 19, 31, 10, 0, 0, Math.PI * 2); context.fill();
+    context.fillStyle = index % 2 ? "#e4a743" : "#d38b4a"; context.beginPath(); context.arc(x, y, 18, 0, Math.PI * 2); context.fill();
+    context.fillStyle = "#754b3c"; context.fillRect(x - 26, y + 20, 52, 12);
+  });
+  context.fillStyle = "#f1bd76"; context.fillRect(48, 397, 225, 6); drawText("ORDER WINDOW", 160, 418, "bold 9px system-ui", "#fff2d0");
 }
 function renderBoard() {
   requestAnimationFrame(renderBoard); movePlayer(); context.imageSmoothingEnabled = false;
-  const theme = state?.tavern.theme ?? "Cozy Village Pub"; drawFloor(theme); if (!state) return;
+  const theme = state?.tavern.theme ?? "Cozy Village Pub"; drawFloor(theme); drawPatronNook(); if (!state) return;
   const ingredients = state.tavern.stations.filter((station) => station.ingredient); drawIngredientTable(ingredients);
   const objects = [
-    ...state.tavern.stations.map((station) => ({ depth: station.x + station.y, draw: () => drawStation(station) })),
-    ...Object.values(state.players).map((player) => ({ depth: player.x + player.y + 16, draw: () => drawPlayer(player) }))
+    ...state.tavern.stations.map((station) => ({ depth: station.y + (station.ingredient ? 1 : 10), draw: () => drawStation(station) })),
+    ...Object.values(state.players).map((player) => ({ depth: player.y + 18, draw: () => drawPlayer(player) }))
   ].sort((left, right) => left.depth - right.depth);
   objects.forEach((object) => object.draw());
-  if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(175, 433, 450, 31); context.fillStyle = "white"; context.font = "bold 13px system-ui"; context.textAlign = "center"; context.fillText(`⚠ ${state.hazard}`, 400, 454); }
+  if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(175, 441, 450, 27); drawText(`⚠ ${state.hazard}`, 400, 459, "bold 12px system-ui", "white"); }
 }
 renderBoard();
