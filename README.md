@@ -4,11 +4,12 @@ A browser-based, server-authoritative co-op bartending roguelike prototype for t
 
 ## Play locally
 
-Requires Node.js 20+.
+Requires Node.js 22+.
 
 ```bash
-npm install
-npm run dev
+corepack enable
+pnpm install
+pnpm dev
 ```
 
 Open `http://localhost:5173` in two browser windows. In the first, create a room; in the second, enter the four-letter room code and join. The lobby handles up to four players.
