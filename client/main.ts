@@ -1,5 +1,5 @@
 import { io, type Socket } from "socket.io-client";
-import { RECIPES, recipeById, type CatRole, type GameState, type Player, type Station, type Theme } from "../shared/game";
+import { RECIPES, recipeById, type CatRole, type FacingDirection, type GameState, type Player, type Station, type Theme } from "../shared/game";
 import tabbyCutoutUrl from "./assets/cats/tabby-cutout.png";
 import tabbyUrl from "./assets/cats/tabby.png";
 import siameseUrl from "./assets/cats/siamese.png";
@@ -12,6 +12,11 @@ import catEyesUrl from "./assets/tilemap/cat-eyes.png";
 import cozyVillagePubUrl from "./assets/tilemap/cozy-village-pub.png";
 import hauntedMoonlitInnUrl from "./assets/tilemap/haunted-moonlit-inn.png";
 import pirateCatTavernUrl from "./assets/tilemap/pirate-cat-tavern.png";
+import catBartenderSpritesheetUrl from "./assets/tilemap/cat-bartender-spritesheet.png";
+import ingredientsSpritesheetUrl from "./assets/tilemap/ingredients-spritesheet.png";
+import cozyCounterUrl from "./assets/tilemap/counter-cozy.png";
+import hauntedCounterUrl from "./assets/tilemap/counter-haunted.png";
+import pirateCounterUrl from "./assets/tilemap/counter-pirate.png";
 import "./style.css";
 
 // Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
@@ -37,12 +42,22 @@ const catPhotos: Record<CatRole, string> = {
 const counterTile = new Image(); counterTile.src = counterTileUrl;
 const catBase = new Image(); catBase.src = catBaseUrl;
 const catEyes = new Image(); catEyes.src = catEyesUrl;
+const catBartenderSpritesheet = new Image(); catBartenderSpritesheet.src = catBartenderSpritesheetUrl;
+const ingredientsSpritesheet = new Image(); ingredientsSpritesheet.src = ingredientsSpritesheetUrl;
 const tavernMapSources: Record<Theme, string> = {
   "Cozy Village Pub": cozyVillagePubUrl,
   "Haunted Moonlit Inn": hauntedMoonlitInnUrl,
   "Pirate Cat Tavern": pirateCatTavernUrl
 };
 const tavernMaps = Object.fromEntries(Object.entries(tavernMapSources).map(([theme, source]) => {
+  const image = new Image(); image.src = source; return [theme, image];
+})) as Record<Theme, HTMLImageElement>;
+const counterSources: Record<Theme, string> = {
+  "Cozy Village Pub": cozyCounterUrl,
+  "Haunted Moonlit Inn": hauntedCounterUrl,
+  "Pirate Cat Tavern": pirateCounterUrl
+};
+const counters = Object.fromEntries(Object.entries(counterSources).map(([theme, source]) => {
   const image = new Image(); image.src = source; return [theme, image];
 })) as Record<Theme, HTMLImageElement>;
 
@@ -155,11 +170,23 @@ function renderOverlay() {
 
 function movePlayer() {
   const player = localPlayer();
-  if (!state || !player || state.phase !== "shift" || (!move.x && !move.y)) return;
+  if (!state || !player || state.phase !== "shift") return;
+  if (!move.x && !move.y) {
+    if (player.moving) {
+      player.moving = false;
+      socket.emit("move", { x: player.x, y: player.y, direction: player.direction ?? "down", moving: false });
+    }
+    return;
+  }
   const length = Math.hypot(move.x, move.y); const speed = player.role === "Siamese" ? 3.3 : 2.7;
+  player.direction = Math.abs(move.x) > Math.abs(move.y) ? (move.x < 0 ? "left" : "right") : (move.y < 0 ? "up" : "down");
+  player.moving = true;
   player.x = Math.max(32, Math.min(768, player.x + move.x / length * speed));
   player.y = Math.max(80, Math.min(442, player.y + move.y / length * speed));
-  if (performance.now() - lastMove > 50) { socket.emit("move", { x: player.x, y: player.y }); lastMove = performance.now(); }
+  if (performance.now() - lastMove > 50) {
+    socket.emit("move", { x: player.x, y: player.y, direction: player.direction, moving: true });
+    lastMove = performance.now();
+  }
 }
 const movementKeys: Record<string, keyof typeof move> = { w: "y", ArrowUp: "y", s: "y", ArrowDown: "y", a: "x", ArrowLeft: "x", d: "x", ArrowRight: "x" };
 window.addEventListener("keydown", (event) => {
@@ -168,6 +195,7 @@ window.addEventListener("keydown", (event) => {
   event.preventDefault(); move[axis] = event.key === "w" || event.key === "ArrowUp" || event.key === "a" || event.key === "ArrowLeft" ? -1 : 1;
 });
 window.addEventListener("keyup", (event) => { const axis = movementKeys[event.key]; if (axis) move[axis] = 0; });
+window.addEventListener("blur", () => { move = { x: 0, y: 0 }; });
 
 const ingredientColors: Record<string, string> = { catnip: "#91dd7d", lime: "#c7e65b", fizz: "#a4e9f3", moonmilk: "#e2dcff", cream: "#fff4d5", stardust: "#f0bdff", tuna: "#ec9b8e", tonic: "#86d2ce", kelp: "#4daf74" };
 const tavernPalettes: Record<Theme, { grass: string; wall: string; floor: string; tile: string; trim: string }> = {
@@ -176,7 +204,38 @@ const tavernPalettes: Record<Theme, { grass: string; wall: string; floor: string
   "Pirate Cat Tavern": { grass: "#315d62", wall: "#174b5c", floor: "#3e7b78", tile: "#559b91", trim: "#f5c16b" }
 };
 type Point = { x: number; y: number };
-const catTintCache = new Map<string, HTMLCanvasElement>();
+type FrameRect = { x: number; y: number; width: number; height: number };
+const PLAYER_FRAMES: Record<FacingDirection, FrameRect[]> = {
+  down: [
+    { x: 137, y: 25, width: 213, height: 268 }, { x: 424, y: 28, width: 203, height: 267 },
+    { x: 717, y: 30, width: 210, height: 265 }, { x: 999, y: 25, width: 210, height: 270 }
+  ],
+  left: [
+    { x: 146, y: 313, width: 210, height: 266 }, { x: 439, y: 314, width: 210, height: 269 },
+    { x: 730, y: 314, width: 203, height: 269 }, { x: 1026, y: 314, width: 208, height: 269 }
+  ],
+  right: [
+    { x: 123, y: 598, width: 197, height: 297 }, { x: 398, y: 597, width: 213, height: 298 },
+    { x: 688, y: 597, width: 211, height: 298 }, { x: 984, y: 597, width: 200, height: 298 }
+  ],
+  up: [
+    { x: 128, y: 895, width: 204, height: 270 }, { x: 398, y: 895, width: 211, height: 267 },
+    { x: 696, y: 895, width: 203, height: 265 }, { x: 991, y: 895, width: 198, height: 270 }
+  ]
+};
+const INGREDIENT_FRAMES: Record<string, FrameRect> = {
+  catnip: { x: 112, y: 91, width: 341, height: 293 },
+  lime: { x: 542, y: 139, width: 261, height: 224 },
+  fizz: { x: 994, y: 57, width: 164, height: 339 },
+  moonmilk: { x: 166, y: 414, width: 223, height: 355 },
+  cream: { x: 542, y: 471, width: 286, height: 284 },
+  stardust: { x: 969, y: 437, width: 195, height: 357 },
+  tuna: { x: 81, y: 867, width: 363, height: 247 },
+  tonic: { x: 567, y: 799, width: 183, height: 331 },
+  kelp: { x: 883, y: 794, width: 367, height: 349 }
+};
+const characterTintCache = new Map<string, HTMLCanvasElement>();
+const fallbackCatTintCache = new Map<string, HTMLCanvasElement>();
 
 function boardPoint(x: number, y: number): Point {
   return { x: 40 + x * 0.94, y: 52 + (y - 70) * 0.94 };
@@ -209,52 +268,91 @@ function drawFloor(theme: Theme) {
   if (!map.complete || !map.naturalWidth) return drawFallbackFloor(theme);
   context.drawImage(map, 0, 0, canvas.width, canvas.height);
 }
-function drawCounter(point: Point, width = 102, height = 92) {
+function drawContainedImage(image: HTMLImageElement | HTMLCanvasElement, point: Point, width: number, height: number) {
+  const sourceWidth = image.width; const sourceHeight = image.height;
+  const scale = Math.min(width / sourceWidth, height / sourceHeight);
+  const drawWidth = sourceWidth * scale; const drawHeight = sourceHeight * scale;
+  context.drawImage(image, point.x - drawWidth / 2, point.y - drawHeight / 2, drawWidth, drawHeight);
+}
+function drawCounter(point: Point, theme: Theme, width = 102, height = 92) {
   context.save(); context.shadowColor = "rgba(29,14,35,.4)"; context.shadowBlur = 7; context.shadowOffsetY = 5;
-  if (counterTile.complete && counterTile.naturalWidth) context.drawImage(counterTile, point.x - width / 2, point.y - height / 2, width, height);
+  const counter = counters[theme];
+  if (counter.complete && counter.naturalWidth) drawContainedImage(counter, point, width, height);
+  else if (counterTile.complete && counterTile.naturalWidth) context.drawImage(counterTile, point.x - width / 2, point.y - height / 2, width, height);
   else { context.fillStyle = "#a98aa5"; context.fillRect(point.x - width / 2, point.y - height / 2, width, height); }
   context.restore();
 }
-function drawIngredientTable(items: Station[]) {
+function drawIngredientTable(items: Station[], theme: Theme) {
   if (!items.length) return;
   const minX = Math.min(...items.map((station) => station.x)), maxX = Math.max(...items.map((station) => station.x));
   const minY = Math.min(...items.map((station) => station.y)), maxY = Math.max(...items.map((station) => station.y));
   const center = boardPoint((minX + maxX) / 2, (minY + maxY) / 2);
-  drawCounter(center, 188, 142);
+  drawCounter(center, theme, 188, 142);
   drawText("INGREDIENTS", center.x, center.y - 58, "bold 10px system-ui", "#fff5df");
 }
-function drawStation(station: Station) {
+function drawIngredientSprite(ingredient: string, point: Point) {
+  const frame = INGREDIENT_FRAMES[ingredient];
+  if (!frame || !ingredientsSpritesheet.complete || !ingredientsSpritesheet.naturalWidth) return false;
+  const scale = Math.min(31 / frame.width, 29 / frame.height);
+  const width = frame.width * scale; const height = frame.height * scale;
+  context.save(); context.shadowColor = "rgba(25,12,30,.55)"; context.shadowBlur = 3; context.shadowOffsetY = 2;
+  context.drawImage(ingredientsSpritesheet, frame.x, frame.y, frame.width, frame.height, point.x - width / 2, point.y + 8 - height, width, height);
+  context.restore(); return true;
+}
+function drawStation(station: Station, theme: Theme) {
   const point = boardPoint(station.x, station.y);
   if (station.ingredient) {
     const color = ingredientColors[station.ingredient];
     context.fillStyle = "rgba(29,15,35,.35)"; context.beginPath(); context.ellipse(point.x, point.y + 8, 15, 5, 0, 0, Math.PI * 2); context.fill();
-    context.fillStyle = color; context.beginPath(); context.arc(point.x, point.y - 2, 11, 0, Math.PI * 2); context.fill();
-    context.strokeStyle = "rgba(49,27,53,.78)"; context.lineWidth = 2; context.stroke();
-    drawText(station.ingredient.toUpperCase(), point.x, point.y + 22, "bold 7px system-ui", "#2b2033"); return;
+    if (!drawIngredientSprite(station.ingredient, point)) {
+      context.fillStyle = color; context.beginPath(); context.arc(point.x, point.y - 2, 11, 0, Math.PI * 2); context.fill();
+      context.strokeStyle = "rgba(49,27,53,.78)"; context.lineWidth = 2; context.stroke();
+    }
+    context.fillStyle = "rgba(28,17,35,.76)"; context.fillRect(point.x - 22, point.y + 12, 44, 11);
+    drawText(station.ingredient.toUpperCase(), point.x, point.y + 21, "bold 7px system-ui", "#fff5df"); return;
   }
-  drawCounter(point);
+  drawCounter(point, theme);
   const icon = station.kind === "mix" ? "🍹" : station.kind === "serve" ? "🔔" : "🪣";
   drawText(icon, point.x, point.y + 4, "28px sans-serif", "#ffffff");
   drawText(station.label.toUpperCase(), point.x, point.y + 55, "bold 8px system-ui", "#2b2033");
   if (station.kind === "mix") { context.fillStyle = "#d9c7ff"; context.fillRect(point.x - 17, point.y - 27, 34, 7); }
   if (station.kind === "serve") { context.fillStyle = "#7ad1be"; context.fillRect(point.x - 17, point.y - 27, 34, 7); }
 }
-function tintedCat(fur: string) {
-  const cached = catTintCache.get(fur);
+function tintedCharacter(fur: string) {
+  const cached = characterTintCache.get(fur);
+  if (cached) return cached;
+  const result = document.createElement("canvas");
+  result.width = catBartenderSpritesheet.naturalWidth || 1319; result.height = catBartenderSpritesheet.naturalHeight || 1193;
+  const layer = result.getContext("2d")!;
+  layer.imageSmoothingEnabled = false; layer.drawImage(catBartenderSpritesheet, 0, 0);
+  layer.globalCompositeOperation = "source-atop"; layer.globalAlpha = .38; layer.fillStyle = fur; layer.fillRect(0, 0, result.width, result.height);
+  layer.globalCompositeOperation = "source-over"; layer.globalAlpha = .35; layer.drawImage(catBartenderSpritesheet, 0, 0);
+  layer.globalAlpha = 1; characterTintCache.set(fur, result); return result;
+}
+function tintedFallbackCat(fur: string) {
+  const cached = fallbackCatTintCache.get(fur);
   if (cached) return cached;
   const result = document.createElement("canvas"); result.width = catBase.naturalWidth || 305; result.height = catBase.naturalHeight || 460;
   const layer = result.getContext("2d")!;
   layer.imageSmoothingEnabled = false; layer.drawImage(catBase, 0, 0);
   layer.globalCompositeOperation = "source-atop"; layer.globalAlpha = .83; layer.fillStyle = fur; layer.fillRect(0, 0, result.width, result.height);
   layer.globalAlpha = 1; layer.globalCompositeOperation = "source-over"; layer.drawImage(catEyes, 0, 0);
-  catTintCache.set(fur, result); return result;
+  fallbackCatTintCache.set(fur, result); return result;
 }
 function drawPlayer(player: Player) {
   const point = boardPoint(player.x, player.y);
+  context.strokeStyle = player.id === token ? "#ffd26d" : "#fff3d2"; context.lineWidth = 2;
+  context.beginPath(); context.ellipse(point.x, point.y + 17, 23, 7, 0, 0, Math.PI * 2); context.stroke();
   context.fillStyle = "rgba(25,15,30,.36)"; context.beginPath(); context.ellipse(point.x, point.y + 16, 20, 7, 0, 0, Math.PI * 2); context.fill();
-  if (catBase.complete && catBase.naturalWidth) context.drawImage(tintedCat(player.fur), point.x - 23, point.y - 48, 46, 69);
+  if (catBartenderSpritesheet.complete && catBartenderSpritesheet.naturalWidth) {
+    const direction = player.direction ?? "down";
+    const frameIndex = player.moving ? Math.floor(performance.now() / 135) % 4 : 0;
+    const frame = PLAYER_FRAMES[direction][frameIndex]; const scale = 72 / 298;
+    const width = frame.width * scale; const height = frame.height * scale;
+    context.drawImage(tintedCharacter(player.fur), frame.x, frame.y, frame.width, frame.height, point.x - width / 2, point.y + 19 - height, width, height);
+  }
+  else if (catBase.complete && catBase.naturalWidth) context.drawImage(tintedFallbackCat(player.fur), point.x - 23, point.y - 48, 46, 69);
   else { context.fillStyle = player.fur; context.fillRect(point.x - 17, point.y - 40, 34, 52); }
-  context.strokeStyle = player.id === token ? "#ffd26d" : "#fff3d2"; context.lineWidth = 2; context.beginPath(); context.ellipse(point.x, point.y + 3, 25, 29, 0, 0, Math.PI * 2); context.stroke();
   drawText(player.name, point.x, point.y + 36, "bold 10px system-ui", "#fff7e9");
   if (!player.connected) drawText("reconnecting…", point.x, point.y + 48, "9px system-ui", "#f07777");
   if (player.drink) drawText("🍸", point.x + 24, point.y - 35, "16px sans-serif", "#ffffff");
@@ -271,9 +369,9 @@ function drawPatronNook() {
 function renderBoard() {
   requestAnimationFrame(renderBoard); movePlayer(); context.imageSmoothingEnabled = false;
   const theme = state?.tavern.theme ?? "Cozy Village Pub"; drawFloor(theme); drawPatronNook(); if (!state) return;
-  const ingredients = state.tavern.stations.filter((station) => station.ingredient); drawIngredientTable(ingredients);
+  const ingredients = state.tavern.stations.filter((station) => station.ingredient); drawIngredientTable(ingredients, theme);
   const objects = [
-    ...state.tavern.stations.map((station) => ({ depth: station.y + (station.ingredient ? 1 : 10), draw: () => drawStation(station) })),
+    ...state.tavern.stations.map((station) => ({ depth: station.y + (station.ingredient ? 1 : 10), draw: () => drawStation(station, theme) })),
     ...Object.values(state.players).map((player) => ({ depth: player.y + 18, draw: () => drawPlayer(player) }))
   ].sort((left, right) => left.depth - right.depth);
   objects.forEach((object) => object.draw());

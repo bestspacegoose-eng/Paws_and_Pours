@@ -15,3 +15,8 @@ The Cozy Village Pub, Haunted Moonlit Inn, and Pirate Cat Tavern backgrounds
 were generated with OpenAI's image-generation tool using the project's supplied
 `purple-counter.png`, `cat-base.png`, and `cat-eyes.png` artwork as visual-style
 references. The generated files are used as the three runtime tavern maps.
+
+The animated cat-bartender spritesheet, nine-ingredient spritesheet, and three
+theme-matched counter props were generated with the same tool and the runtime
+tavern maps as style references. Their transparent originals are kept intact and
+sliced by the canvas renderer at runtime.

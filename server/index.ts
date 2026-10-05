@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import {
-  type CatRole, type GameState, initialState, makeOrder, makeTavern,
+  type CatRole, type FacingDirection, type GameState, initialState, makeOrder, makeTavern,
   mulberry32, recipeById, recipeForIngredients, seededUpgrades, type Player
 } from "../shared/game.js";
 
@@ -90,11 +90,14 @@ io.on("connection", (socket) => {
     startShift(state); broadcast(state);
   });
 
-  socket.on("move", (position: { x: number; y: number }) => {
+  socket.on("move", (position: { x: number; y: number; direction?: FacingDirection; moving?: boolean }) => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.phase !== "shift") return;
     player.x = Math.max(32, Math.min(768, Math.round(position.x)));
     player.y = Math.max(80, Math.min(442, Math.round(position.y)));
+    if (["down", "left", "right", "up"].includes(position.direction ?? "")) player.direction = position.direction!;
+    player.moving = Boolean(position.moving);
+    broadcast(state);
   });
 
   socket.on("interact", () => {
@@ -144,7 +147,7 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player) return;
-    player.connected = false;
+    player.connected = false; player.moving = false;
     setMessage(state, `${player.name} disconnected. Their cat will wait for a reconnection.`);
     broadcast(state);
   });
@@ -155,7 +158,8 @@ function joinRoom(socketId: string, state: GameState, payload: { token: string; 
   const existing = state.players[payload.token];
   state.players[payload.token] = existing ?? {
     id: payload.token, name: payload.name.slice(0, 16) || "Mittens", role: payload.role, fur: payload.fur,
-    accessory: payload.accessory, x: 260 + Object.keys(state.players).length * 70, y: 390, carrying: [], connected: true, score: 0
+    accessory: payload.accessory, x: 260 + Object.keys(state.players).length * 70, y: 390,
+    direction: "down", moving: false, carrying: [], connected: true, score: 0
   } as Player;
   Object.assign(state.players[payload.token], { name: payload.name.slice(0, 16) || "Mittens", role: payload.role, fur: payload.fur, accessory: payload.accessory, connected: true });
   socket.data.code = state.code; socket.data.token = payload.token; socket.join(state.code);

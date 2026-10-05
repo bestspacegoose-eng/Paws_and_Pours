@@ -1,5 +1,6 @@
 export type Theme = "Cozy Village Pub" | "Haunted Moonlit Inn" | "Pirate Cat Tavern";
 export type CatRole = "Tabby" | "Siamese" | "Maine Coon" | "Black Cat" | "Calico";
+export type FacingDirection = "down" | "left" | "right" | "up";
 export type StationKind = "pantry" | "mix" | "serve" | "mop";
 export type Phase = "lobby" | "shift" | "upgrades" | "complete";
 
@@ -9,7 +10,8 @@ export interface Recipe { id: string; name: string; ingredients: string[]; color
 export interface Order { id: string; recipeId: string; customer: string; patience: number; maxPatience: number }
 export interface Player {
   id: string; name: string; role: CatRole; fur: string; accessory: string;
-  x: number; y: number; carrying: string[]; drink?: string; connected: boolean; score: number
+  x: number; y: number; direction: FacingDirection; moving: boolean;
+  carrying: string[]; drink?: string; connected: boolean; score: number
 }
 export interface Tavern { seed: number; theme: Theme; stations: Station[]; decoration: string[] }
 export interface Upgrade { id: string; title: string; body: string }
