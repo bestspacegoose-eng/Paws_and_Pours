@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  createMixingSession, expectedMixingStep, GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS,
+  BOARD_BOUNDS, createMixingSession, expectedMixingStep, floorBoundsAtY, GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS,
   gridCellCenter, makeOrder, makeTavern, mixingStepsForRecipe, moveWithCounterCollisions,
   PLAYER_COLLISION_RADIUS, recipeForIngredients, seededUpgrades, stationBounds,
   toolTimingAccepted, toolTimingQuality, RECIPES
@@ -51,6 +51,16 @@ test("counter collision prevents tunnelling through a square footprint", () => {
   const resolved = moveWithCounterCollisions(tavern, start, { x: bounds.right + 100, y: station.y });
   assert.ok(resolved.x <= bounds.left - PLAYER_COLLISION_RADIUS);
   assert.equal(resolved.y, start.y);
+});
+
+test("trapezoid floor bounds reject upper-wall traversal and constrain diagonal movement", () => {
+  const tavern = makeTavern(4321, 1);
+  const start = { x: 400, y: BOARD_BOUNDS.minY + 20 };
+  const resolved = moveWithCounterCollisions(tavern, start, { x: 900, y: 0 });
+  const floor = floorBoundsAtY(resolved.y);
+  assert.ok(Math.abs(resolved.y - BOARD_BOUNDS.minY) < .001);
+  assert.ok(resolved.x >= floor.minX && resolved.x <= floor.maxX);
+  assert.ok(floor.minX > BOARD_BOUNDS.minX, "upper floor must be narrower than the lower board");
 });
 
 test("mixing steps derive ingredient order from the recipe and append preparation actions", () => {

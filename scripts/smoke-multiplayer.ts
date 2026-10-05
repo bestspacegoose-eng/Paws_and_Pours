@@ -71,9 +71,11 @@ async function main() {
     const laneX = 540;
     const approachStation = async (station: Station) => {
       // Every station now sits squarely on the visible floor. Approach from the
-      // clear tile below the one-cell collision footprint before interacting.
+      // clear lower lane, then move up to the tile below the one-cell footprint.
       const approachY = station.y + 52;
-      await moveHost(laneX, approachY);
+      const routeY = station.y < 280 ? 350 : 390;
+      await moveHost(laneX, routeY);
+      await moveHost(station.x, routeY);
       await moveHost(station.x, approachY);
     };
 

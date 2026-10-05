@@ -6,8 +6,9 @@ import workspaceUrl from "./assets/tilemap/mixing-workspace.png";
 import ingredientsUrl from "./assets/tilemap/ingredients-spritesheet.png";
 import toolsUrl from "./assets/tilemap/mixing-tools-spritesheet.png";
 import effectsUrl from "./assets/tilemap/mixing-effects-spritesheet.png";
+import finishedDrinksUrl from "./assets/tilemap/finished-drinks-spritesheet.png";
 import {
-  atlasFrame, GLASS_FRAME_INDEX, INGREDIENT_FRAMES, MIXING_EFFECT_FRAME_INDEX,
+  atlasFrame, FINISHED_DRINK_FRAME_INDEX, GLASS_FRAME_INDEX, INGREDIENT_FRAMES, MIXING_EFFECT_FRAME_INDEX,
   MIXING_TOOL_FRAME_INDEX, type FrameRect
 } from "./sprite-frames";
 import "./mixing-workspace.css";
@@ -44,6 +45,7 @@ export class MixingWorkspace {
   private readonly ingredientsImage: HTMLImageElement;
   private readonly toolsImage: HTMLImageElement;
   private readonly effectsImage: HTMLImageElement;
+  private readonly finishedDrinksImage: HTMLImageElement;
   private session?: MixingSession;
   private recipe?: Recipe;
   private playerIngredients: string[] = [];
@@ -55,6 +57,7 @@ export class MixingWorkspace {
   private toolTimingFrame?: number;
   private cancelRequested = false;
   private outcome?: "success" | "failure";
+  private outcomeRecipeId?: string;
   private outcomeTimer?: number;
 
   constructor(mount: HTMLElement, private readonly events: MixingWorkspaceEvents) {
@@ -107,6 +110,7 @@ export class MixingWorkspace {
     this.ingredientsImage = image(ingredientsUrl, redraw);
     this.toolsImage = image(toolsUrl, redraw);
     this.effectsImage = image(effectsUrl, redraw);
+    this.finishedDrinksImage = image(finishedDrinksUrl, redraw);
     window.addEventListener("pointerup", () => this.finishTool());
   }
 
@@ -119,6 +123,7 @@ export class MixingWorkspace {
       if (this.session) {
         const cancelled = this.cancelRequested;
         this.outcome = player?.drink ? "success" : "failure";
+        this.outcomeRecipeId = player?.drink ?? this.recipe?.id;
         this.session = undefined;
         this.recipe = undefined;
         this.toolHolding = false;
@@ -136,6 +141,7 @@ export class MixingWorkspace {
           window.clearTimeout(this.outcomeTimer);
           this.outcomeTimer = window.setTimeout(() => {
             this.outcome = undefined;
+            this.outcomeRecipeId = undefined;
             this.root.classList.add("hidden");
           }, 850);
         }
@@ -284,6 +290,7 @@ export class MixingWorkspace {
 
     if (this.outcome) {
       this.drawAtlasContained(this.effectsImage, 3, 2, MIXING_EFFECT_FRAME_INDEX[this.outcome], 400, 280, 260, 230);
+      if (this.outcome === "success" && this.outcomeRecipeId) this.drawFinishedDrink(this.outcomeRecipeId, 400, 280);
       return;
     }
     if (!this.session || !this.recipe) return;
@@ -325,6 +332,15 @@ export class MixingWorkspace {
   private drawAtlasContained(image: HTMLImageElement, columns: number, rows: number, index: number, x: number, y: number, width: number, height: number, alpha = 1) {
     if (!image.complete || !image.naturalWidth) return;
     this.drawFrameContained(image, atlasFrame(image, columns, rows, index), x, y, width, height, alpha);
+  }
+
+  private drawFinishedDrink(recipeId: string, x: number, y: number) {
+    const frameIndex = FINISHED_DRINK_FRAME_INDEX[recipeId]?.complete;
+    if (frameIndex === undefined || !this.finishedDrinksImage.complete || !this.finishedDrinksImage.naturalWidth) return;
+    const frame = atlasFrame(this.finishedDrinksImage, 3, 2, frameIndex);
+    this.context.save(); this.context.beginPath(); this.context.ellipse(x, y, 58, 66, 0, 0, Math.PI * 2); this.context.clip();
+    this.context.drawImage(this.finishedDrinksImage, frame.x, frame.y, frame.width, frame.height, x - 77, y - 77, 154, 154);
+    this.context.restore();
   }
 
   private drawFrameContained(image: HTMLImageElement, frame: FrameRect, x: number, y: number, width: number, height: number, alpha = 1) {

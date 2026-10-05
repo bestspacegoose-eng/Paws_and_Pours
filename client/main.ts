@@ -19,8 +19,10 @@ import ingredientsSpritesheetUrl from "./assets/tilemap/ingredients-spritesheet.
 import cozyCounterBlocksUrl from "./assets/tilemap/counter-blocks-cozy.png";
 import hauntedCounterBlocksUrl from "./assets/tilemap/counter-blocks-haunted.png";
 import pirateCounterBlocksUrl from "./assets/tilemap/counter-blocks-pirate.png";
+import finishedDrinksUrl from "./assets/tilemap/finished-drinks-spritesheet.png";
 import { MixingWorkspace } from "./mixing-workspace";
-import { atlasFrame, COUNTER_FRAME_INDEX, INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
+import { atlasFrame, COUNTER_FRAME_INDEX, FINISHED_DRINK_FRAME_INDEX, INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
+import { clearSoloSave, defaultSettings, loadSettings, loadSoloSave, saveSettings, saveSoloSave, type DisplayAudioSettings } from "./preferences";
 import "./style.css";
 
 // Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
@@ -35,6 +37,8 @@ let state: GameState | null = null;
 let roomCode = sessionStorage.getItem("paws-pours-room") ?? "";
 let toast = "Welcome, bartender. Invite a friend with a room code!";
 let selectedRole: CatRole = "Tabby";
+let sessionMode: "single" | "multiplayer" = sessionStorage.getItem("paws-pours-mode") === "single" ? "single" : "multiplayer";
+let settings: DisplayAudioSettings = loadSettings();
 let move = { x: 0, y: 0 };
 let lastMove = 0;
 let lastStateMessage = "";
@@ -50,6 +54,7 @@ const catBase = new Image(); catBase.src = catBaseUrl;
 const catEyes = new Image(); catEyes.src = catEyesUrl;
 const catBartenderSpritesheet = new Image(); catBartenderSpritesheet.src = catBartenderSpritesheetUrl;
 const ingredientsSpritesheet = new Image(); ingredientsSpritesheet.src = ingredientsSpritesheetUrl;
+const finishedDrinksSpritesheet = new Image(); finishedDrinksSpritesheet.src = finishedDrinksUrl;
 const tavernMapSources: Record<Theme, string> = {
   "Cozy Village Pub": cozyVillagePubUrl,
   "Haunted Moonlit Inn": hauntedMoonlitInnUrl,
@@ -81,8 +86,17 @@ app.innerHTML = `
       <div class="hero"><div><p class="eyebrow">A traveling tavern awaits</p><h1>Shake, serve, survive.</h1><p>Team up as charming cat bartenders in a procedurally generated fantasy tavern.</p></div><div class="hero-cat"><img src="${tabbyCutoutUrl}" alt="Pixelated orange tabby bartender" /><span>🍸</span></div></div>
       <div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><label>Accessory<select id="accessory"><option>Bow tie</option><option>Wizard hat</option><option>Pirate patch</option><option>Flower crown</option></select></label></div>
       <p class="label">Choose your bartender</p><div class="roles" id="roles"></div>
-      <div class="actions"><button class="primary" id="create">Create game</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" value="${roomCode}"/><button id="join">Join game</button></div></div>
-      <p class="fineprint">Two to four players · Share your room code · Press <kbd>E</kbd> near a station to interact</p>
+      <div class="actions"><button class="primary" id="solo">Start solo shift</button><button id="create">Create party</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" value="${roomCode}"/><button id="join">Join party</button></div></div>
+      <div class="menu-utilities"><button id="continue" class="secondary">Continue solo</button><button id="settings" class="secondary">Settings</button><button id="delete-save" class="secondary danger">Delete solo save</button></div>
+      <section id="settings-panel" class="settings-panel hidden" aria-label="Game settings">
+        <div class="settings-title"><b>Settings</b><button id="close-settings" class="secondary">Close</button></div>
+        <label>Display scale<select id="setting-scale"><option value="1">100%</option><option value="0.85">85%</option><option value="1.15">115%</option></select></label>
+        <label class="toggle"><input id="setting-pixel" type="checkbox" /> Pixel-perfect rendering</label><label class="toggle"><input id="setting-motion" type="checkbox" /> Reduced motion</label>
+        <button id="fullscreen" class="secondary">Toggle fullscreen</button>
+        <label>Master volume<input id="setting-master" type="range" min="0" max="100" /></label><label>Music volume<input id="setting-music" type="range" min="0" max="100" /></label><label>Effects volume<input id="setting-effects" type="range" min="0" max="100" /></label><label class="toggle"><input id="setting-muted" type="checkbox" /> Mute audio</label>
+        <button id="reset-settings" class="secondary">Reset settings</button>
+      </section>
+      <p class="fineprint">Solo saves stay on this device. Parties use shared server state only · Press <kbd>E</kbd> near a station to interact</p>
     </section>
     <section id="game" class="game hidden">
       <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span>♥ <b id="health">3</b></span><span class="timer" id="timer">1:30</span></div><button class="leave" id="leave">Leave</button></div>
@@ -112,6 +126,27 @@ function profile() {
     accessory: (document.querySelector<HTMLSelectElement>("#accessory")!).value
   };
 }
+function applySettings() {
+  document.documentElement.style.setProperty("--game-scale", String(settings.scale));
+  document.body.dataset.pixelPerfect = String(settings.pixelPerfect);
+  document.body.dataset.reducedMotion = String(settings.reducedMotion);
+  saveSettings(settings);
+}
+function syncSettingsForm() {
+  document.querySelector<HTMLSelectElement>("#setting-scale")!.value = String(settings.scale);
+  document.querySelector<HTMLInputElement>("#setting-pixel")!.checked = settings.pixelPerfect;
+  document.querySelector<HTMLInputElement>("#setting-motion")!.checked = settings.reducedMotion;
+  document.querySelector<HTMLInputElement>("#setting-master")!.value = String(settings.masterVolume);
+  document.querySelector<HTMLInputElement>("#setting-music")!.value = String(settings.musicVolume);
+  document.querySelector<HTMLInputElement>("#setting-effects")!.value = String(settings.effectsVolume);
+  document.querySelector<HTMLInputElement>("#setting-muted")!.checked = settings.muted;
+}
+function refreshSoloActions() {
+  const save = loadSoloSave();
+  document.querySelector<HTMLButtonElement>("#continue")!.disabled = !save;
+  document.querySelector<HTMLButtonElement>("#delete-save")!.disabled = !save;
+}
+applySettings();
 function renderRoles() {
   document.querySelector("#roles")!.innerHTML = roles.map(({ role, perk }) => `<button class="role ${role === selectedRole ? "selected" : ""}" data-role="${role}"><img class="role-photo" src="${catPhotos[role]}" alt="${role} cat" /><b>${role}</b><small>${perk}</small></button>`).join("");
   document.querySelectorAll<HTMLButtonElement>(".role").forEach((button) => button.onclick = () => { selectedRole = button.dataset.role as CatRole; renderRoles(); });
@@ -130,9 +165,36 @@ function connect(action: "create" | "join") {
   };
   socket.connected ? send() : socket.once("connect", send);
 }
-document.querySelector<HTMLButtonElement>("#create")!.onclick = () => connect("create");
-document.querySelector<HTMLButtonElement>("#join")!.onclick = () => connect("join");
+document.querySelector<HTMLButtonElement>("#solo")!.onclick = () => { sessionMode = "single"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create"); };
+document.querySelector<HTMLButtonElement>("#create")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create"); };
+document.querySelector<HTMLButtonElement>("#join")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("join"); };
 document.querySelector<HTMLButtonElement>("#leave")!.onclick = () => { sessionStorage.removeItem("paws-pours-room"); location.reload(); };
+document.querySelector<HTMLButtonElement>("#settings")!.onclick = () => { syncSettingsForm(); document.querySelector("#settings-panel")!.classList.remove("hidden"); };
+document.querySelector<HTMLButtonElement>("#close-settings")!.onclick = () => document.querySelector("#settings-panel")!.classList.add("hidden");
+document.querySelector<HTMLButtonElement>("#fullscreen")!.onclick = () => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.(); };
+document.querySelector<HTMLButtonElement>("#reset-settings")!.onclick = () => { settings = { ...defaultSettings }; applySettings(); syncSettingsForm(); };
+(["scale", "pixel", "motion", "master", "music", "effects", "muted"] as const).forEach((key) => document.querySelector(`#setting-${key}`)!.addEventListener("input", () => {
+  settings = {
+    scale: Number(document.querySelector<HTMLSelectElement>("#setting-scale")!.value) as DisplayAudioSettings["scale"],
+    pixelPerfect: document.querySelector<HTMLInputElement>("#setting-pixel")!.checked,
+    reducedMotion: document.querySelector<HTMLInputElement>("#setting-motion")!.checked,
+    masterVolume: Number(document.querySelector<HTMLInputElement>("#setting-master")!.value),
+    musicVolume: Number(document.querySelector<HTMLInputElement>("#setting-music")!.value),
+    effectsVolume: Number(document.querySelector<HTMLInputElement>("#setting-effects")!.value),
+    muted: document.querySelector<HTMLInputElement>("#setting-muted")!.checked
+  };
+  applySettings();
+}));
+document.querySelector<HTMLButtonElement>("#continue")!.onclick = () => {
+  const save = loadSoloSave(); if (!save) return;
+  document.querySelector<HTMLInputElement>("#name")!.value = save.profile.name;
+  document.querySelector<HTMLInputElement>("#fur")!.value = save.profile.fur;
+  document.querySelector<HTMLSelectElement>("#accessory")!.value = save.profile.accessory;
+  selectedRole = save.profile.role as CatRole; renderRoles();
+  sessionMode = "single"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create");
+};
+document.querySelector<HTMLButtonElement>("#delete-save")!.onclick = () => { if (window.confirm("Delete the local solo profile and progress summary?")) { clearSoloSave(); refreshSoloActions(); } };
+refreshSoloActions();
 
 socket.on("joined", ({ code }: { code: string }) => { roomCode = code; sessionStorage.setItem("paws-pours-room", code); menu.classList.add("hidden"); game.classList.remove("hidden"); setToast(`Joined room ${code}.`); });
 socket.on("state", (next: GameState) => {
@@ -154,6 +216,10 @@ socket.on("state", (next: GameState) => {
     }
   }
   state = next; renderUi();
+  if (sessionMode === "single") {
+    const player = next.players[token];
+    if (player) saveSoloSave({ version: 1, profile: profile(), savedAt: Date.now(), summary: { coins: next.coins, reputation: next.reputation, round: next.round, phase: next.phase } });
+  }
 });
 socket.on("error-message", (message: string) => setToast(message));
 socket.on("connect", () => { if (roomCode && state) socket.emit("join-room", { ...profile(), code: roomCode }); });
@@ -166,7 +232,7 @@ function ingredientMarkup(ingredient: string) { return `<span class="ingredient"
 function renderUi() {
   if (!state) return;
   document.querySelector("#theme")!.textContent = state.tavern.theme.toUpperCase();
-  document.querySelector("#room-display")!.textContent = `ROOM ${state.code}`;
+  document.querySelector("#room-display")!.textContent = sessionMode === "single" ? "SOLO SHIFT" : `ROOM ${state.code}`;
   document.querySelector("#coins")!.textContent = String(state.coins);
   document.querySelector("#rep")!.textContent = String(state.reputation);
   document.querySelector("#health")!.textContent = String(Math.max(0, state.health));
@@ -317,6 +383,11 @@ function drawIngredientSprite(ingredient: string, point: Point) {
 }
 function drawStation(station: Station, theme: Theme) {
   const point = boardPoint(station.x, station.y);
+  const player = localPlayer();
+  if (station.kind === "trash" && player && (player.carrying.length || player.drink)) {
+    context.save(); context.strokeStyle = "#f4d278"; context.lineWidth = 2;
+    context.setLineDash([3, 3]); context.beginPath(); context.ellipse(point.x, point.y + 16, 30, 10, 0, 0, Math.PI * 2); context.stroke(); context.restore();
+  }
   drawCounterBlock(station, theme);
   if (station.ingredient) {
     const color = ingredientColors[station.ingredient];
@@ -370,25 +441,49 @@ function drawPlayer(player: Player) {
   else { context.fillStyle = player.fur; context.fillRect(point.x - 17, point.y - 40, 34, 52); }
   drawText(player.name, point.x, point.y + 36, "bold 10px system-ui", "#fff7e9");
   if (!player.connected) drawText("reconnecting…", point.x, point.y + 48, "9px system-ui", "#f07777");
-  if (player.drink) drawText("🍸", point.x + 24, point.y - 35, "16px sans-serif", "#ffffff");
+  if (player.drink) drawFinishedDrink(player.drink, point.x + 24, point.y - 36, "idle");
 }
-function drawPatronNook() {
-  const seats = [[100, 143], [216, 143], [100, 341], [216, 341]];
-  seats.forEach(([x, y], index) => {
-    context.fillStyle = "rgba(43,25,48,.38)"; context.beginPath(); context.ellipse(x, y + 19, 31, 10, 0, 0, Math.PI * 2); context.fill();
-    context.fillStyle = index % 2 ? "#e4a743" : "#d38b4a"; context.beginPath(); context.arc(x, y, 18, 0, Math.PI * 2); context.fill();
-    context.fillStyle = "#754b3c"; context.fillRect(x - 26, y + 20, 52, 12);
-  });
+function drawFinishedDrink(recipeId: string, x: number, y: number, state: "idle" | "complete") {
+  const frameIndex = FINISHED_DRINK_FRAME_INDEX[recipeId]?.[state];
+  if (frameIndex === undefined || !finishedDrinksSpritesheet.complete || !finishedDrinksSpritesheet.naturalWidth) return;
+  const frame = atlasFrame(finishedDrinksSpritesheet, 3, 2, frameIndex);
+  const size = state === "complete" ? 62 : 34;
+  context.save(); context.beginPath(); context.ellipse(x, y, size * .38, size * .44, 0, 0, Math.PI * 2); context.clip();
+  context.drawImage(finishedDrinksSpritesheet, frame.x, frame.y, frame.width, frame.height, x - size / 2, y - size / 2, size, size);
+  context.restore();
+}
+function drawOrderWindow() {
   context.fillStyle = "#f1bd76"; context.fillRect(48, 397, 225, 6); drawText("ORDER WINDOW", 160, 418, "bold 9px system-ui", "#fff2d0");
+}
+function drawHazard() {
+  const hazard = state?.hazard;
+  if (!hazard) return;
+  const point = boardPoint(hazard.x, hazard.y);
+  const pulse = Math.floor(performance.now() / 250) % 2;
+  context.save();
+  if (hazard.kind === "napkins") {
+    context.fillStyle = "#eee2c7";
+    [[-9, 2, 8, 5], [2, -2, 9, 6], [10, 7, 7, 4]].forEach(([x, y, width, height]) => context.fillRect(point.x + x, point.y + y, width, height));
+    context.fillStyle = "#a75d66"; context.fillRect(point.x - 5, point.y + 4, 8, 1);
+  } else if (hazard.kind === "ectoplasm") {
+    context.fillStyle = pulse ? "#79d8bc" : "#59aa9a"; context.beginPath(); context.ellipse(point.x, point.y + 7, 17, 6, 0, 0, Math.PI * 2); context.fill();
+    context.fillRect(point.x - 4, point.y - 4, 4, 10); context.fillRect(point.x + 6, point.y - 8, 3, 14);
+  } else {
+    context.fillStyle = "#f0b34e"; context.fillRect(point.x - 7, point.y - 12 - pulse * 2, 14, 20);
+    context.fillStyle = "#f17b54"; context.fillRect(point.x - 4, point.y - 7, 8, 15);
+    context.fillStyle = "#fff1b5"; context.fillRect(point.x - 2, point.y - 3, 4, 8);
+  }
+  context.restore(); drawText("MOP!", point.x, point.y + 28, "bold 7px system-ui", "#fff3cf");
 }
 function renderBoard() {
   requestAnimationFrame(renderBoard); movePlayer(); context.imageSmoothingEnabled = false;
-  const theme = state?.tavern.theme ?? "Cozy Village Pub"; drawFloor(theme); drawPatronNook(); if (!state) return;
+  const theme = state?.tavern.theme ?? "Cozy Village Pub"; drawFloor(theme); drawOrderWindow(); if (!state) return;
   const objects = [
     ...state.tavern.stations.map((station) => ({ depth: station.y + 10, draw: () => drawStation(station, theme) })),
     ...Object.values(state.players).map((player) => ({ depth: player.y + 18, draw: () => drawPlayer(player) }))
   ].sort((left, right) => left.depth - right.depth);
   objects.forEach((object) => object.draw());
-  if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(175, 441, 450, 27); drawText(`⚠ ${state.hazard}`, 400, 459, "bold 12px system-ui", "white"); }
+  drawHazard();
+  if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(175, 441, 450, 27); drawText(`⚠ ${state.hazard.message}`, 400, 459, "bold 12px system-ui", "white"); }
 }
 renderBoard();

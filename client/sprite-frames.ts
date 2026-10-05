@@ -55,6 +55,12 @@ export const GLASS_FRAME_INDEX: Record<string, number> = {
   goblet: 5
 };
 
+export const FINISHED_DRINK_FRAME_INDEX: Record<string, { idle: number; complete: number }> = {
+  catnip: { idle: 0, complete: 3 },
+  moonmilk: { idle: 1, complete: 4 },
+  tuna: { idle: 2, complete: 5 }
+};
+
 export const MIXING_EFFECT_FRAME_INDEX = {
   paws: 0,
   activePaws: 1,

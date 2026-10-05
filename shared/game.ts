@@ -5,6 +5,7 @@ export type StationKind = "pantry" | "mix" | "serve" | "mop" | "trash";
 export type Phase = "lobby" | "shift" | "upgrades" | "complete";
 export type CounterVariant = "standard" | "end-cap" | "corner" | "ingredient" | "mixing" | "decorative" | "damaged";
 export type MixingTool = "shaker" | "spoon" | "pourer";
+export type HazardKind = "napkins" | "ectoplasm" | "fire";
 
 export interface Vec { x: number; y: number }
 export interface GridCell { gridX: number; gridY: number }
@@ -26,6 +27,7 @@ export interface MixingSession {
   usedIngredients: string[]; toolStartedAt?: number; feedback: string
 }
 export interface Order { id: string; recipeId: string; customer: string; patience: number; maxPatience: number }
+export interface Hazard extends Vec { id: string; kind: HazardKind; message: string }
 export interface Player {
   id: string; name: string; role: CatRole; fur: string; accessory: string;
   x: number; y: number; direction: FacingDirection; moving: boolean; moveSequence: number;
@@ -36,11 +38,13 @@ export interface Upgrade { id: string; title: string; body: string }
 export interface GameState {
   code: string; hostId: string; phase: Phase; players: Record<string, Player>; tavern: Tavern;
   orders: Order[]; mixing: Record<string, MixingSession>; shiftSeconds: number; coins: number;
-  reputation: number; health: number; round: number; hazard: string | null;
+  reputation: number; health: number; round: number; hazard: Hazard | null;
   upgrades: Upgrade[]; message: string
 }
 
-export const BOARD_BOUNDS = { minX: 32, maxX: 768, minY: 80, maxY: 442 } as const;
+// The playable floor is a trapezoid in the 2.5D scene. The previous rectangular
+// bound started above the floor, which let cats travel through the rear wall.
+export const BOARD_BOUNDS = { minX: 32, maxX: 768, minY: 155, maxY: 442 } as const;
 // This origin lands counter centres on the first visible row of floor tiles.
 // The prior origin started the top station row on the rear wall artwork.
 export const GRID_ORIGIN = { x: 48, y: 110 } as const;
@@ -145,10 +149,16 @@ export function pointCollidesWithCounters(tavern: Tavern, point: Vec, radius = P
   });
 }
 
+export function floorBoundsAtY(y: number) {
+  const depth = Math.max(0, Math.min(1, (y - BOARD_BOUNDS.minY) / (BOARD_BOUNDS.maxY - BOARD_BOUNDS.minY)));
+  return { minX: 60 - 28 * depth, maxX: 740 + 28 * depth };
+}
+
 function clampToBoard(point: Vec): Vec {
+  const y = Math.max(BOARD_BOUNDS.minY, Math.min(BOARD_BOUNDS.maxY, point.y));
+  const floor = floorBoundsAtY(y);
   return {
-    x: Math.max(BOARD_BOUNDS.minX, Math.min(BOARD_BOUNDS.maxX, point.x)),
-    y: Math.max(BOARD_BOUNDS.minY, Math.min(BOARD_BOUNDS.maxY, point.y))
+    x: Math.max(floor.minX, Math.min(floor.maxX, point.x)), y
   };
 }
 

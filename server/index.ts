@@ -8,7 +8,7 @@ import {
   createMixingSession, expectedMixingStep, type CatRole, type FacingDirection, type GameState,
   initialState, makeOrder, makeTavern, MIXING_MAX_MISTAKES, mixingQuality,
   moveWithCounterCollisions, mulberry32, recipeById, recipeForIngredients, seededUpgrades,
-  toolTimingAccepted, toolTimingQuality, type MixingSession, type MixingTool, type Player
+  toolTimingAccepted, toolTimingQuality, type Hazard, type MixingSession, type MixingTool, type Player
 } from "../shared/game.js";
 
 const app = express();
@@ -17,6 +17,7 @@ const io = new Server(httpServer, { cors: { origin: process.env.CLIENT_ORIGIN ??
 const rooms = new Map<string, GameState>();
 const seeds = new Map<string, number>();
 const orderCounters = new Map<string, number>();
+const hazardCounters = new Map<string, number>();
 const random = () => Math.random();
 
 app.get("/health", (_request, response) => response.json({ ok: true, rooms: rooms.size }));
@@ -89,6 +90,18 @@ function spawnOrder(state: GameState) {
   orderCounters.set(state.code, counter);
   state.orders.push(makeOrder(`order-${counter}`, mulberry32((seeds.get(state.code) ?? 1) + counter * 31)));
 }
+function spawnHazard(state: GameState): Hazard {
+  const counter = (hazardCounters.get(state.code) ?? 0) + 1;
+  hazardCounters.set(state.code, counter);
+  const definitions: Omit<Hazard, "id">[] = [
+    { kind: "napkins", message: "A mischievous mouse scatters napkins!", x: 510, y: 340 },
+    { kind: "ectoplasm", message: "The spectral tap is leaking ectoplasm!", x: 610, y: 290 },
+    { kind: "fire", message: "A tiny kitchen fire is sizzling!", x: 455, y: 378 }
+  ];
+  const hazard = { id: `hazard-${counter}`, ...definitions[Math.floor(random() * definitions.length)] };
+  state.hazard = hazard;
+  return hazard;
+}
 function endShift(state: GameState) {
   state.mixing = {};
   state.phase = "upgrades";
@@ -114,7 +127,7 @@ io.on("connection", (socket) => {
     const code = roomCode();
     const seed = Math.floor(Math.random() * 2 ** 31);
     const state = initialState(code, payload.token, seed);
-    rooms.set(code, state); seeds.set(code, seed); orderCounters.set(code, 0);
+    rooms.set(code, state); seeds.set(code, seed); orderCounters.set(code, 0); hazardCounters.set(code, 0);
     joinRoom(socket.id, state, payload, true);
   });
 
@@ -201,12 +214,15 @@ io.on("connection", (socket) => {
       }
     }
     if (nearby.kind === "trash") {
-      if (!player.carrying.length) setMessage(state, "Nothing to toss out. Your paws are clear.");
-      else {
+      if (player.drink) {
+        const drink = recipeById(player.drink).name;
+        player.drink = undefined; player.drinkQuality = undefined;
+        setMessage(state, `${player.name} discarded the ${drink}.`);
+      } else if (player.carrying.length) {
         const discarded = player.carrying.join(", ");
         player.carrying = [];
         setMessage(state, `${player.name} tossed ${discarded} into the scrap bin.`);
-      }
+      } else setMessage(state, "Nothing to toss out. Your paws are clear.");
     }
     if (nearby.kind === "mop" && state.hazard) { state.hazard = null; setMessage(state, `${player.name} cleaned up the hazard. Good kitty!`); }
     broadcast(state);
@@ -326,8 +342,8 @@ setInterval(() => {
     if (lost.length) { state.orders = state.orders.filter((order) => order.patience > 0); state.health -= lost.length; setMessage(state, "A customer stormed out! Team hearts dropped."); }
     if (state.shiftSeconds > 0 && state.shiftSeconds % 12 === 0 && state.orders.length < 3) spawnOrder(state);
     if (state.shiftSeconds > 0 && state.shiftSeconds % 18 === 0) {
-      state.hazard = ["A mischievous mouse scatters napkins!", "The spectral tap is leaking ectoplasm!", "A tiny kitchen fire is sizzling!"][Math.floor(random() * 3)];
-      setMessage(state, `Hazard: ${state.hazard} Use the mop bucket!`);
+      const hazard = spawnHazard(state);
+      setMessage(state, `Hazard: ${hazard.message} Use the mop bucket!`);
     }
     if (state.health <= 0) failRun(state); else if (state.shiftSeconds <= 0) endShift(state);
     broadcast(state);

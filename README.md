@@ -42,6 +42,8 @@ npm test
 - Data-driven mixing sequences with ordered ingredients, server-timed tools, mistakes, cancellation, timeout failure, and drink-quality rewards.
 - Square one-cell counter primitives with shared client/server collision and seven visual variants per tavern theme.
 - Deterministic tavern generation from a server seed, cycling among cozy, haunted, and pirate themes.
+- Title menu with solo/create/join flow, locally persisted display/audio preferences, and solo-only profile/progress summary.
+- Trapezoid floor collision bounds, world-space hazard effects, finished-drink sprites, and discard support for ingredients or completed drinks.
 - Responsive desktop/smaller-screen interface with no art-asset download required.
 
 ## Controls
@@ -52,6 +54,8 @@ npm test
 - The mixing workspace is private to the active player; the shared online shift continues for everyone else.
 - `Cancel` leaves the workspace and keeps the gathered ingredients. Three mistakes or a timeout spoils them.
 - Use the mop bucket to clear a hazard.
+- The Scrap Bin safely discards carried ingredients or a completed drink; it never alters orders.
+- Settings persist locally. Solo profile/progress data never participates in party-room networking.
 
 ## Architecture
 
@@ -87,4 +91,4 @@ See [`docs/TESTING.md`](docs/TESTING.md) for manual browser cases and [`docs/EXP
 
 ## Future work
 
-This vertical slice still defers persistent accounts/progression, controller and mobile-touch input, sound, spectator handling, rate limiting, persistence, additional preparation verbs, and richer hazards. The data and networking boundaries are organized to support those additions without replacing the core loop.
+This vertical slice still defers persistent accounts, mid-shift snapshot restoration, controller and mobile-touch input, playable sound assets, spectator handling, rate limiting, and additional preparation verbs. The data and networking boundaries are organized to support those additions without replacing the core loop.
