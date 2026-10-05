@@ -1,5 +1,5 @@
 import { io, type Socket } from "socket.io-client";
-import { RECIPES, recipeById, type CatRole, type GameState, type Player, type Station } from "../shared/game";
+import { RECIPES, recipeById, type CatRole, type GameState, type Player, type Station, type Theme } from "../shared/game";
 import tabbyCutoutUrl from "./assets/cats/tabby-cutout.png";
 import tabbyUrl from "./assets/cats/tabby.png";
 import siameseUrl from "./assets/cats/siamese.png";
@@ -9,6 +9,9 @@ import calicoUrl from "./assets/cats/calico.png";
 import counterTileUrl from "./assets/tilemap/purple-counter.png";
 import catBaseUrl from "./assets/tilemap/cat-base.png";
 import catEyesUrl from "./assets/tilemap/cat-eyes.png";
+import cozyVillagePubUrl from "./assets/tilemap/cozy-village-pub.png";
+import hauntedMoonlitInnUrl from "./assets/tilemap/haunted-moonlit-inn.png";
+import pirateCatTavernUrl from "./assets/tilemap/pirate-cat-tavern.png";
 import "./style.css";
 
 // Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
@@ -34,6 +37,14 @@ const catPhotos: Record<CatRole, string> = {
 const counterTile = new Image(); counterTile.src = counterTileUrl;
 const catBase = new Image(); catBase.src = catBaseUrl;
 const catEyes = new Image(); catEyes.src = catEyesUrl;
+const tavernMapSources: Record<Theme, string> = {
+  "Cozy Village Pub": cozyVillagePubUrl,
+  "Haunted Moonlit Inn": hauntedMoonlitInnUrl,
+  "Pirate Cat Tavern": pirateCatTavernUrl
+};
+const tavernMaps = Object.fromEntries(Object.entries(tavernMapSources).map(([theme, source]) => {
+  const image = new Image(); image.src = source; return [theme, image];
+})) as Record<Theme, HTMLImageElement>;
 
 const roles: { role: CatRole; perk: string }[] = [
   { role: "Tabby", perk: "Balanced" }, { role: "Siamese", perk: "Quick paws" },
@@ -159,7 +170,7 @@ window.addEventListener("keydown", (event) => {
 window.addEventListener("keyup", (event) => { const axis = movementKeys[event.key]; if (axis) move[axis] = 0; });
 
 const ingredientColors: Record<string, string> = { catnip: "#91dd7d", lime: "#c7e65b", fizz: "#a4e9f3", moonmilk: "#e2dcff", cream: "#fff4d5", stardust: "#f0bdff", tuna: "#ec9b8e", tonic: "#86d2ce", kelp: "#4daf74" };
-const tavernPalettes: Record<string, { grass: string; wall: string; floor: string; tile: string; trim: string }> = {
+const tavernPalettes: Record<Theme, { grass: string; wall: string; floor: string; tile: string; trim: string }> = {
   "Cozy Village Pub": { grass: "#55704b", wall: "#603947", floor: "#a95d47", tile: "#c97858", trim: "#f1bd76" },
   "Haunted Moonlit Inn": { grass: "#30384f", wall: "#38305d", floor: "#4f4a75", tile: "#66608f", trim: "#b9a9e8" },
   "Pirate Cat Tavern": { grass: "#315d62", wall: "#174b5c", floor: "#3e7b78", tile: "#559b91", trim: "#f5c16b" }
@@ -173,7 +184,7 @@ function boardPoint(x: number, y: number): Point {
 function drawText(text: string, x: number, y: number, font: string, color: string) {
   context.font = font; context.fillStyle = color; context.textAlign = "center"; context.fillText(text, x, y);
 }
-function drawFloor(theme: string) {
+function drawFallbackFloor(theme: Theme) {
   const palette = tavernPalettes[theme];
   context.fillStyle = palette.grass; context.fillRect(0, 0, 800, 480);
   context.fillStyle = "rgba(255,255,255,.09)";
@@ -192,6 +203,11 @@ function drawFloor(theme: string) {
   context.fillStyle = "rgba(30,25,43,.45)"; context.fillRect(507, 75, 242, 352);
   drawText("PATRON NOOK", 168, 94, "bold 10px system-ui", "#ffe6bc");
   drawText("BARTENDER'S BAR", 628, 94, "bold 10px system-ui", "#ffe6bc");
+}
+function drawFloor(theme: Theme) {
+  const map = tavernMaps[theme];
+  if (!map.complete || !map.naturalWidth) return drawFallbackFloor(theme);
+  context.drawImage(map, 0, 0, canvas.width, canvas.height);
 }
 function drawCounter(point: Point, width = 102, height = 92) {
   context.save(); context.shadowColor = "rgba(29,14,35,.4)"; context.shadowBlur = 7; context.shadowOffsetY = 5;
