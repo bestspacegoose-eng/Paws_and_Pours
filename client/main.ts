@@ -34,6 +34,9 @@ let selectedRole: CatRole = "Tabby";
 let move = { x: 0, y: 0 };
 let lastMove = 0;
 let lastStateMessage = "";
+type LocalPrediction = Pick<Player, "x" | "y" | "direction" | "moving" | "moveSequence">;
+let localPrediction: LocalPrediction | null = null;
+let lastSentMoveSequence = 0;
 
 const catPhotos: Record<CatRole, string> = {
   "Tabby": tabbyUrl, "Siamese": siameseUrl, "Maine Coon": maineCoonUrl,
@@ -123,7 +126,20 @@ document.querySelector<HTMLButtonElement>("#join")!.onclick = () => connect("joi
 document.querySelector<HTMLButtonElement>("#leave")!.onclick = () => { sessionStorage.removeItem("paws-pours-room"); location.reload(); };
 
 socket.on("joined", ({ code }: { code: string }) => { roomCode = code; sessionStorage.setItem("paws-pours-room", code); menu.classList.add("hidden"); game.classList.remove("hidden"); setToast(`Joined room ${code}.`); });
-socket.on("state", (next: GameState) => { state = next; renderUi(); });
+socket.on("state", (next: GameState) => {
+  const authoritativePlayer = next.players[token];
+  if (authoritativePlayer) {
+    const acknowledgedSequence = authoritativePlayer.moveSequence ?? 0;
+    lastSentMoveSequence = Math.max(lastSentMoveSequence, acknowledgedSequence);
+    if (localPrediction) {
+      const inputActive = Boolean(move.x || move.y);
+      const awaitingAcknowledgement = acknowledgedSequence < localPrediction.moveSequence;
+      if (inputActive || localPrediction.moving || awaitingAcknowledgement) Object.assign(authoritativePlayer, localPrediction);
+      else localPrediction = null;
+    }
+  }
+  state = next; renderUi();
+});
 socket.on("error-message", (message: string) => setToast(message));
 socket.on("connect", () => { if (roomCode && state) socket.emit("join-room", { ...profile(), code: roomCode }); });
 socket.on("disconnect", () => setToast("Reconnecting to the tavern…"));
@@ -168,14 +184,25 @@ function renderOverlay() {
   } else overlay.classList.add("hidden");
 }
 
+function rememberLocalPrediction(player: Player) {
+  localPrediction = {
+    x: player.x, y: player.y, direction: player.direction ?? "down",
+    moving: player.moving, moveSequence: player.moveSequence ?? lastSentMoveSequence
+  };
+}
+function emitMovement(player: Player, moving: boolean) {
+  lastSentMoveSequence += 1; player.moveSequence = lastSentMoveSequence; player.moving = moving;
+  rememberLocalPrediction(player);
+  socket.emit("move", {
+    x: player.x, y: player.y, direction: player.direction ?? "down",
+    moving, sequence: lastSentMoveSequence
+  });
+}
 function movePlayer() {
   const player = localPlayer();
   if (!state || !player || state.phase !== "shift") return;
   if (!move.x && !move.y) {
-    if (player.moving) {
-      player.moving = false;
-      socket.emit("move", { x: player.x, y: player.y, direction: player.direction ?? "down", moving: false });
-    }
+    if (player.moving) emitMovement(player, false);
     return;
   }
   const length = Math.hypot(move.x, move.y); const speed = player.role === "Siamese" ? 3.3 : 2.7;
@@ -183,8 +210,9 @@ function movePlayer() {
   player.moving = true;
   player.x = Math.max(32, Math.min(768, player.x + move.x / length * speed));
   player.y = Math.max(80, Math.min(442, player.y + move.y / length * speed));
+  rememberLocalPrediction(player);
   if (performance.now() - lastMove > 50) {
-    socket.emit("move", { x: player.x, y: player.y, direction: player.direction, moving: true });
+    emitMovement(player, true);
     lastMove = performance.now();
   }
 }

@@ -90,13 +90,17 @@ io.on("connection", (socket) => {
     startShift(state); broadcast(state);
   });
 
-  socket.on("move", (position: { x: number; y: number; direction?: FacingDirection; moving?: boolean }) => {
+  socket.on("move", (position: { x: number; y: number; direction?: FacingDirection; moving?: boolean; sequence?: number }) => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.phase !== "shift") return;
-    player.x = Math.max(32, Math.min(768, Math.round(position.x)));
-    player.y = Math.max(80, Math.min(442, Math.round(position.y)));
+    if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
+    const lastSequence = player.moveSequence ?? 0;
+    const sequence = Number.isSafeInteger(position.sequence) && position.sequence! >= 0 ? position.sequence! : lastSequence + 1;
+    if (sequence <= lastSequence) return;
+    player.x = Math.max(32, Math.min(768, position.x));
+    player.y = Math.max(80, Math.min(442, position.y));
     if (["down", "left", "right", "up"].includes(position.direction ?? "")) player.direction = position.direction!;
-    player.moving = Boolean(position.moving);
+    player.moving = Boolean(position.moving); player.moveSequence = sequence;
     broadcast(state);
   });
 
@@ -159,7 +163,7 @@ function joinRoom(socketId: string, state: GameState, payload: { token: string; 
   state.players[payload.token] = existing ?? {
     id: payload.token, name: payload.name.slice(0, 16) || "Mittens", role: payload.role, fur: payload.fur,
     accessory: payload.accessory, x: 260 + Object.keys(state.players).length * 70, y: 390,
-    direction: "down", moving: false, carrying: [], connected: true, score: 0
+    direction: "down", moving: false, moveSequence: 0, carrying: [], connected: true, score: 0
   } as Player;
   Object.assign(state.players[payload.token], { name: payload.name.slice(0, 16) || "Mittens", role: payload.role, fur: payload.fur, accessory: payload.accessory, connected: true });
   socket.data.code = state.code; socket.data.token = payload.token; socket.join(state.code);

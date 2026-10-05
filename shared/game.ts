@@ -10,7 +10,7 @@ export interface Recipe { id: string; name: string; ingredients: string[]; color
 export interface Order { id: string; recipeId: string; customer: string; patience: number; maxPatience: number }
 export interface Player {
   id: string; name: string; role: CatRole; fur: string; accessory: string;
-  x: number; y: number; direction: FacingDirection; moving: boolean;
+  x: number; y: number; direction: FacingDirection; moving: boolean; moveSequence: number;
   carrying: string[]; drink?: string; connected: boolean; score: number
 }
 export interface Tavern { seed: number; theme: Theme; stations: Station[]; decoration: string[] }
