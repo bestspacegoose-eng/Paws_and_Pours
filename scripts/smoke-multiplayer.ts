@@ -5,6 +5,7 @@ import { recipeById, type CatRole, type GameState, type Station } from "../share
 const serverUrl = process.env.SMOKE_SERVER_URL ?? "http://localhost:3001";
 const hostToken = `smoke-host-${Date.now()}`;
 const guestToken = `smoke-guest-${Date.now()}`;
+let smokeStage = "connect";
 const profile = (token: string, name: string, role: CatRole = "Tabby") => ({
   token, name, role, fur: "#e5a265", accessory: "Bow tie"
 });
@@ -36,7 +37,9 @@ function waitForState(socket: Socket, current: () => GameState | undefined, pred
 }
 
 async function main() {
+  smokeStage = "connect host";
   const host = await connectedSocket();
+  smokeStage = "connect guest";
   const guest = await connectedSocket();
   let hostState: GameState | undefined;
   let guestState: GameState | undefined;
@@ -44,14 +47,17 @@ async function main() {
   guest.on("state", (state: GameState) => { guestState = state; });
 
   try {
+    smokeStage = "create room";
     const joinedHost = new Promise<{ code: string }>((resolve) => host.once("joined", resolve));
     host.emit("create-room", profile(hostToken, "Smoke Host"));
     const { code } = await joinedHost;
     await waitForState(host, () => hostState, (state) => state.code === code && Boolean(state.players[hostToken]));
 
+    smokeStage = "join guest";
     guest.emit("join-room", { ...profile(guestToken, "Smoke Guest"), code });
     await waitForState(host, () => hostState, (state) => Boolean(state.players[guestToken]));
     await waitForState(guest, () => guestState, (state) => state.code === code && Boolean(state.players[guestToken]));
+    smokeStage = "start shift";
     host.emit("start-shift");
     await waitForState(host, () => hostState, (state) => state.phase === "shift" && state.orders.length > 0);
 
@@ -62,17 +68,17 @@ async function main() {
       host.emit("move", { x, y, direction: "down", moving: true, sequence: moveSequence });
       await waitForState(host, () => hostState, (state) => state.players[hostToken].moveSequence >= moveSequence);
     };
-    const laneX = 370;
+    const laneX = 540;
     const approachStation = async (station: Station) => {
-      const player = hostState!.players[hostToken];
-      if (player.y < 300) await moveHost(laneX, 212);
-      await moveHost(laneX, 350);
-      const approachY = station.gridY === 1 ? 212 : 329;
+      // Every station now sits squarely on the visible floor. Approach from the
+      // clear tile below the one-cell collision footprint before interacting.
+      const approachY = station.y + 52;
       await moveHost(laneX, approachY);
       await moveHost(station.x, approachY);
     };
 
     for (const ingredient of recipe.ingredients) {
+      smokeStage = `collect ${ingredient}`;
       const station = hostState!.tavern.stations.find((candidate) => candidate.ingredient === ingredient);
       assert.ok(station, `missing station for ${ingredient}`);
       await approachStation(station);
@@ -81,10 +87,9 @@ async function main() {
     }
     assert.deepEqual([...hostState!.players[hostToken].carrying].sort(), [...recipe.ingredients].sort());
 
+    smokeStage = "open mixer";
     const mixer = hostState!.tavern.stations.find((station) => station.kind === "mix")!;
-    await moveHost(laneX, 350);
-    await moveHost(mixer.x, 350);
-    await moveHost(mixer.x, mixer.y + 45);
+    await approachStation(mixer);
     host.emit("interact");
     await waitForState(host, () => hostState, (state) => state.mixing[hostToken]?.recipeId === recipe.id);
     await waitForState(guest, () => guestState, (state) => state.mixing[hostToken]?.recipeId === recipe.id);
@@ -96,9 +101,11 @@ async function main() {
     assert.notEqual(guestState!.players[guestToken].x, guestBefore.x, "the non-mixing client should remain mobile");
 
     for (const ingredient of recipe.ingredients) {
+      smokeStage = `mix ${ingredient}`;
       host.emit("mix-ingredient", ingredient);
       await waitForState(host, () => hostState, (state) => state.mixing[hostToken]?.usedIngredients.includes(ingredient) ?? false);
     }
+    smokeStage = "time tool";
     const tool = recipe.preparation.actions[0];
     host.emit("mix-tool-start", tool.tool);
     await waitForState(host, () => hostState, (state) => Boolean(state.mixing[hostToken]?.toolStartedAt));
@@ -107,9 +114,9 @@ async function main() {
     await waitForState(host, () => hostState, (state) => state.players[hostToken].drink === recipe.id && !state.mixing[hostToken]);
     assert.ok((hostState!.players[hostToken].drinkQuality ?? 0) > 0.9, "on-target timing should create a high-quality drink");
 
+    smokeStage = "serve drink";
     const service = hostState!.tavern.stations.find((station) => station.kind === "serve")!;
-    await moveHost(mixer.x, mixer.y + 45);
-    await moveHost(service.x, service.y + 45);
+    await approachStation(service);
     const coinsBefore = hostState!.coins;
     host.emit("interact");
     await waitForState(host, () => hostState, (state) => state.coins > coinsBefore && !state.players[hostToken].drink);
@@ -130,6 +137,7 @@ async function main() {
 }
 
 main().catch((error) => {
+  console.error(`Smoke stage: ${smokeStage}`);
   console.error(error);
   process.exitCode = 1;
 });

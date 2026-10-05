@@ -1,7 +1,7 @@
 export type Theme = "Cozy Village Pub" | "Haunted Moonlit Inn" | "Pirate Cat Tavern";
 export type CatRole = "Tabby" | "Siamese" | "Maine Coon" | "Black Cat" | "Calico";
 export type FacingDirection = "down" | "left" | "right" | "up";
-export type StationKind = "pantry" | "mix" | "serve" | "mop";
+export type StationKind = "pantry" | "mix" | "serve" | "mop" | "trash";
 export type Phase = "lobby" | "shift" | "upgrades" | "complete";
 export type CounterVariant = "standard" | "end-cap" | "corner" | "ingredient" | "mixing" | "decorative" | "damaged";
 export type MixingTool = "shaker" | "spoon" | "pourer";
@@ -41,7 +41,9 @@ export interface GameState {
 }
 
 export const BOARD_BOUNDS = { minX: 32, maxX: 768, minY: 80, maxY: 442 } as const;
-export const GRID_ORIGIN = { x: 48, y: 80 } as const;
+// This origin lands counter centres on the first visible row of floor tiles.
+// The prior origin started the top station row on the rear wall artwork.
+export const GRID_ORIGIN = { x: 48, y: 110 } as const;
 export const GRID_CELL_SIZE = 58;
 export const GRID_COLUMNS = 12;
 export const GRID_ROWS = 5;
@@ -114,7 +116,7 @@ export function makeTavern(seed: number, round = 1): Tavern {
     ...pantryCells[index],
     ...gridCellCenter(pantryCells[index].gridX, pantryCells[index].gridY)
   }));
-  const utilityRow = random() > 0.5 ? 0 : 4;
+  const utilityRow = random() > 0.5 ? 1 : 4;
   const stationAt = (cell: GridCell, station: Omit<Station, keyof Vec | keyof GridCell>): Station => ({
     ...station, ...cell, ...gridCellCenter(cell.gridX, cell.gridY)
   });
@@ -122,7 +124,8 @@ export function makeTavern(seed: number, round = 1): Tavern {
     ...ingredientTable,
     stationAt({ gridX: 6, gridY: 2 }, { id: "mix", kind: "mix", label: "Shaker & Brewer", counterVariant: "mixing" }),
     stationAt({ gridX: 10, gridY: 2 }, { id: "serve", kind: "serve", label: "Service Bell", counterVariant: "decorative" }),
-    stationAt({ gridX: 11, gridY: utilityRow }, { id: "mop", kind: "mop", label: "Mop Bucket", counterVariant: "damaged" })
+    stationAt({ gridX: 11, gridY: utilityRow }, { id: "mop", kind: "mop", label: "Mop Bucket", counterVariant: "damaged" }),
+    stationAt({ gridX: 9, gridY: utilityRow === 1 ? 4 : 1 }, { id: "trash", kind: "trash", label: "Scrap Bin", counterVariant: "damaged" })
   ];
   const decorations = theme === "Cozy Village Pub" ? ["🍞", "🕯️", "🌿"] :
     theme === "Haunted Moonlit Inn" ? ["👻", "🌙", "🕸️"] : ["⚓", "🏴‍☠️", "🐟"];

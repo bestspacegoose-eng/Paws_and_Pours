@@ -200,6 +200,14 @@ io.on("connection", (socket) => {
         }
       }
     }
+    if (nearby.kind === "trash") {
+      if (!player.carrying.length) setMessage(state, "Nothing to toss out. Your paws are clear.");
+      else {
+        const discarded = player.carrying.join(", ");
+        player.carrying = [];
+        setMessage(state, `${player.name} tossed ${discarded} into the scrap bin.`);
+      }
+    }
     if (nearby.kind === "mop" && state.hazard) { state.hazard = null; setMessage(state, `${player.name} cleaned up the hazard. Good kitty!`); }
     broadcast(state);
   });

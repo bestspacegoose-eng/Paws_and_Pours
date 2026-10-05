@@ -17,11 +17,11 @@ test("a tavern seed produces a stable, readable layout", () => {
   const first = makeTavern(123456, 2);
   const second = makeTavern(123456, 2);
   assert.deepEqual(first, second);
-  assert.equal(first.stations.length, 12);
+  assert.equal(first.stations.length, 13);
   assert.deepEqual(first.stations.slice(0, 9).map((station) => station.ingredient), [
     "catnip", "lime", "fizz", "moonmilk", "cream", "stardust", "tuna", "tonic", "kelp"
   ]);
-  assert.deepEqual(first.stations.slice(-3).map((station) => station.kind), ["mix", "serve", "mop"]);
+  assert.deepEqual(first.stations.slice(-4).map((station) => station.kind), ["mix", "serve", "mop", "trash"]);
 });
 
 test("every generated counter owns one unique square grid cell", () => {

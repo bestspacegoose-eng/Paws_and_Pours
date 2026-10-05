@@ -257,7 +257,9 @@ const characterTintCache = new Map<string, HTMLCanvasElement>();
 const fallbackCatTintCache = new Map<string, HTMLCanvasElement>();
 
 function boardPoint(x: number, y: number): Point {
-  return { x: 40 + x * 0.94, y: 52 + (y - 70) * 0.94 };
+  // The background is pixel art. Integer screen coordinates keep each counter's
+  // square footprint locked to the floor tiles instead of shimmering between them.
+  return { x: Math.round(40 + x * 0.94), y: Math.round(52 + (y - 70) * 0.94) };
 }
 function drawText(text: string, x: number, y: number, font: string, color: string) {
   context.font = font; context.fillStyle = color; context.textAlign = "center"; context.fillText(text, x, y);
@@ -289,7 +291,7 @@ function drawFloor(theme: Theme) {
 }
 function drawCounterBlock(station: Station, theme: Theme) {
   const point = boardPoint(station.x, station.y);
-  const size = GRID_CELL_SIZE * 0.94;
+  const size = Math.round(GRID_CELL_SIZE * 0.94);
   const atlas = counterBlocks[theme];
   context.save();
   context.shadowColor = "rgba(29,14,35,.42)";
@@ -297,7 +299,7 @@ function drawCounterBlock(station: Station, theme: Theme) {
   context.shadowOffsetY = 4;
   if (atlas.complete && atlas.naturalWidth) {
     const frame = atlasFrame(atlas, 4, 2, COUNTER_FRAME_INDEX[station.counterVariant]);
-    context.drawImage(atlas, frame.x, frame.y, frame.width, frame.height, point.x - size / 2, point.y - size / 2, size, size);
+    context.drawImage(atlas, frame.x, frame.y, frame.width, frame.height, Math.round(point.x - size / 2), Math.round(point.y - size / 2), size, size);
   } else {
     context.fillStyle = theme === "Haunted Moonlit Inn" ? "#5e527d" : theme === "Pirate Cat Tavern" ? "#2d7778" : "#99583f";
     context.fillRect(point.x - size / 2, point.y - size / 2, size, size);
@@ -327,6 +329,7 @@ function drawStation(station: Station, theme: Theme) {
     drawText(station.ingredient.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df"); return;
   }
   if (station.kind === "mop") drawText("🪣", point.x, point.y - 7, "19px sans-serif", "#ffffff");
+  if (station.kind === "trash") drawText("🗑️", point.x, point.y - 7, "18px sans-serif", "#ffffff");
   context.fillStyle = "rgba(28,17,35,.82)"; context.fillRect(point.x - 31, point.y + 27, 62, 11);
   drawText(station.label.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df");
 }

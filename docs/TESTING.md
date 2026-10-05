@@ -49,7 +49,7 @@ Expected output includes `"ok": true`, the completed recipe, awarded coins, and 
 5. Verify only the host transitions to the first-person workspace. The guest must remain in the tavern, show the host as “mixing a drink,” and continue moving/interacting.
 6. Select a wrong ingredient once. Verify the mistake counter and feedback update without the client deciding the result locally.
 7. Select the required ingredients in recipe order.
-8. Press and hold the highlighted tool, then release near the displayed target duration.
+8. Press and hold the highlighted tool. Verify the loading bar fills live, the green band marks the forgiving sweet-spot, and the fine marker shows the exact target before releasing near it.
 9. Verify the workspace shows its success transition, closes, and the HUD says the host is carrying the completed drink.
 10. Walk to the Service Bell and serve the matching order. Verify coins/reputation update on both clients and drink quality affects the tip.
 
@@ -60,6 +60,7 @@ Expected output includes `"ok": true`, the completed recipe, awarded coins, and 
 - **Timeout:** leave the workspace idle for 45 seconds and verify it fails authoritatively.
 - **Extreme tool timing:** release much too early or late and verify a mistake is recorded.
 - **Duplicate pickup:** interact with the same ingredient twice and verify the second item is refused.
+- **Discarding ingredients:** collect one or more ingredients, use the Scrap Bin, and verify only the carried ingredients are cleared; a finished drink must remain in paw.
 - **Invalid full set:** take three ingredients that do not make a recipe, use the mixer, and verify the set is discarded so the player cannot become softlocked.
 - **Reconnect:** disconnect during a session, rejoin with the same browser session, and verify the server-owned session is restored if it has not timed out.
 - **Collision:** approach all four sides and a corner of standard, end-cap, corner, ingredient, mixing, service, and damaged blocks. Visible base and collision footprint must remain one cell.
@@ -71,7 +72,8 @@ Expected output includes `"ok": true`, the completed recipe, awarded coins, and 
 - Three data-authored timed tools (shaker, spoon, pourer), quality, cancel, mistakes, failure, timeout, and serving integration.
 - First-person 2D workspace with accessible DOM controls over a pixel-art canvas.
 - Six new runtime raster assets plus reuse of all nine existing ingredient drawings.
-- Deterministic square-grid stations, shared collision, square item placement, and seven counter variants across all three themes.
+- Deterministic square-grid stations, shared collision, floor-aligned counter placement, square item placement, and seven counter variants across all three themes.
+- A synchronized Scrap Bin station for clearing carried ingredients plus a live, accessible tool-hold timing bar in the mixing workspace.
 - Multiplayer state indicators and two-client smoke coverage.
 - Recorded high-level game roadmap, asset inventory, risks, and UI redesign plan.
 

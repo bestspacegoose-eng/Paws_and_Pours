@@ -35,6 +35,10 @@ export class MixingWorkspace {
   private readonly timer: HTMLElement;
   private readonly mistakes: HTMLElement;
   private readonly progress: HTMLElement;
+  private readonly toolTiming: HTMLElement;
+  private readonly toolTimingFill: HTMLElement;
+  private readonly toolTimingTrack: HTMLElement;
+  private readonly toolTimingLabel: HTMLElement;
   private readonly actions: HTMLElement;
   private readonly workspaceImage: HTMLImageElement;
   private readonly ingredientsImage: HTMLImageElement;
@@ -47,6 +51,8 @@ export class MixingWorkspace {
   private controlsKey = "";
   private toolHolding = false;
   private activeTool?: MixingTool;
+  private toolHoldStartedAt?: number;
+  private toolTimingFrame?: number;
   private cancelRequested = false;
   private outcome?: "success" | "failure";
   private outcomeTimer?: number;
@@ -68,6 +74,10 @@ export class MixingWorkspace {
           <div class="mixing-status">
             <p id="mixing-instruction" aria-live="polite">Choose the first ingredient.</p>
             <div class="mixing-progress" aria-hidden="true"><i></i></div>
+            <div class="tool-timing hidden" aria-live="polite">
+              <div class="tool-timing-heading"><span>Hold timing</span><output>Ready</output></div>
+              <div class="tool-timing-track" role="progressbar" aria-label="Tool hold timing" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i><b aria-hidden="true"></b></div>
+            </div>
           </div>
         </div>
         <div class="mixing-actions" aria-label="Mixing actions"></div>
@@ -82,9 +92,14 @@ export class MixingWorkspace {
     this.timer = this.root.querySelector("#mixing-time")!;
     this.mistakes = this.root.querySelector("#mixing-mistakes")!;
     this.progress = this.root.querySelector(".mixing-progress i")!;
+    this.toolTiming = this.root.querySelector(".tool-timing")!;
+    this.toolTimingFill = this.root.querySelector(".tool-timing-track i")!;
+    this.toolTimingTrack = this.root.querySelector(".tool-timing-track")!;
+    this.toolTimingLabel = this.root.querySelector(".tool-timing output")!;
     this.actions = this.root.querySelector(".mixing-actions")!;
     this.root.querySelector<HTMLButtonElement>(".mixing-cancel")!.onclick = () => {
       this.cancelRequested = true;
+      this.stopToolTiming();
       this.events.cancel();
     };
     const redraw = () => this.draw();
@@ -108,6 +123,7 @@ export class MixingWorkspace {
         this.recipe = undefined;
         this.toolHolding = false;
         this.activeTool = undefined;
+        this.stopToolTiming();
         this.actions.innerHTML = "";
         this.controlsKey = "";
         this.cancelRequested = false;
@@ -142,6 +158,7 @@ export class MixingWorkspace {
     this.mistakes.textContent = `${session.mistakes} / 3 mistakes`;
     const steps = mixingStepsForRecipe(this.recipe);
     this.progress.style.width = `${Math.min(100, session.stepIndex / steps.length * 100)}%`;
+    this.configureToolTiming(expectedMixingStep(session));
     this.renderControls(justOpened);
     this.draw();
   }
@@ -190,10 +207,13 @@ export class MixingWorkspace {
   }
 
   private startTool(tool: MixingTool) {
-    if (this.toolHolding) return;
+    const expected = this.session && expectedMixingStep(this.session);
+    if (this.toolHolding || !expected || expected.kind !== "timed-tool" || expected.tool !== tool) return;
     this.toolHolding = true;
     this.activeTool = tool;
+    this.toolHoldStartedAt = performance.now();
     this.root.classList.add("tool-holding");
+    this.updateToolTiming(expected);
     this.events.startTool(tool);
     this.draw();
   }
@@ -203,9 +223,49 @@ export class MixingWorkspace {
     const tool = this.activeTool;
     this.toolHolding = false;
     this.activeTool = undefined;
+    this.stopToolTiming();
     this.root.classList.remove("tool-holding");
     this.events.finishTool(tool);
     this.draw();
+  }
+
+  private configureToolTiming(expected: ReturnType<typeof expectedMixingStep>) {
+    if (!expected || expected.kind !== "timed-tool") {
+      this.toolTiming.classList.add("hidden");
+      return;
+    }
+    this.toolTiming.classList.remove("hidden");
+    const maximum = expected.targetMs + expected.toleranceMs * 2;
+    const toPercent = (milliseconds: number) => Math.max(0, Math.min(100, milliseconds / maximum * 100));
+    this.toolTimingTrack.style.setProperty("--target", `${toPercent(expected.targetMs)}%`);
+    this.toolTimingTrack.style.setProperty("--sweet-start", `${toPercent(expected.targetMs - expected.toleranceMs)}%`);
+    this.toolTimingTrack.style.setProperty("--sweet-end", `${toPercent(expected.targetMs + expected.toleranceMs)}%`);
+    if (!this.toolHolding) {
+      this.toolTimingFill.style.width = "0%";
+      this.toolTimingFill.dataset.phase = "ready";
+      this.toolTimingTrack.setAttribute("aria-valuenow", "0");
+      this.toolTimingLabel.textContent = `Aim for ${(expected.targetMs / 1000).toFixed(1)} sec`;
+    }
+  }
+
+  private updateToolTiming(action: Extract<ReturnType<typeof expectedMixingStep>, { kind: "timed-tool" }>) {
+    if (!this.toolHolding || !this.toolHoldStartedAt) return;
+    const elapsed = performance.now() - this.toolHoldStartedAt;
+    const maximum = action.targetMs + action.toleranceMs * 2;
+    const percent = Math.max(0, Math.min(100, elapsed / maximum * 100));
+    const accuracy = Math.abs(elapsed - action.targetMs);
+    const phase = accuracy <= action.toleranceMs ? "sweet" : elapsed < action.targetMs ? "early" : "late";
+    this.toolTimingFill.style.width = `${percent}%`;
+    this.toolTimingFill.dataset.phase = phase;
+    this.toolTimingTrack.setAttribute("aria-valuenow", String(Math.round(percent)));
+    this.toolTimingLabel.textContent = `${(elapsed / 1000).toFixed(1)} sec · ${phase === "sweet" ? "sweet spot" : phase === "early" ? "keep holding" : "release now"}`;
+    this.toolTimingFrame = window.requestAnimationFrame(() => this.updateToolTiming(action));
+  }
+
+  private stopToolTiming() {
+    if (this.toolTimingFrame !== undefined) window.cancelAnimationFrame(this.toolTimingFrame);
+    this.toolTimingFrame = undefined;
+    this.toolHoldStartedAt = undefined;
   }
 
   private draw() {
