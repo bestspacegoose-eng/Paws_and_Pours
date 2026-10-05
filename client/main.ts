@@ -45,6 +45,7 @@ let lastStateMessage = "";
 type LocalPrediction = Pick<Player, "x" | "y" | "direction" | "moving" | "moveSequence">;
 let localPrediction: LocalPrediction | null = null;
 let lastSentMoveSequence = 0;
+let recipeBookOpen = false;
 
 const catPhotos: Record<CatRole, string> = {
   "Tabby": tabbyUrl, "Siamese": siameseUrl, "Maine Coon": maineCoonUrl,
@@ -82,12 +83,14 @@ const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <main class="shell">
     <header class="topbar"><a class="brand" href="/"><span>🐾</span> Paws <i>&</i> Pours</a><span class="tag">Co-op roguelike bartending</span></header>
-    <section id="menu" class="menu card">
-      <div class="hero"><div><p class="eyebrow">A traveling tavern awaits</p><h1>Shake, serve, survive.</h1><p>Team up as charming cat bartenders in a procedurally generated fantasy tavern.</p></div><div class="hero-cat"><img src="${tabbyCutoutUrl}" alt="Pixelated orange tabby bartender" /><span>🍸</span></div></div>
-      <div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><label>Accessory<select id="accessory"><option>Bow tie</option><option>Wizard hat</option><option>Pirate patch</option><option>Flower crown</option></select></label></div>
-      <p class="label">Choose your bartender</p><div class="roles" id="roles"></div>
-      <div class="actions"><button class="primary" id="solo">Start solo shift</button><button id="create">Create party</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" value="${roomCode}"/><button id="join">Join party</button></div></div>
-      <div class="menu-utilities"><button id="continue" class="secondary">Continue solo</button><button id="settings" class="secondary">Settings</button><button id="delete-save" class="secondary danger">Delete solo save</button></div>
+    <section id="menu" class="menu card title-menu">
+      <div class="menu-scene" aria-hidden="true"><span class="scene-window window-left">OPEN</span><span class="scene-window window-right">✦</span><span class="scene-awning"></span><span class="scene-plant plant-left">🌿</span><span class="scene-plant plant-right">🌿</span></div>
+      <div class="menu-logo"><span>PAWS</span><b>&amp; POURS</b><small>night shift</small></div>
+      <div class="menu-layout">
+        <section class="customizer-card"><p class="eyebrow">Set up your bartender</p><div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><label>Accessory<select id="accessory"><option>Bow tie</option><option>Wizard hat</option><option>Pirate patch</option><option>Flower crown</option></select></label></div><p class="label">Choose your bartender</p><div class="roles" id="roles"></div></section>
+        <section class="title-actions" aria-label="Main menu"><p class="eyebrow">Choose a shift</p><div class="actions"><button class="primary" id="solo">Start solo shift</button><button id="create">Create party</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" value="${roomCode}"/><button id="join">Join party</button></div></div><div class="menu-utilities"><button id="continue" class="secondary">Continue solo</button><button id="settings" class="secondary">Settings</button><button id="delete-save" class="secondary danger">Delete solo save</button></div></section>
+        <aside class="hero"><div><p class="eyebrow">A traveling tavern awaits</p><h1>Shake, serve, survive.</h1><p>Team up as charming cat bartenders in a procedurally generated fantasy tavern.</p></div><div class="hero-cat"><img src="${tabbyCutoutUrl}" alt="Pixelated orange tabby bartender" /><span>🍸</span></div></aside>
+      </div>
       <section id="settings-panel" class="settings-panel hidden" aria-label="Game settings">
         <div class="settings-title"><b>Settings</b><button id="close-settings" class="secondary">Close</button></div>
         <label>Display scale<select id="setting-scale"><option value="1">100%</option><option value="0.85">85%</option><option value="1.15">115%</option></select></label>
@@ -99,9 +102,8 @@ app.innerHTML = `
       <p class="fineprint">Solo saves stay on this device. Parties use shared server state only · Press <kbd>E</kbd> near a station to interact</p>
     </section>
     <section id="game" class="game hidden">
-      <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span>♥ <b id="health">3</b></span><span class="timer" id="timer">1:30</span></div><button class="leave" id="leave">Leave</button></div>
+      <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span>♥ <b id="health">3</b></span><span class="timer" id="timer">1:30</span></div><button class="leave" id="recipe-book">Recipe book</button><button class="leave" id="leave">Leave</button></div>
       <div class="canvas-card"><canvas id="board" width="800" height="480" aria-label="Paws and Pours game board"></canvas><div id="toast" class="toast"></div></div>
-      <div class="hud"><section class="panel orders"><h2>Orders</h2><div id="orders"></div></section><section class="panel recipe"><h2>Tonight's recipes</h2><div id="recipes"></div></section><section class="panel crew"><h2>Crew</h2><div id="crew"></div></section></div>
       <p class="controls"><kbd>WASD</kbd> or <kbd>← ↑ ↓ →</kbd> move · <kbd>E</kbd> interact · Ingredient counters → Mixing workspace → Service Bell · <span id="carry">Paws empty</span></p>
     </section>
     <section id="overlay" class="overlay hidden"></section>
@@ -169,6 +171,7 @@ document.querySelector<HTMLButtonElement>("#solo")!.onclick = () => { sessionMod
 document.querySelector<HTMLButtonElement>("#create")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create"); };
 document.querySelector<HTMLButtonElement>("#join")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("join"); };
 document.querySelector<HTMLButtonElement>("#leave")!.onclick = () => { sessionStorage.removeItem("paws-pours-room"); location.reload(); };
+document.querySelector<HTMLButtonElement>("#recipe-book")!.onclick = () => { recipeBookOpen = !recipeBookOpen; renderOverlay(); };
 document.querySelector<HTMLButtonElement>("#settings")!.onclick = () => { syncSettingsForm(); document.querySelector("#settings-panel")!.classList.remove("hidden"); };
 document.querySelector<HTMLButtonElement>("#close-settings")!.onclick = () => document.querySelector("#settings-panel")!.classList.add("hidden");
 document.querySelector<HTMLButtonElement>("#fullscreen")!.onclick = () => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.(); };
@@ -237,10 +240,6 @@ function renderUi() {
   document.querySelector("#rep")!.textContent = String(state.reputation);
   document.querySelector("#health")!.textContent = String(Math.max(0, state.health));
   document.querySelector("#timer")!.textContent = state.phase === "shift" ? time(state.shiftSeconds) : state.phase.toUpperCase();
-  document.querySelector("#orders")!.innerHTML = state.orders.length ? state.orders.map((order) => { const recipe = recipeById(order.recipeId); const pct = Math.max(0, order.patience / order.maxPatience * 100); return `<article class="order"><div><b>${recipe.name}</b><small>${order.customer}</small></div><div class="patience"><i style="width:${pct}%"></i></div></article>`; }).join("") : `<p class="empty">No orders yet—enjoy the calm.</p>`;
-  document.querySelector("#recipes")!.innerHTML = RECIPES.map((recipe) => `<article class="recipe-line"><i style="background:${recipe.color}"></i><div><b>${recipe.name}</b><small>${recipe.ingredients.map(ingredientMarkup).join("")}</small></div></article>`).join("");
-  const hostId = state.hostId;
-  document.querySelector("#crew")!.innerHTML = Object.values(state.players).map((player) => `<article class="crew-line"><span style="color:${player.fur}">🐱</span><div><b>${player.name}${player.id === hostId ? " · host" : ""}</b><small>${player.role} · ${state!.mixing[player.id] ? "mixing a drink" : player.connected ? "ready" : "reconnecting…"}</small></div><em>${player.score}🪙</em></article>`).join("");
   const player = localPlayer();
   document.querySelector("#carry")!.textContent = state.mixing[token] ? `Preparing: ${recipeById(state.mixing[token].recipeId).name}` : player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.join(", ")}` : "Paws empty";
   if (state.message !== lastStateMessage) {
@@ -252,7 +251,11 @@ function renderUi() {
 }
 function renderOverlay() {
   if (!state) return;
-  if (state.phase === "lobby") {
+  if (recipeBookOpen && state.phase === "shift") {
+    overlay.classList.remove("hidden");
+    overlay.innerHTML = `<div class="modal card recipe-book"><p class="eyebrow">BARTENDER'S RECIPE BOOK</p><h2>Tonight's recipes</h2><div class="recipe-book-list">${RECIPES.map((recipe) => `<article class="recipe-line"><i style="background:${recipe.color}"></i><div><b>${recipe.name}</b><small>${recipe.ingredients.map(ingredientMarkup).join("")}</small></div></article>`).join("")}</div><button class="primary" id="close-book">Return to tavern</button></div>`;
+    document.querySelector<HTMLButtonElement>("#close-book")!.onclick = () => { recipeBookOpen = false; renderOverlay(); };
+  } else if (state.phase === "lobby") {
     overlay.classList.remove("hidden");
     const isHost = state.hostId === token;
     overlay.innerHTML = `<div class="modal card"><p class="eyebrow">ROOM ${state.code}</p><h2>Gather your crew</h2><p>Share this code with up to three friends. Everyone appears in this lobby instantly.</p><div class="big-code">${state.code}</div><p>${Object.keys(state.players).length}/4 cat bartenders in the tavern.</p>${isHost ? `<button class="primary" id="start">Start shift</button>` : `<p class="waiting">Waiting for the host to ring the bell…</p>`}</div>`;
@@ -455,6 +458,28 @@ function drawFinishedDrink(recipeId: string, x: number, y: number, state: "idle"
 function drawOrderWindow() {
   context.fillStyle = "#f1bd76"; context.fillRect(48, 397, 225, 6); drawText("ORDER WINDOW", 160, 418, "bold 9px system-ui", "#fff2d0");
 }
+function drawOrderTickets() {
+  if (!state) return;
+  state.orders.slice(0, 3).forEach((order, index) => {
+    const recipe = recipeById(order.recipeId);
+    const x = 62 + index * 70;
+    const y = 358;
+    const patience = Math.max(0, Math.min(1, order.patience / order.maxPatience));
+    context.save();
+    context.fillStyle = "rgba(25,15,30,.42)";
+    context.fillRect(x + 3, y + 4, 58, 34);
+    context.fillStyle = "#f7e6bf";
+    context.fillRect(x, y, 58, 34);
+    context.fillStyle = recipe.color;
+    context.fillRect(x, y, 58, 5);
+    context.fillStyle = "#3a2741";
+    context.fillRect(x + 7, y + 25, 44, 4);
+    context.fillStyle = patience > .35 ? "#7bd99b" : "#e4786b";
+    context.fillRect(x + 7, y + 25, 44 * patience, 4);
+    context.restore();
+    drawFinishedDrink(order.recipeId, x + 29, y + 16, "idle");
+  });
+}
 function drawHazard() {
   const hazard = state?.hazard;
   if (!hazard) return;
@@ -483,6 +508,7 @@ function renderBoard() {
     ...Object.values(state.players).map((player) => ({ depth: player.y + 18, draw: () => drawPlayer(player) }))
   ].sort((left, right) => left.depth - right.depth);
   objects.forEach((object) => object.draw());
+  drawOrderTickets();
   drawHazard();
   if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(175, 441, 450, 27); drawText(`⚠ ${state.hazard.message}`, 400, 459, "bold 12px system-ui", "white"); }
 }

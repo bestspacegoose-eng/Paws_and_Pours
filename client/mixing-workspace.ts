@@ -265,6 +265,7 @@ export class MixingWorkspace {
     this.toolTimingFill.dataset.phase = phase;
     this.toolTimingTrack.setAttribute("aria-valuenow", String(Math.round(percent)));
     this.toolTimingLabel.textContent = `${(elapsed / 1000).toFixed(1)} sec · ${phase === "sweet" ? "sweet spot" : phase === "early" ? "keep holding" : "release now"}`;
+    if (action.tool === "shaker") this.draw();
     this.toolTimingFrame = window.requestAnimationFrame(() => this.updateToolTiming(action));
   }
 
@@ -308,7 +309,16 @@ export class MixingWorkspace {
     });
 
     if (expected?.kind === "timed-tool") {
-      this.drawAtlasContained(this.toolsImage, 3, 2, MIXING_TOOL_FRAME_INDEX[expected.tool], 400, 310, 190, 172);
+      if (this.toolHolding && expected.tool === "shaker") {
+        const shake = performance.now() / 52;
+        context.save();
+        context.translate(400 + Math.sin(shake * 2.7) * 7, 310 + Math.cos(shake * 4.1) * 3);
+        context.rotate(Math.sin(shake * 3.3) * .16);
+        this.drawAtlasContained(this.toolsImage, 3, 2, MIXING_TOOL_FRAME_INDEX[expected.tool], 0, 0, 190, 172);
+        context.restore();
+      } else {
+        this.drawAtlasContained(this.toolsImage, 3, 2, MIXING_TOOL_FRAME_INDEX[expected.tool], 400, 310, 190, 172);
+      }
     }
     this.drawAtlasContained(
       this.effectsImage, 3, 2,

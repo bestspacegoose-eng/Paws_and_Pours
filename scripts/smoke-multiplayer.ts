@@ -73,7 +73,9 @@ async function main() {
       // Every station now sits squarely on the visible floor. Approach from the
       // clear lower lane, then move up to the tile below the one-cell footprint.
       const approachY = station.y + 52;
-      const routeY = station.y < 280 ? 350 : 390;
+      // The utility counters can occupy row four, so use the clear bottom
+      // lane before approaching a station from below.
+      const routeY = 430;
       await moveHost(laneX, routeY);
       await moveHost(station.x, routeY);
       await moveHost(station.x, approachY);
