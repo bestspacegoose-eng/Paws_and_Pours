@@ -20,3 +20,11 @@ The animated cat-bartender spritesheet, nine-ingredient spritesheet, and three
 theme-matched counter props were generated with the same tool and the runtime
 tavern maps as style references. Their transparent originals are kept intact and
 sliced by the canvas renderer at runtime.
+
+The first-person `mixing-workspace.png`, transparent `mixing-tools-spritesheet.png`,
+transparent `mixing-effects-spritesheet.png`, and the Cozy, Haunted, and Pirate
+`counter-blocks-*.png` atlases were generated with OpenAI's image-generation tool.
+The existing tavern backgrounds, ingredient atlas, bartender atlas, and counter
+props were supplied as visual references so palette, outlines, lighting, texture,
+and pixel scale remain consistent. The themed block atlases share an identical
+4 × 2 runtime frame order and the object atlases preserve their generated alpha.

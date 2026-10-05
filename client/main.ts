@@ -1,12 +1,14 @@
 import { io, type Socket } from "socket.io-client";
-import { RECIPES, recipeById, type CatRole, type FacingDirection, type GameState, type Player, type Station, type Theme } from "../shared/game";
+import {
+  GRID_CELL_SIZE, moveWithCounterCollisions, RECIPES, recipeById, type CatRole,
+  type GameState, type Player, type Station, type Theme
+} from "../shared/game";
 import tabbyCutoutUrl from "./assets/cats/tabby-cutout.png";
 import tabbyUrl from "./assets/cats/tabby.png";
 import siameseUrl from "./assets/cats/siamese.png";
 import maineCoonUrl from "./assets/cats/maine-coon.png";
 import blackCatUrl from "./assets/cats/black-cat.png";
 import calicoUrl from "./assets/cats/calico.png";
-import counterTileUrl from "./assets/tilemap/purple-counter.png";
 import catBaseUrl from "./assets/tilemap/cat-base.png";
 import catEyesUrl from "./assets/tilemap/cat-eyes.png";
 import cozyVillagePubUrl from "./assets/tilemap/cozy-village-pub.png";
@@ -14,9 +16,11 @@ import hauntedMoonlitInnUrl from "./assets/tilemap/haunted-moonlit-inn.png";
 import pirateCatTavernUrl from "./assets/tilemap/pirate-cat-tavern.png";
 import catBartenderSpritesheetUrl from "./assets/tilemap/cat-bartender-spritesheet.png";
 import ingredientsSpritesheetUrl from "./assets/tilemap/ingredients-spritesheet.png";
-import cozyCounterUrl from "./assets/tilemap/counter-cozy.png";
-import hauntedCounterUrl from "./assets/tilemap/counter-haunted.png";
-import pirateCounterUrl from "./assets/tilemap/counter-pirate.png";
+import cozyCounterBlocksUrl from "./assets/tilemap/counter-blocks-cozy.png";
+import hauntedCounterBlocksUrl from "./assets/tilemap/counter-blocks-haunted.png";
+import pirateCounterBlocksUrl from "./assets/tilemap/counter-blocks-pirate.png";
+import { MixingWorkspace } from "./mixing-workspace";
+import { atlasFrame, COUNTER_FRAME_INDEX, INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
 import "./style.css";
 
 // Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
@@ -42,7 +46,6 @@ const catPhotos: Record<CatRole, string> = {
   "Tabby": tabbyUrl, "Siamese": siameseUrl, "Maine Coon": maineCoonUrl,
   "Black Cat": blackCatUrl, "Calico": calicoUrl
 };
-const counterTile = new Image(); counterTile.src = counterTileUrl;
 const catBase = new Image(); catBase.src = catBaseUrl;
 const catEyes = new Image(); catEyes.src = catEyesUrl;
 const catBartenderSpritesheet = new Image(); catBartenderSpritesheet.src = catBartenderSpritesheetUrl;
@@ -55,12 +58,12 @@ const tavernMapSources: Record<Theme, string> = {
 const tavernMaps = Object.fromEntries(Object.entries(tavernMapSources).map(([theme, source]) => {
   const image = new Image(); image.src = source; return [theme, image];
 })) as Record<Theme, HTMLImageElement>;
-const counterSources: Record<Theme, string> = {
-  "Cozy Village Pub": cozyCounterUrl,
-  "Haunted Moonlit Inn": hauntedCounterUrl,
-  "Pirate Cat Tavern": pirateCounterUrl
+const counterBlockSources: Record<Theme, string> = {
+  "Cozy Village Pub": cozyCounterBlocksUrl,
+  "Haunted Moonlit Inn": hauntedCounterBlocksUrl,
+  "Pirate Cat Tavern": pirateCounterBlocksUrl
 };
-const counters = Object.fromEntries(Object.entries(counterSources).map(([theme, source]) => {
+const counterBlocks = Object.fromEntries(Object.entries(counterBlockSources).map(([theme, source]) => {
   const image = new Image(); image.src = source; return [theme, image];
 })) as Record<Theme, HTMLImageElement>;
 
@@ -85,7 +88,7 @@ app.innerHTML = `
       <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span>♥ <b id="health">3</b></span><span class="timer" id="timer">1:30</span></div><button class="leave" id="leave">Leave</button></div>
       <div class="canvas-card"><canvas id="board" width="800" height="480" aria-label="Paws and Pours game board"></canvas><div id="toast" class="toast"></div></div>
       <div class="hud"><section class="panel orders"><h2>Orders</h2><div id="orders"></div></section><section class="panel recipe"><h2>Tonight's recipes</h2><div id="recipes"></div></section><section class="panel crew"><h2>Crew</h2><div id="crew"></div></section></div>
-      <p class="controls"><kbd>WASD</kbd> or <kbd>← ↑ ↓ →</kbd> move · <kbd>E</kbd> interact · Ingredient table → Mixer → Service Bell · <span id="carry">Paws empty</span></p>
+      <p class="controls"><kbd>WASD</kbd> or <kbd>← ↑ ↓ →</kbd> move · <kbd>E</kbd> interact · Ingredient counters → Mixing workspace → Service Bell · <span id="carry">Paws empty</span></p>
     </section>
     <section id="overlay" class="overlay hidden"></section>
   </main>`;
@@ -95,6 +98,12 @@ const game = document.querySelector<HTMLElement>("#game")!;
 const overlay = document.querySelector<HTMLElement>("#overlay")!;
 const canvas = document.querySelector<HTMLCanvasElement>("#board")!;
 const context = canvas.getContext("2d")!;
+const mixingWorkspace = new MixingWorkspace(game, {
+  addIngredient: (ingredient) => socket.emit("mix-ingredient", ingredient),
+  startTool: (tool) => socket.emit("mix-tool-start", tool),
+  finishTool: (tool) => socket.emit("mix-tool-finish", tool),
+  cancel: () => socket.emit("cancel-mixing")
+});
 
 function profile() {
   return {
@@ -129,13 +138,19 @@ socket.on("joined", ({ code }: { code: string }) => { roomCode = code; sessionSt
 socket.on("state", (next: GameState) => {
   const authoritativePlayer = next.players[token];
   if (authoritativePlayer) {
-    const acknowledgedSequence = authoritativePlayer.moveSequence ?? 0;
-    lastSentMoveSequence = Math.max(lastSentMoveSequence, acknowledgedSequence);
-    if (localPrediction) {
-      const inputActive = Boolean(move.x || move.y);
-      const awaitingAcknowledgement = acknowledgedSequence < localPrediction.moveSequence;
-      if (inputActive || localPrediction.moving || awaitingAcknowledgement) Object.assign(authoritativePlayer, localPrediction);
-      else localPrediction = null;
+    if (next.mixing[token]) {
+      move = { x: 0, y: 0 };
+      localPrediction = null;
+      authoritativePlayer.moving = false;
+    } else {
+      const acknowledgedSequence = authoritativePlayer.moveSequence ?? 0;
+      lastSentMoveSequence = Math.max(lastSentMoveSequence, acknowledgedSequence);
+      if (localPrediction) {
+        const inputActive = Boolean(move.x || move.y);
+        const awaitingAcknowledgement = acknowledgedSequence < localPrediction.moveSequence;
+        if (inputActive || localPrediction.moving || awaitingAcknowledgement) Object.assign(authoritativePlayer, localPrediction);
+        else localPrediction = null;
+      }
     }
   }
   state = next; renderUi();
@@ -159,14 +174,15 @@ function renderUi() {
   document.querySelector("#orders")!.innerHTML = state.orders.length ? state.orders.map((order) => { const recipe = recipeById(order.recipeId); const pct = Math.max(0, order.patience / order.maxPatience * 100); return `<article class="order"><div><b>${recipe.name}</b><small>${order.customer}</small></div><div class="patience"><i style="width:${pct}%"></i></div></article>`; }).join("") : `<p class="empty">No orders yet—enjoy the calm.</p>`;
   document.querySelector("#recipes")!.innerHTML = RECIPES.map((recipe) => `<article class="recipe-line"><i style="background:${recipe.color}"></i><div><b>${recipe.name}</b><small>${recipe.ingredients.map(ingredientMarkup).join("")}</small></div></article>`).join("");
   const hostId = state.hostId;
-  document.querySelector("#crew")!.innerHTML = Object.values(state.players).map((player) => `<article class="crew-line"><span style="color:${player.fur}">🐱</span><div><b>${player.name}${player.id === hostId ? " · host" : ""}</b><small>${player.role} · ${player.connected ? "ready" : "reconnecting…"}</small></div><em>${player.score}🪙</em></article>`).join("");
+  document.querySelector("#crew")!.innerHTML = Object.values(state.players).map((player) => `<article class="crew-line"><span style="color:${player.fur}">🐱</span><div><b>${player.name}${player.id === hostId ? " · host" : ""}</b><small>${player.role} · ${state!.mixing[player.id] ? "mixing a drink" : player.connected ? "ready" : "reconnecting…"}</small></div><em>${player.score}🪙</em></article>`).join("");
   const player = localPlayer();
-  document.querySelector("#carry")!.textContent = player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.join(", ")}` : "Paws empty";
+  document.querySelector("#carry")!.textContent = state.mixing[token] ? `Preparing: ${recipeById(state.mixing[token].recipeId).name}` : player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.join(", ")}` : "Paws empty";
   if (state.message !== lastStateMessage) {
     lastStateMessage = state.message;
     setToast(state.message);
   }
   renderOverlay();
+  mixingWorkspace.render(state, token);
 }
 function renderOverlay() {
   if (!state) return;
@@ -200,7 +216,7 @@ function emitMovement(player: Player, moving: boolean) {
 }
 function movePlayer() {
   const player = localPlayer();
-  if (!state || !player || state.phase !== "shift") return;
+  if (!state || !player || state.phase !== "shift" || state.mixing[token]) return;
   if (!move.x && !move.y) {
     if (player.moving) emitMovement(player, false);
     return;
@@ -208,8 +224,12 @@ function movePlayer() {
   const length = Math.hypot(move.x, move.y); const speed = player.role === "Siamese" ? 3.3 : 2.7;
   player.direction = Math.abs(move.x) > Math.abs(move.y) ? (move.x < 0 ? "left" : "right") : (move.y < 0 ? "up" : "down");
   player.moving = true;
-  player.x = Math.max(32, Math.min(768, player.x + move.x / length * speed));
-  player.y = Math.max(80, Math.min(442, player.y + move.y / length * speed));
+  const resolved = moveWithCounterCollisions(state.tavern, player, {
+    x: player.x + move.x / length * speed,
+    y: player.y + move.y / length * speed
+  });
+  player.x = resolved.x;
+  player.y = resolved.y;
   rememberLocalPrediction(player);
   if (performance.now() - lastMove > 50) {
     emitMovement(player, true);
@@ -218,8 +238,9 @@ function movePlayer() {
 }
 const movementKeys: Record<string, keyof typeof move> = { w: "y", ArrowUp: "y", s: "y", ArrowDown: "y", a: "x", ArrowLeft: "x", d: "x", ArrowRight: "x" };
 window.addEventListener("keydown", (event) => {
-  if (event.key.toLowerCase() === "e" && state?.phase === "shift") { event.preventDefault(); socket.emit("interact"); }
+  if (event.key.toLowerCase() === "e" && state?.phase === "shift" && !state.mixing[token]) { event.preventDefault(); socket.emit("interact"); }
   const axis = movementKeys[event.key]; if (!axis) return;
+  if (state?.mixing[token]) return;
   event.preventDefault(); move[axis] = event.key === "w" || event.key === "ArrowUp" || event.key === "a" || event.key === "ArrowLeft" ? -1 : 1;
 });
 window.addEventListener("keyup", (event) => { const axis = movementKeys[event.key]; if (axis) move[axis] = 0; });
@@ -232,36 +253,6 @@ const tavernPalettes: Record<Theme, { grass: string; wall: string; floor: string
   "Pirate Cat Tavern": { grass: "#315d62", wall: "#174b5c", floor: "#3e7b78", tile: "#559b91", trim: "#f5c16b" }
 };
 type Point = { x: number; y: number };
-type FrameRect = { x: number; y: number; width: number; height: number };
-const PLAYER_FRAMES: Record<FacingDirection, FrameRect[]> = {
-  down: [
-    { x: 137, y: 25, width: 213, height: 268 }, { x: 424, y: 28, width: 203, height: 267 },
-    { x: 717, y: 30, width: 210, height: 265 }, { x: 999, y: 25, width: 210, height: 270 }
-  ],
-  left: [
-    { x: 146, y: 313, width: 210, height: 266 }, { x: 439, y: 314, width: 210, height: 269 },
-    { x: 730, y: 314, width: 203, height: 269 }, { x: 1026, y: 314, width: 208, height: 269 }
-  ],
-  right: [
-    { x: 123, y: 598, width: 197, height: 297 }, { x: 398, y: 597, width: 213, height: 298 },
-    { x: 688, y: 597, width: 211, height: 298 }, { x: 984, y: 597, width: 200, height: 298 }
-  ],
-  up: [
-    { x: 128, y: 895, width: 204, height: 270 }, { x: 398, y: 895, width: 211, height: 267 },
-    { x: 696, y: 895, width: 203, height: 265 }, { x: 991, y: 895, width: 198, height: 270 }
-  ]
-};
-const INGREDIENT_FRAMES: Record<string, FrameRect> = {
-  catnip: { x: 112, y: 91, width: 341, height: 293 },
-  lime: { x: 542, y: 139, width: 261, height: 224 },
-  fizz: { x: 994, y: 57, width: 164, height: 339 },
-  moonmilk: { x: 166, y: 414, width: 223, height: 355 },
-  cream: { x: 542, y: 471, width: 286, height: 284 },
-  stardust: { x: 969, y: 437, width: 195, height: 357 },
-  tuna: { x: 81, y: 867, width: 363, height: 247 },
-  tonic: { x: 567, y: 799, width: 183, height: 331 },
-  kelp: { x: 883, y: 794, width: 367, height: 349 }
-};
 const characterTintCache = new Map<string, HTMLCanvasElement>();
 const fallbackCatTintCache = new Map<string, HTMLCanvasElement>();
 
@@ -296,55 +287,48 @@ function drawFloor(theme: Theme) {
   if (!map.complete || !map.naturalWidth) return drawFallbackFloor(theme);
   context.drawImage(map, 0, 0, canvas.width, canvas.height);
 }
-function drawContainedImage(image: HTMLImageElement | HTMLCanvasElement, point: Point, width: number, height: number) {
-  const sourceWidth = image.width; const sourceHeight = image.height;
-  const scale = Math.min(width / sourceWidth, height / sourceHeight);
-  const drawWidth = sourceWidth * scale; const drawHeight = sourceHeight * scale;
-  context.drawImage(image, point.x - drawWidth / 2, point.y - drawHeight / 2, drawWidth, drawHeight);
-}
-function drawCounter(point: Point, theme: Theme, width = 102, height = 92) {
-  context.save(); context.shadowColor = "rgba(29,14,35,.4)"; context.shadowBlur = 7; context.shadowOffsetY = 5;
-  const counter = counters[theme];
-  if (counter.complete && counter.naturalWidth) drawContainedImage(counter, point, width, height);
-  else if (counterTile.complete && counterTile.naturalWidth) context.drawImage(counterTile, point.x - width / 2, point.y - height / 2, width, height);
-  else { context.fillStyle = "#a98aa5"; context.fillRect(point.x - width / 2, point.y - height / 2, width, height); }
+function drawCounterBlock(station: Station, theme: Theme) {
+  const point = boardPoint(station.x, station.y);
+  const size = GRID_CELL_SIZE * 0.94;
+  const atlas = counterBlocks[theme];
+  context.save();
+  context.shadowColor = "rgba(29,14,35,.42)";
+  context.shadowBlur = 5;
+  context.shadowOffsetY = 4;
+  if (atlas.complete && atlas.naturalWidth) {
+    const frame = atlasFrame(atlas, 4, 2, COUNTER_FRAME_INDEX[station.counterVariant]);
+    context.drawImage(atlas, frame.x, frame.y, frame.width, frame.height, point.x - size / 2, point.y - size / 2, size, size);
+  } else {
+    context.fillStyle = theme === "Haunted Moonlit Inn" ? "#5e527d" : theme === "Pirate Cat Tavern" ? "#2d7778" : "#99583f";
+    context.fillRect(point.x - size / 2, point.y - size / 2, size, size);
+  }
   context.restore();
-}
-function drawIngredientTable(items: Station[], theme: Theme) {
-  if (!items.length) return;
-  const minX = Math.min(...items.map((station) => station.x)), maxX = Math.max(...items.map((station) => station.x));
-  const minY = Math.min(...items.map((station) => station.y)), maxY = Math.max(...items.map((station) => station.y));
-  const center = boardPoint((minX + maxX) / 2, (minY + maxY) / 2);
-  drawCounter(center, theme, 188, 142);
-  drawText("INGREDIENTS", center.x, center.y - 58, "bold 10px system-ui", "#fff5df");
 }
 function drawIngredientSprite(ingredient: string, point: Point) {
   const frame = INGREDIENT_FRAMES[ingredient];
   if (!frame || !ingredientsSpritesheet.complete || !ingredientsSpritesheet.naturalWidth) return false;
-  const scale = Math.min(31 / frame.width, 29 / frame.height);
+  const scale = Math.min(29 / frame.width, 27 / frame.height);
   const width = frame.width * scale; const height = frame.height * scale;
   context.save(); context.shadowColor = "rgba(25,12,30,.55)"; context.shadowBlur = 3; context.shadowOffsetY = 2;
-  context.drawImage(ingredientsSpritesheet, frame.x, frame.y, frame.width, frame.height, point.x - width / 2, point.y + 8 - height, width, height);
+  context.drawImage(ingredientsSpritesheet, frame.x, frame.y, frame.width, frame.height, point.x - width / 2, point.y - 3 - height, width, height);
   context.restore(); return true;
 }
 function drawStation(station: Station, theme: Theme) {
   const point = boardPoint(station.x, station.y);
+  drawCounterBlock(station, theme);
   if (station.ingredient) {
     const color = ingredientColors[station.ingredient];
-    context.fillStyle = "rgba(29,15,35,.35)"; context.beginPath(); context.ellipse(point.x, point.y + 8, 15, 5, 0, 0, Math.PI * 2); context.fill();
+    context.fillStyle = "rgba(29,15,35,.35)"; context.beginPath(); context.ellipse(point.x, point.y - 3, 13, 4, 0, 0, Math.PI * 2); context.fill();
     if (!drawIngredientSprite(station.ingredient, point)) {
-      context.fillStyle = color; context.beginPath(); context.arc(point.x, point.y - 2, 11, 0, Math.PI * 2); context.fill();
+      context.fillStyle = color; context.beginPath(); context.arc(point.x, point.y - 14, 10, 0, Math.PI * 2); context.fill();
       context.strokeStyle = "rgba(49,27,53,.78)"; context.lineWidth = 2; context.stroke();
     }
-    context.fillStyle = "rgba(28,17,35,.76)"; context.fillRect(point.x - 22, point.y + 12, 44, 11);
-    drawText(station.ingredient.toUpperCase(), point.x, point.y + 21, "bold 7px system-ui", "#fff5df"); return;
+    context.fillStyle = "rgba(28,17,35,.82)"; context.fillRect(point.x - 23, point.y + 27, 46, 10);
+    drawText(station.ingredient.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df"); return;
   }
-  drawCounter(point, theme);
-  const icon = station.kind === "mix" ? "🍹" : station.kind === "serve" ? "🔔" : "🪣";
-  drawText(icon, point.x, point.y + 4, "28px sans-serif", "#ffffff");
-  drawText(station.label.toUpperCase(), point.x, point.y + 55, "bold 8px system-ui", "#2b2033");
-  if (station.kind === "mix") { context.fillStyle = "#d9c7ff"; context.fillRect(point.x - 17, point.y - 27, 34, 7); }
-  if (station.kind === "serve") { context.fillStyle = "#7ad1be"; context.fillRect(point.x - 17, point.y - 27, 34, 7); }
+  if (station.kind === "mop") drawText("🪣", point.x, point.y - 7, "19px sans-serif", "#ffffff");
+  context.fillStyle = "rgba(28,17,35,.82)"; context.fillRect(point.x - 31, point.y + 27, 62, 11);
+  drawText(station.label.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df");
 }
 function tintedCharacter(fur: string) {
   const cached = characterTintCache.get(fur);
@@ -397,9 +381,8 @@ function drawPatronNook() {
 function renderBoard() {
   requestAnimationFrame(renderBoard); movePlayer(); context.imageSmoothingEnabled = false;
   const theme = state?.tavern.theme ?? "Cozy Village Pub"; drawFloor(theme); drawPatronNook(); if (!state) return;
-  const ingredients = state.tavern.stations.filter((station) => station.ingredient); drawIngredientTable(ingredients, theme);
   const objects = [
-    ...state.tavern.stations.map((station) => ({ depth: station.y + (station.ingredient ? 1 : 10), draw: () => drawStation(station, theme) })),
+    ...state.tavern.stations.map((station) => ({ depth: station.y + 10, draw: () => drawStation(station, theme) })),
     ...Object.values(state.players).map((player) => ({ depth: player.y + 18, draw: () => drawPlayer(player) }))
   ].sort((left, right) => left.depth - right.depth);
   objects.forEach((object) => object.draw());

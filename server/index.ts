@@ -5,8 +5,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import {
-  type CatRole, type FacingDirection, type GameState, initialState, makeOrder, makeTavern,
-  mulberry32, recipeById, recipeForIngredients, seededUpgrades, type Player
+  createMixingSession, expectedMixingStep, type CatRole, type FacingDirection, type GameState,
+  initialState, makeOrder, makeTavern, MIXING_MAX_MISTAKES, mixingQuality,
+  moveWithCounterCollisions, mulberry32, recipeById, recipeForIngredients, seededUpgrades,
+  toolTimingAccepted, toolTimingQuality, type MixingSession, type MixingTool, type Player
 } from "../shared/game.js";
 
 const app = express();
@@ -36,8 +38,46 @@ function playerFor(socketId: string, state: GameState) {
 }
 function setMessage(state: GameState, message: string) { state.message = message; }
 
+function nextMixingInstruction(session: MixingSession) {
+  const next = expectedMixingStep(session);
+  if (!next) return "Drink complete.";
+  if (next.kind === "ingredient") return `Add ${next.ingredient}.`;
+  return `Hold the ${next.tool} for about ${(next.targetMs / 1000).toFixed(1)} seconds.`;
+}
+
+function failMixing(state: GameState, player: Player, message: string) {
+  delete state.mixing[player.id];
+  player.carrying = [];
+  player.moving = false;
+  setMessage(state, message);
+}
+
+function mixingMistake(state: GameState, player: Player, session: MixingSession, message: string) {
+  session.mistakes += 1;
+  session.toolStartedAt = undefined;
+  if (session.mistakes >= MIXING_MAX_MISTAKES) {
+    failMixing(state, player, `${player.name}'s mixture failed after three mistakes. The ingredients were spoiled.`);
+    return;
+  }
+  session.feedback = `${message} ${MIXING_MAX_MISTAKES - session.mistakes} chances left. ${nextMixingInstruction(session)}`;
+  setMessage(state, `${player.name} made a mixing mistake.`);
+}
+
+function completeMixing(state: GameState, player: Player, session: MixingSession) {
+  const recipe = recipeById(session.recipeId);
+  const quality = mixingQuality(session, recipe);
+  player.drink = recipe.id;
+  player.drinkQuality = quality;
+  player.carrying = [];
+  player.moving = false;
+  delete state.mixing[player.id];
+  const qualityLabel = quality >= 0.88 ? "perfect" : quality >= 0.6 ? "tasty" : "rustic";
+  setMessage(state, `${player.name} made a ${qualityLabel} ${recipe.name}!`);
+}
+
 function startShift(state: GameState) {
   state.phase = "shift";
+  state.mixing = {};
   state.shiftSeconds = Math.max(56, 90 - (state.round - 1) * 8);
   state.orders = [];
   state.hazard = null;
@@ -50,11 +90,13 @@ function spawnOrder(state: GameState) {
   state.orders.push(makeOrder(`order-${counter}`, mulberry32((seeds.get(state.code) ?? 1) + counter * 31)));
 }
 function endShift(state: GameState) {
+  state.mixing = {};
   state.phase = "upgrades";
   state.upgrades = seededUpgrades(seeds.get(state.code) ?? 1, state.round);
   state.message = "Shift complete! The crew chooses one keepsake for the next tavern.";
 }
 function failRun(state: GameState) {
+  state.mixing = {};
   state.phase = "complete";
   state.message = "The tavern cat-astrophe got the better of the crew. Start a fresh run!";
 }
@@ -93,12 +135,17 @@ io.on("connection", (socket) => {
   socket.on("move", (position: { x: number; y: number; direction?: FacingDirection; moving?: boolean; sequence?: number }) => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.phase !== "shift") return;
+    if (state.mixing[player.id]) {
+      if (player.moving) { player.moving = false; broadcast(state); }
+      return;
+    }
     if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
     const lastSequence = player.moveSequence ?? 0;
     const sequence = Number.isSafeInteger(position.sequence) && position.sequence! >= 0 ? position.sequence! : lastSequence + 1;
     if (sequence <= lastSequence) return;
-    player.x = Math.max(32, Math.min(768, position.x));
-    player.y = Math.max(80, Math.min(442, position.y));
+    const resolved = moveWithCounterCollisions(state.tavern, player, position);
+    player.x = resolved.x;
+    player.y = resolved.y;
     if (["down", "left", "right", "up"].includes(position.direction ?? "")) player.direction = position.direction!;
     player.moving = Boolean(position.moving); player.moveSequence = sequence;
     broadcast(state);
@@ -107,6 +154,7 @@ io.on("connection", (socket) => {
   socket.on("interact", () => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.phase !== "shift") return;
+    if (state.mixing[player.id]) return;
     const nearby = state.tavern.stations
       .filter((station) => Math.hypot(station.x - player.x, station.y - player.y) < 74)
       .sort((left, right) => Math.hypot(left.x - player.x, left.y - player.y) - Math.hypot(right.x - player.x, right.y - player.y))[0];
@@ -116,13 +164,24 @@ io.on("connection", (socket) => {
       else {
         const ingredient = nearby.ingredient;
         if (!ingredient) return setMessage(state, "Choose an ingredient from the prep table.");
-        player.carrying.push(ingredient); setMessage(state, `${player.name} selected ${ingredient}.`);
+        if (player.carrying.includes(ingredient)) setMessage(state, `${player.name} already has ${ingredient}. Choose another ingredient.`);
+        else { player.carrying.push(ingredient); setMessage(state, `${player.name} selected ${ingredient}.`); }
       }
     }
     if (nearby.kind === "mix") {
       const recipe = recipeForIngredients(player.carrying);
-      if (!recipe) setMessage(state, "That combination is not on tonight's menu. Try three matching recipe ingredients.");
-      else { player.drink = recipe.id; player.carrying = []; setMessage(state, `${player.name} made a ${recipe.name}!`); }
+      if (!recipe) {
+        if (player.carrying.length >= 3) {
+          player.carrying = [];
+          setMessage(state, "That combination is not on tonight's menu, so it was discarded. Gather a fresh recipe.");
+        } else setMessage(state, "Gather all three recipe ingredients before opening the workbench.");
+      }
+      else if (player.drink) setMessage(state, `${player.name} is already carrying a finished drink.`);
+      else {
+        state.mixing[player.id] = createMixingSession(player.id, recipe.id);
+        player.moving = false;
+        setMessage(state, `${player.name} opened the workbench for ${recipe.name}.`);
+      }
     }
     if (nearby.kind === "serve") {
       if (!player.drink) setMessage(state, "No drink in paw. Mix something first!");
@@ -130,14 +189,85 @@ io.on("connection", (socket) => {
         const index = state.orders.findIndex((order) => order.recipeId === player.drink);
         if (index < 0) setMessage(state, "Nobody ordered that drink—save it for the crew.");
         else {
-          const [order] = state.orders.splice(index, 1); const quality = order.patience / order.maxPatience;
-          const tip = quality > 0.6 ? 8 : 5;
-          state.coins += tip; state.reputation += quality > 0.6 ? 2 : 1; player.score += tip; player.drink = undefined;
+          const [order] = state.orders.splice(index, 1);
+          const patienceQuality = order.patience / order.maxPatience;
+          const preparationQuality = player.drinkQuality ?? 1;
+          const combinedQuality = patienceQuality * 0.6 + preparationQuality * 0.4;
+          const tip = Math.max(3, (patienceQuality > 0.6 ? 8 : 5) + (preparationQuality >= 0.88 ? 2 : preparationQuality < 0.45 ? -2 : 0));
+          state.coins += tip; state.reputation += combinedQuality > 0.6 ? 2 : 1; player.score += tip;
+          player.drink = undefined; player.drinkQuality = undefined;
           setMessage(state, `${order.customer} purrs with delight! +${tip} coins.`);
         }
       }
     }
     if (nearby.kind === "mop" && state.hazard) { state.hazard = null; setMessage(state, `${player.name} cleaned up the hazard. Good kitty!`); }
+    broadcast(state);
+  });
+
+  socket.on("mix-ingredient", (ingredient: string) => {
+    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    if (!state || !player || state.phase !== "shift" || typeof ingredient !== "string") return;
+    const session = state.mixing[player.id];
+    if (!session) return;
+    const expected = expectedMixingStep(session);
+    const availableCount = player.carrying.filter((item) => item === ingredient).length;
+    const usedCount = session.usedIngredients.filter((item) => item === ingredient).length;
+    if (!expected || expected.kind !== "ingredient" || expected.ingredient !== ingredient || usedCount >= availableCount) {
+      mixingMistake(state, player, session, `That ingredient is out of sequence.`);
+    } else {
+      session.usedIngredients.push(ingredient);
+      session.stepIndex += 1;
+      session.qualityPoints += 1;
+      session.feedback = nextMixingInstruction(session);
+      setMessage(state, `${player.name} added ${ingredient}.`);
+    }
+    broadcast(state);
+  });
+
+  socket.on("mix-tool-start", (tool: MixingTool) => {
+    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    if (!state || !player || state.phase !== "shift") return;
+    const session = state.mixing[player.id];
+    if (!session) return;
+    const expected = expectedMixingStep(session);
+    if (!expected || expected.kind !== "timed-tool" || expected.tool !== tool) {
+      mixingMistake(state, player, session, `That is not the next tool.`);
+    } else if (session.toolStartedAt === undefined) {
+      session.toolStartedAt = Date.now();
+      session.feedback = `Keep holding the ${tool}…`;
+    }
+    broadcast(state);
+  });
+
+  socket.on("mix-tool-finish", (tool: MixingTool) => {
+    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    if (!state || !player || state.phase !== "shift") return;
+    const session = state.mixing[player.id];
+    if (!session) return;
+    const expected = expectedMixingStep(session);
+    if (!expected || expected.kind !== "timed-tool" || expected.tool !== tool || session.toolStartedAt === undefined) {
+      mixingMistake(state, player, session, `Start and finish the highlighted tool.`);
+    } else {
+      const elapsedMs = Date.now() - session.toolStartedAt;
+      session.toolStartedAt = undefined;
+      if (!toolTimingAccepted(elapsedMs, expected)) {
+        mixingMistake(state, player, session, elapsedMs < expected.targetMs ? "Released too soon." : "Held too long.");
+      } else {
+        session.qualityPoints += toolTimingQuality(elapsedMs, expected);
+        session.stepIndex += 1;
+        if (expectedMixingStep(session)) session.feedback = nextMixingInstruction(session);
+        else completeMixing(state, player, session);
+      }
+    }
+    broadcast(state);
+  });
+
+  socket.on("cancel-mixing", () => {
+    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    if (!state || !player || !state.mixing[player.id]) return;
+    delete state.mixing[player.id];
+    player.moving = false;
+    setMessage(state, `${player.name} stepped away from the workbench. Ingredients were kept.`);
     broadcast(state);
   });
 
@@ -175,6 +305,13 @@ function joinRoom(socketId: string, state: GameState, payload: { token: string; 
 setInterval(() => {
   for (const state of rooms.values()) {
     if (state.phase !== "shift") continue;
+    const now = Date.now();
+    for (const [playerId, session] of Object.entries(state.mixing)) {
+      if (now < session.deadlineAt) continue;
+      const player = state.players[playerId];
+      if (player) failMixing(state, player, `${player.name} ran out of preparation time. The ingredients were spoiled.`);
+      else delete state.mixing[playerId];
+    }
     state.shiftSeconds -= 1;
     state.orders.forEach((order) => order.patience -= 1);
     const lost = state.orders.filter((order) => order.patience <= 0);

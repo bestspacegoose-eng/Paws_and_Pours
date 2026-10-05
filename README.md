@@ -38,7 +38,9 @@ npm test
 - Shared 2–4 player WebSocket session, with reconnecting players retaining their cat identity in the room.
 - Server-authoritative movement, ingredients, prepared drinks, customer queues, shift clock, coins, reputation, health, hazards, and upgrades.
 - Three complete recipes: Catnip Cooler, Moonmilk Latte, and Tuna Tonic.
-- The shift loop: pantry → mixer → service bell → timed customer rewards → upgrade → a second seeded tavern.
+- The shift loop: ingredient counters → first-person mixing workspace → service bell → timed customer rewards → upgrade → a second seeded tavern.
+- Data-driven mixing sequences with ordered ingredients, server-timed tools, mistakes, cancellation, timeout failure, and drink-quality rewards.
+- Square one-cell counter primitives with shared client/server collision and seven visual variants per tavern theme.
 - Deterministic tavern generation from a server seed, cycling among cozy, haunted, and pirate themes.
 - Responsive desktop/smaller-screen interface with no art-asset download required.
 
@@ -46,20 +48,43 @@ npm test
 
 - `WASD` or arrow keys: move your cat.
 - `E`: interact at a station.
-- Pick up three ingredients at the pantry, combine a matching recipe at the mixer, then serve it at the bell.
+- Pick up three ingredients, open the matching recipe at the mixer, select ingredients in recipe order, then hold and release the highlighted tool near its target duration.
+- The mixing workspace is private to the active player; the shared online shift continues for everyone else.
+- `Cancel` leaves the workspace and keeps the gathered ingredients. Three mistakes or a timeout spoils them.
 - Use the mop bucket to clear a hazard.
 
 ## Architecture
 
 ```
-client/        Browser UI, canvas renderer, keyboard input, Socket.IO client
+client/        Browser UI, tavern canvas, mixing workspace, keyboard input, Socket.IO client
 server/        Express health endpoint and authoritative Socket.IO game server
-shared/        Deterministic generation, recipes, upgrades, and shared types
+shared/        Deterministic grid/collision, recipes, mixing rules, upgrades, and shared types
 tests/         Recipe and procedural-generation rule checks
+docs/          Expansion plan, asset audit, UI roadmap, and verification guide
 ```
 
 The browser never receives an OpenAI API key. If an AI-powered game-master is added, it belongs behind a server endpoint so the real-time simulation can stay deterministic and responsive.
 
+## Verification
+
+Run the pure shared-logic suite and production build:
+
+```bash
+npm test
+npm run build
+```
+
+For the real two-client server smoke test, start the built server in one terminal and run the smoke test in another:
+
+```bash
+npm start
+npm run test:multiplayer
+```
+
+The smoke test creates two Socket.IO clients and verifies gathering, an independently controlled player during mixing, ordered recipe actions, server-owned timing and quality, drink completion, and serving the matching live order.
+
+See [`docs/TESTING.md`](docs/TESTING.md) for manual browser cases and [`docs/EXPANSION_PLAN.md`](docs/EXPANSION_PLAN.md) for the architecture, full sprite inventory, risks, larger roadmap, and future UI plan.
+
 ## Future work
 
-This vertical slice intentionally defers persistent accounts/progression, authoritative collision, mobile touch controls, sound, art/animation assets, spectator handling, rate limiting, persistence, and richer hazards. The data and networking boundaries are organized to support those additions without replacing the core loop.
+This vertical slice still defers persistent accounts/progression, controller and mobile-touch input, sound, spectator handling, rate limiting, persistence, additional preparation verbs, and richer hazards. The data and networking boundaries are organized to support those additions without replacing the core loop.
