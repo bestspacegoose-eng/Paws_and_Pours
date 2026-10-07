@@ -1,7 +1,7 @@
 import { io, type Socket } from "socket.io-client";
 import {
   GRID_CELL_SIZE, moveWithCounterCollisions, RECIPES, recipeById, type CatRole,
-  type GameState, type Player, type Station, type Theme
+  type GameState, type Player, type Recipe, type Station, type Theme
 } from "../shared/game";
 import tabbyPortraitUrl from "./assets/characters/tabby.png";
 import siamesePortraitUrl from "./assets/characters/siamese.png";
@@ -43,6 +43,7 @@ type LocalPrediction = Pick<Player, "x" | "y" | "direction" | "moving" | "moveSe
 let localPrediction: LocalPrediction | null = null;
 let lastSentMoveSequence = 0;
 let recipeBookOpen = false;
+let recipeBookPage = 0;
 
 const catPortraits: Record<CatRole, string> = {
   "Tabby": tabbyPortraitUrl, "Siamese": siamesePortraitUrl, "Maine Coon": maineCoonPortraitUrl,
@@ -52,6 +53,11 @@ const scrapBin = new Image(); scrapBin.src = scrapBinUrl;
 const catBartenderSpritesheet = new Image(); catBartenderSpritesheet.src = catBartenderSpritesheetUrl;
 const ingredientsSpritesheet = new Image(); ingredientsSpritesheet.src = ingredientsSpritesheetUrl;
 const finishedDrinksSpritesheet = new Image(); finishedDrinksSpritesheet.src = finishedDrinksUrl;
+const refreshOpenRecipeBook = () => {
+  if (recipeBookOpen) drawRecipeBookPage(RECIPES[recipeBookPage], recipeBookPage);
+};
+ingredientsSpritesheet.addEventListener("load", refreshOpenRecipeBook);
+finishedDrinksSpritesheet.addEventListener("load", refreshOpenRecipeBook);
 const tavernMapSources: Record<Theme, string> = {
   "Cozy Village Pub": cozyVillagePubUrl,
   "Haunted Moonlit Inn": hauntedMoonlitInnUrl,
@@ -80,12 +86,13 @@ app.innerHTML = `
   <main class="shell">
     <header class="topbar"><a class="brand" href="/"><span>🐾</span> Paws <i>&</i> Pours</a><span class="tag">Co-op roguelike bartending</span></header>
     <section id="menu" class="menu card title-menu">
-      <div class="menu-scene" aria-hidden="true"><span class="scene-window window-left">OPEN</span><span class="scene-window window-right">✦</span><span class="scene-awning"></span><span class="scene-plant plant-left">🌿</span><span class="scene-plant plant-right">🌿</span></div>
-      <div class="menu-logo"><span>PAWS</span><b>&amp; POURS</b><small>night shift</small></div>
-      <div class="menu-layout">
-        <section class="customizer-card"><p class="eyebrow">Set up your bartender</p><div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><label>Accessory<select id="accessory"><option>Bow tie</option><option>Wizard hat</option><option>Pirate patch</option><option>Flower crown</option></select></label></div><p class="label">Choose your bartender</p><div class="roles" id="roles"></div></section>
-        <section class="title-actions" aria-label="Main menu"><p class="eyebrow">Choose a shift</p><div class="actions"><button class="primary" id="solo">Start solo shift</button><button id="create">Create party</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" value="${roomCode}"/><button id="join">Join party</button></div></div><div class="menu-utilities"><button id="continue" class="secondary">Continue solo</button><button id="settings" class="secondary">Settings</button><button id="delete-save" class="secondary danger">Delete solo save</button></div></section>
-        <aside class="hero"><div><p class="eyebrow">A traveling tavern awaits</p><h1>Shake, serve, survive.</h1><p>Team up as charming cat bartenders in a procedurally generated fantasy tavern.</p></div><div class="hero-cat"><img id="hero-character" src="${tabbyPortraitUrl}" alt="Pixel-art tabby bartender" /><span>🍸</span></div></aside>
+      <div class="title-scene">
+        <div class="title-heading"><p class="title-overline">✦ A CO-OP FANTASY TAVERN ✦</p><h1>PAWS <span>&amp;</span> POURS</h1><p class="title-tagline">Shake, serve, survive the night.</p></div>
+        <div class="title-hero"><img id="hero-character" src="${tabbyPortraitUrl}" alt="Pixel-art tabby bartender" /><span class="title-hero-plaque">YOUR BARTENDER</span></div>
+      </div>
+      <div class="title-console">
+        <section class="customizer-card"><div class="title-section-heading"><span>01</span><div><p class="eyebrow">The crew</p><h2>Choose your cat</h2></div></div><div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><label>Accessory<select id="accessory"><option>Bow tie</option><option>Wizard hat</option><option>Pirate patch</option><option>Flower crown</option></select></label></div><div class="roles" id="roles"></div></section>
+        <section class="title-actions" aria-label="Main menu"><div class="title-section-heading"><span>02</span><div><p class="eyebrow">The adventure</p><h2>Begin a shift</h2></div></div><div class="actions"><button class="primary" id="solo">Start solo shift</button><button id="create">Create party</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" value="${roomCode}"/><button id="join">Join party</button></div></div><div class="menu-utilities"><button id="continue" class="secondary">Continue solo</button><button id="settings" class="secondary">Settings</button><button id="delete-save" class="secondary danger">Delete solo save</button></div></section>
       </div>
       <section id="settings-panel" class="settings-panel hidden" aria-label="Game settings">
         <div class="settings-title"><b>Settings</b><button id="close-settings" class="secondary">Close</button></div>
@@ -146,9 +153,9 @@ function refreshSoloActions() {
 }
 applySettings();
 function renderRoles() {
-  document.querySelector("#roles")!.innerHTML = roles.map(({ role, perk }) => `<button class="role ${role === selectedRole ? "selected" : ""}" data-role="${role}"><img class="role-photo" src="${catPortraits[role]}" alt="Pixel-art ${role} bartender" /><b>${role}</b><small>${perk}</small></button>`).join("");
+  document.querySelector("#roles")!.innerHTML = roles.map(({ role, perk }) => `<button class="role ${role === selectedRole ? "selected" : ""}" data-role="${role}" aria-pressed="${role === selectedRole}"><span class="role-portrait"><img class="role-photo" src="${catPortraits[role]}" alt="" /></span><b>${role}</b><small>${perk}</small></button>`).join("");
   const heroCharacter = document.querySelector<HTMLImageElement>("#hero-character")!;
-  heroCharacter.src = catPortraits[selectedRole]; heroCharacter.alt = `Pixel-art ${selectedRole} bartender`;
+  heroCharacter.src = catPortraits[selectedRole]; heroCharacter.alt = `Pixel-art ${selectedRole} bartender`; heroCharacter.dataset.role = selectedRole;
   document.querySelectorAll<HTMLButtonElement>(".role").forEach((button) => button.onclick = () => { selectedRole = button.dataset.role as CatRole; renderRoles(); });
 }
 renderRoles();
@@ -169,7 +176,11 @@ document.querySelector<HTMLButtonElement>("#solo")!.onclick = () => { sessionMod
 document.querySelector<HTMLButtonElement>("#create")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create"); };
 document.querySelector<HTMLButtonElement>("#join")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("join"); };
 document.querySelector<HTMLButtonElement>("#leave")!.onclick = () => { sessionStorage.removeItem("paws-pours-room"); location.reload(); };
-document.querySelector<HTMLButtonElement>("#recipe-book")!.onclick = () => { recipeBookOpen = !recipeBookOpen; renderOverlay(); };
+document.querySelector<HTMLButtonElement>("#recipe-book")!.onclick = () => {
+  recipeBookOpen = !recipeBookOpen;
+  if (recipeBookOpen) recipeBookPage = 0;
+  renderOverlay();
+};
 document.querySelector<HTMLButtonElement>("#settings")!.onclick = () => { syncSettingsForm(); document.querySelector("#settings-panel")!.classList.remove("hidden"); };
 document.querySelector<HTMLButtonElement>("#close-settings")!.onclick = () => document.querySelector("#settings-panel")!.classList.add("hidden");
 document.querySelector<HTMLButtonElement>("#fullscreen")!.onclick = () => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.(); };
@@ -229,7 +240,6 @@ socket.on("disconnect", () => setToast("Reconnecting to the tavern…"));
 function setToast(message: string) { const element = document.querySelector("#toast")!; element.textContent = message; element.classList.add("show"); window.setTimeout(() => element.classList.remove("show"), 2800); }
 function localPlayer() { return state?.players[token]; }
 function time(seconds: number) { return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; }
-function ingredientMarkup(ingredient: string) { return `<span class="ingredient">${ingredient}</span>`; }
 function renderUi() {
   if (!state) return;
   document.querySelector("#theme")!.textContent = state.tavern.theme.toUpperCase();
@@ -251,8 +261,12 @@ function renderOverlay() {
   if (!state) return;
   if (recipeBookOpen && state.phase === "shift") {
     overlay.classList.remove("hidden");
-    overlay.innerHTML = `<div class="modal card recipe-book"><p class="eyebrow">BARTENDER'S RECIPE BOOK</p><h2>Tonight's recipes</h2><div class="recipe-book-list">${RECIPES.map((recipe) => `<article class="recipe-line"><i style="background:${recipe.color}"></i><div><b>${recipe.name}</b><small>${recipe.ingredients.map(ingredientMarkup).join("")}</small></div></article>`).join("")}</div><button class="primary" id="close-book">Return to tavern</button></div>`;
+    const recipe = RECIPES[recipeBookPage];
+    overlay.innerHTML = `<section class="recipe-book" aria-label="Bartender's recipe book"><canvas id="recipe-book-art" class="recipe-book-art" width="1000" height="590" aria-label="Illustrated recipe page for ${recipe.name}"></canvas><div class="recipe-book-controls"><button class="recipe-book-page" id="previous-recipe" ${recipeBookPage === 0 ? "disabled" : ""}>← Previous</button><span aria-live="polite">Recipe ${recipeBookPage + 1} of ${RECIPES.length}</span><button class="recipe-book-page" id="next-recipe" ${recipeBookPage === RECIPES.length - 1 ? "disabled" : ""}>Next →</button></div><button class="recipe-book-close" id="close-book">Close recipe book</button></section>`;
+    document.querySelector<HTMLButtonElement>("#previous-recipe")!.onclick = () => { recipeBookPage -= 1; renderOverlay(); };
+    document.querySelector<HTMLButtonElement>("#next-recipe")!.onclick = () => { recipeBookPage += 1; renderOverlay(); };
     document.querySelector<HTMLButtonElement>("#close-book")!.onclick = () => { recipeBookOpen = false; renderOverlay(); };
+    window.requestAnimationFrame(() => drawRecipeBookPage(recipe, recipeBookPage));
   } else if (state.phase === "lobby") {
     overlay.classList.remove("hidden");
     const isHost = state.hostId === token;
@@ -481,6 +495,82 @@ function drawFinishedDrink(recipeId: string, x: number, y: number, state: "idle"
   context.save(); context.beginPath(); context.ellipse(x, y, size * .38, size * .44, 0, 0, Math.PI * 2); context.clip();
   context.drawImage(finishedDrinksSpritesheet, frame.x, frame.y, frame.width, frame.height, x - size / 2, y - size / 2, size, size);
   context.restore();
+}
+function drawRecipeBookPage(recipe: Recipe, page: number) {
+  const bookCanvas = document.querySelector<HTMLCanvasElement>("#recipe-book-art");
+  const bookContext = bookCanvas?.getContext("2d");
+  if (!bookCanvas || !bookContext) return;
+  const { width, height } = bookCanvas;
+  bookContext.clearRect(0, 0, width, height);
+
+  // A drawn open book keeps the recipe UI in the same hand-crafted world as the tavern.
+  bookContext.fillStyle = "rgba(10, 6, 14, .5)";
+  bookContext.fillRect(28, 34, width - 56, height - 46);
+  const leftPage = bookContext.createLinearGradient(48, 0, 490, height);
+  leftPage.addColorStop(0, "#f3dba8"); leftPage.addColorStop(1, "#d6a96f");
+  const rightPage = bookContext.createLinearGradient(510, 0, 952, height);
+  rightPage.addColorStop(0, "#d8ae73"); rightPage.addColorStop(1, "#f4dca8");
+  bookContext.fillStyle = leftPage; bookContext.fillRect(48, 20, 448, 530);
+  bookContext.fillStyle = rightPage; bookContext.fillRect(504, 20, 448, 530);
+  bookContext.fillStyle = "#5a3342"; bookContext.fillRect(490, 20, 20, 530);
+  bookContext.fillStyle = "#2a182a";
+  [496, 501, 506].forEach((x) => bookContext.fillRect(x, 27, 2, 516));
+  bookContext.strokeStyle = "rgba(91, 52, 53, .24)";
+  bookContext.lineWidth = 2;
+  for (let y = 92; y < 524; y += 29) {
+    bookContext.beginPath(); bookContext.moveTo(75, y); bookContext.lineTo(469, y); bookContext.stroke();
+    bookContext.beginPath(); bookContext.moveTo(536, y); bookContext.lineTo(925, y); bookContext.stroke();
+  }
+  bookContext.strokeStyle = "#734348"; bookContext.lineWidth = 6;
+  bookContext.strokeRect(55, 27, 434, 516); bookContext.strokeRect(511, 27, 434, 516);
+  bookContext.fillStyle = "#543247";
+  bookContext.font = "700 20px 'DM Mono', monospace";
+  bookContext.fillText("PAWS & POURS", 83, 72);
+  bookContext.font = "600 15px 'DM Mono', monospace";
+  bookContext.fillText(`RECIPE ${String(page + 1).padStart(2, "0")}  /  ${String(RECIPES.length).padStart(2, "0")}`, 83, 112);
+  bookContext.fillStyle = "#39223a";
+  bookContext.font = "700 46px Fraunces, Georgia, serif";
+  bookContext.fillText(recipe.name, 82, 178);
+  bookContext.fillStyle = recipe.color;
+  bookContext.fillRect(84, 198, 305, 9);
+  bookContext.fillStyle = "#543247";
+  bookContext.font = "700 19px 'DM Mono', monospace";
+  bookContext.fillText("MIX THESE THREE", 84, 254);
+  bookContext.font = "600 14px 'DM Mono', monospace";
+  bookContext.fillText("Gather in order · shake · serve", 84, 287);
+  bookContext.fillText("Illustrated ingredient notes", 84, 315);
+  bookContext.fillStyle = "rgba(92, 54, 53, .28)";
+  bookContext.fillRect(84, 347, 300, 4);
+  bookContext.fillText("A house special for thirsty patrons.", 84, 382);
+
+  bookContext.fillStyle = "#543247";
+  bookContext.font = "700 19px 'DM Mono', monospace";
+  bookContext.fillText("FINISHED DRINK", 548, 70);
+  bookContext.fillStyle = recipe.color;
+  bookContext.beginPath(); bookContext.arc(736, 222, 126, 0, Math.PI * 2); bookContext.fill();
+  bookContext.fillStyle = "rgba(255, 248, 223, .6)";
+  bookContext.beginPath(); bookContext.arc(736, 222, 112, 0, Math.PI * 2); bookContext.fill();
+  const drinkFrameIndex = FINISHED_DRINK_FRAME_INDEX[recipe.id]?.complete;
+  if (drinkFrameIndex !== undefined && finishedDrinksSpritesheet.complete && finishedDrinksSpritesheet.naturalWidth) {
+    const frame = atlasFrame(finishedDrinksSpritesheet, 3, 2, drinkFrameIndex);
+    bookContext.drawImage(finishedDrinksSpritesheet, frame.x, frame.y, frame.width, frame.height, 621, 107, 230, 230);
+  }
+  bookContext.fillStyle = "#543247";
+  bookContext.font = "700 17px 'DM Mono', monospace";
+  bookContext.fillText("INGREDIENTS", 548, 379);
+  recipe.ingredients.forEach((ingredient, index) => {
+    const x = 598 + index * 145;
+    const frame = INGREDIENT_FRAMES[ingredient];
+    bookContext.fillStyle = "rgba(255, 248, 223, .5)";
+    bookContext.beginPath(); bookContext.arc(x, 456, 57, 0, Math.PI * 2); bookContext.fill();
+    bookContext.fillStyle = "#543247";
+    bookContext.font = "700 18px 'DM Mono', monospace";
+    bookContext.fillText(String(index + 1), x - 5, 529);
+    if (!frame || !ingredientsSpritesheet.complete || !ingredientsSpritesheet.naturalWidth) return;
+    const scale = Math.min(96 / frame.width, 104 / frame.height);
+    const imageWidth = frame.width * scale; const imageHeight = frame.height * scale;
+    bookContext.drawImage(ingredientsSpritesheet, frame.x, frame.y, frame.width, frame.height, x - imageWidth / 2, 454 - imageHeight / 2, imageWidth, imageHeight);
+  });
 }
 function drawOrderWindow() {
   context.fillStyle = "#f1bd76"; context.fillRect(48, 397, 225, 6); drawText("ORDER WINDOW", 160, 418, "bold 9px system-ui", "#fff2d0");

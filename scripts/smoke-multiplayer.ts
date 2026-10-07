@@ -68,7 +68,9 @@ async function main() {
       host.emit("move", { x, y, direction: "down", moving: true, sequence: moveSequence });
       await waitForState(host, () => hostState, (state) => state.players[hostToken].moveSequence >= moveSequence);
     };
-    const laneX = 540;
+    // This lane sits between the lower pantry row and the mixer, allowing the
+    // scripted route to reach either pantry row without crossing a counter.
+    const laneX = 360;
     const approachStation = async (station: Station) => {
       // Every station now sits squarely on the visible floor. Approach from the
       // clear lower lane, then move up to the tile below the one-cell footprint.
@@ -77,7 +79,7 @@ async function main() {
       // lane before approaching a station from below.
       const routeY = 430;
       await moveHost(laneX, routeY);
-      await moveHost(station.x, routeY);
+      await moveHost(laneX, approachY);
       await moveHost(station.x, approachY);
     };
 
