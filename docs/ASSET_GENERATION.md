@@ -13,6 +13,20 @@ All assets below were created with the built-in OpenAI image-generation tool and
 
 ## Prompt set
 
+### `characters/*.png`
+
+Create five transparent, full-body pixel-art bartender-cat role portraits in
+the existing warm tavern palette. The presets are tabby with forehead/tail
+stripes, Siamese with dark points, fluffy Maine Coon, charcoal-black cat with
+violet highlights, and a three-patch calico. These are menu and selection art;
+runtime fur colour and accessories are still rendered from player state.
+
+### `props/scrap-bin.png`
+
+Create a standalone 2.5D pixel-art metal scrap bin with an open lid and a few
+colourful scraps visible inside. It must be recognisable as a trash bin rather
+than a countertop, with transparent background and no text or UI.
+
 ### `mixing-workspace.png`
 
 Create a polished first-person 2D fantasy-tavern preparation workbench matching the three existing tavern backgrounds and current sprite scale. Use a straight-on approximately 5:3 composition, shelves in the upper background, and a broad wooden table with an empty inset mat and clear ingredient/tool zones. Keep the palette theme-neutral: dark plum, walnut, terracotta, cream, muted violet, and brass. Background only; no characters, paws, ingredients, tools, glassware, labels, or UI.
@@ -42,4 +56,6 @@ Preserve the Cozy atlas layout and proportions, but restyle it from the existing
 - `mixing-workspace.png`: 1619 × 971 RGB PNG.
 - Tool and effect atlases: 1536 × 1024 RGBA PNGs.
 - Themed counter atlases: 1774 × 887 RGBA PNGs.
+- Role portraits and Scrap Bin are transparent PNGs cropped and downsampled
+  for browser delivery.
 - All files are imported through Vite and sliced by `client/sprite-frames.ts` or equal atlas cells at runtime.

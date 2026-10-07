@@ -20,7 +20,7 @@ body:has(.title-menu){background:linear-gradient(#9ad8e8 0 32%,#ffc2bc 32% 64%,#
 /* Title-menu settings use browser-local preferences and do not touch room state. */
 :root{--game-scale:1}.shell{zoom:var(--game-scale)}.secondary{background:#3c2945;color:#ffe7c2;padding:8px 12px}.danger{color:#ffc0b3}.menu-utilities{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.settings-panel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-top:18px;padding:16px;border:1px solid rgba(255,245,223,.16);border-radius:14px;background:#261b30}.settings-title{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;color:#ffe2b6}.settings-panel .toggle{display:flex;grid-template-columns:auto 1fr;align-items:center;gap:8px}.settings-panel .toggle input{width:auto}body[data-pixel-perfect="false"] canvas{image-rendering:auto}body[data-reduced-motion="true"] *,body[data-reduced-motion="true"] *::before,body[data-reduced-motion="true"] *::after{animation-duration:.01ms!important;transition-duration:.01ms!important}@media(max-width:720px){.settings-panel{grid-template-columns:1fr}}
 .role{grid-template-rows:48px auto auto}
-.role-photo{width:46px;height:46px;object-fit:cover;border-radius:9px;image-rendering:pixelated;box-shadow:0 3px 0 rgba(0,0,0,.23)}
+.role-photo{width:46px;height:46px;object-fit:contain;border-radius:9px;image-rendering:pixelated;filter:drop-shadow(0 3px 0 rgba(0,0,0,.23))}
 
 /* The tavern is the game surface: controls float above it instead of extending the page. */
 .game:not(.hidden){position:fixed;inset:0;z-index:20;display:block;overflow:hidden;background:#110d16}

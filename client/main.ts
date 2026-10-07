@@ -3,14 +3,12 @@ import {
   GRID_CELL_SIZE, moveWithCounterCollisions, RECIPES, recipeById, type CatRole,
   type GameState, type Player, type Station, type Theme
 } from "../shared/game";
-import tabbyCutoutUrl from "./assets/cats/tabby-cutout.png";
-import tabbyUrl from "./assets/cats/tabby.png";
-import siameseUrl from "./assets/cats/siamese.png";
-import maineCoonUrl from "./assets/cats/maine-coon.png";
-import blackCatUrl from "./assets/cats/black-cat.png";
-import calicoUrl from "./assets/cats/calico.png";
-import catBaseUrl from "./assets/tilemap/cat-base.png";
-import catEyesUrl from "./assets/tilemap/cat-eyes.png";
+import tabbyPortraitUrl from "./assets/characters/tabby.png";
+import siamesePortraitUrl from "./assets/characters/siamese.png";
+import maineCoonPortraitUrl from "./assets/characters/maine-coon.png";
+import blackCatPortraitUrl from "./assets/characters/black-cat.png";
+import calicoPortraitUrl from "./assets/characters/calico.png";
+import scrapBinUrl from "./assets/props/scrap-bin.png";
 import cozyVillagePubUrl from "./assets/tilemap/cozy-village-pub.png";
 import hauntedMoonlitInnUrl from "./assets/tilemap/haunted-moonlit-inn.png";
 import pirateCatTavernUrl from "./assets/tilemap/pirate-cat-tavern.png";
@@ -35,7 +33,6 @@ sessionStorage.setItem(tokenKey, token);
 const socket: Socket = io(SERVER_URL, { autoConnect: false, reconnection: true });
 let state: GameState | null = null;
 let roomCode = sessionStorage.getItem("paws-pours-room") ?? "";
-let toast = "Welcome, bartender. Invite a friend with a room code!";
 let selectedRole: CatRole = "Tabby";
 let sessionMode: "single" | "multiplayer" = sessionStorage.getItem("paws-pours-mode") === "single" ? "single" : "multiplayer";
 let settings: DisplayAudioSettings = loadSettings();
@@ -47,12 +44,11 @@ let localPrediction: LocalPrediction | null = null;
 let lastSentMoveSequence = 0;
 let recipeBookOpen = false;
 
-const catPhotos: Record<CatRole, string> = {
-  "Tabby": tabbyUrl, "Siamese": siameseUrl, "Maine Coon": maineCoonUrl,
-  "Black Cat": blackCatUrl, "Calico": calicoUrl
+const catPortraits: Record<CatRole, string> = {
+  "Tabby": tabbyPortraitUrl, "Siamese": siamesePortraitUrl, "Maine Coon": maineCoonPortraitUrl,
+  "Black Cat": blackCatPortraitUrl, "Calico": calicoPortraitUrl
 };
-const catBase = new Image(); catBase.src = catBaseUrl;
-const catEyes = new Image(); catEyes.src = catEyesUrl;
+const scrapBin = new Image(); scrapBin.src = scrapBinUrl;
 const catBartenderSpritesheet = new Image(); catBartenderSpritesheet.src = catBartenderSpritesheetUrl;
 const ingredientsSpritesheet = new Image(); ingredientsSpritesheet.src = ingredientsSpritesheetUrl;
 const finishedDrinksSpritesheet = new Image(); finishedDrinksSpritesheet.src = finishedDrinksUrl;
@@ -89,7 +85,7 @@ app.innerHTML = `
       <div class="menu-layout">
         <section class="customizer-card"><p class="eyebrow">Set up your bartender</p><div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><label>Accessory<select id="accessory"><option>Bow tie</option><option>Wizard hat</option><option>Pirate patch</option><option>Flower crown</option></select></label></div><p class="label">Choose your bartender</p><div class="roles" id="roles"></div></section>
         <section class="title-actions" aria-label="Main menu"><p class="eyebrow">Choose a shift</p><div class="actions"><button class="primary" id="solo">Start solo shift</button><button id="create">Create party</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" value="${roomCode}"/><button id="join">Join party</button></div></div><div class="menu-utilities"><button id="continue" class="secondary">Continue solo</button><button id="settings" class="secondary">Settings</button><button id="delete-save" class="secondary danger">Delete solo save</button></div></section>
-        <aside class="hero"><div><p class="eyebrow">A traveling tavern awaits</p><h1>Shake, serve, survive.</h1><p>Team up as charming cat bartenders in a procedurally generated fantasy tavern.</p></div><div class="hero-cat"><img src="${tabbyCutoutUrl}" alt="Pixelated orange tabby bartender" /><span>🍸</span></div></aside>
+        <aside class="hero"><div><p class="eyebrow">A traveling tavern awaits</p><h1>Shake, serve, survive.</h1><p>Team up as charming cat bartenders in a procedurally generated fantasy tavern.</p></div><div class="hero-cat"><img id="hero-character" src="${tabbyPortraitUrl}" alt="Pixel-art tabby bartender" /><span>🍸</span></div></aside>
       </div>
       <section id="settings-panel" class="settings-panel hidden" aria-label="Game settings">
         <div class="settings-title"><b>Settings</b><button id="close-settings" class="secondary">Close</button></div>
@@ -150,7 +146,9 @@ function refreshSoloActions() {
 }
 applySettings();
 function renderRoles() {
-  document.querySelector("#roles")!.innerHTML = roles.map(({ role, perk }) => `<button class="role ${role === selectedRole ? "selected" : ""}" data-role="${role}"><img class="role-photo" src="${catPhotos[role]}" alt="${role} cat" /><b>${role}</b><small>${perk}</small></button>`).join("");
+  document.querySelector("#roles")!.innerHTML = roles.map(({ role, perk }) => `<button class="role ${role === selectedRole ? "selected" : ""}" data-role="${role}"><img class="role-photo" src="${catPortraits[role]}" alt="Pixel-art ${role} bartender" /><b>${role}</b><small>${perk}</small></button>`).join("");
+  const heroCharacter = document.querySelector<HTMLImageElement>("#hero-character")!;
+  heroCharacter.src = catPortraits[selectedRole]; heroCharacter.alt = `Pixel-art ${selectedRole} bartender`;
   document.querySelectorAll<HTMLButtonElement>(".role").forEach((button) => button.onclick = () => { selectedRole = button.dataset.role as CatRole; renderRoles(); });
 }
 renderRoles();
@@ -228,7 +226,7 @@ socket.on("error-message", (message: string) => setToast(message));
 socket.on("connect", () => { if (roomCode && state) socket.emit("join-room", { ...profile(), code: roomCode }); });
 socket.on("disconnect", () => setToast("Reconnecting to the tavern…"));
 
-function setToast(message: string) { toast = message; const element = document.querySelector("#toast")!; element.textContent = message; element.classList.add("show"); window.setTimeout(() => element.classList.remove("show"), 2800); }
+function setToast(message: string) { const element = document.querySelector("#toast")!; element.textContent = message; element.classList.add("show"); window.setTimeout(() => element.classList.remove("show"), 2800); }
 function localPlayer() { return state?.players[token]; }
 function time(seconds: number) { return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; }
 function ingredientMarkup(ingredient: string) { return `<span class="ingredient">${ingredient}</span>`; }
@@ -323,7 +321,6 @@ const tavernPalettes: Record<Theme, { grass: string; wall: string; floor: string
 };
 type Point = { x: number; y: number };
 const characterTintCache = new Map<string, HTMLCanvasElement>();
-const fallbackCatTintCache = new Map<string, HTMLCanvasElement>();
 
 function boardPoint(x: number, y: number): Point {
   // The background is pixel art. Integer screen coordinates keep each counter's
@@ -391,6 +388,11 @@ function drawStation(station: Station, theme: Theme) {
     context.save(); context.strokeStyle = "#f4d278"; context.lineWidth = 2;
     context.setLineDash([3, 3]); context.beginPath(); context.ellipse(point.x, point.y + 16, 30, 10, 0, 0, Math.PI * 2); context.stroke(); context.restore();
   }
+  if (station.kind === "trash") {
+    drawScrapBin(point);
+    context.fillStyle = "rgba(28,17,35,.82)"; context.fillRect(point.x - 31, point.y + 27, 62, 11);
+    drawText(station.label.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df"); return;
+  }
   drawCounterBlock(station, theme);
   if (station.ingredient) {
     const color = ingredientColors[station.ingredient];
@@ -403,9 +405,18 @@ function drawStation(station: Station, theme: Theme) {
     drawText(station.ingredient.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df"); return;
   }
   if (station.kind === "mop") drawText("🪣", point.x, point.y - 7, "19px sans-serif", "#ffffff");
-  if (station.kind === "trash") drawText("🗑️", point.x, point.y - 7, "18px sans-serif", "#ffffff");
   context.fillStyle = "rgba(28,17,35,.82)"; context.fillRect(point.x - 31, point.y + 27, 62, 11);
   drawText(station.label.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df");
+}
+function drawScrapBin(point: Point) {
+  context.save(); context.shadowColor = "rgba(29,14,35,.46)"; context.shadowBlur = 4; context.shadowOffsetY = 3;
+  if (scrapBin.complete && scrapBin.naturalWidth) context.drawImage(scrapBin, point.x - 29, point.y - 49, 58, 56);
+  else {
+    context.fillStyle = "#6f5367"; context.fillRect(point.x - 16, point.y - 28, 32, 35);
+    context.fillStyle = "#d59850"; context.fillRect(point.x - 19, point.y - 31, 38, 6);
+    context.fillStyle = "#352442"; context.fillRect(point.x - 10, point.y - 21, 20, 15);
+  }
+  context.restore();
 }
 function tintedCharacter(fur: string) {
   const cached = characterTintCache.get(fur);
@@ -418,15 +429,31 @@ function tintedCharacter(fur: string) {
   layer.globalCompositeOperation = "source-over"; layer.globalAlpha = .35; layer.drawImage(catBartenderSpritesheet, 0, 0);
   layer.globalAlpha = 1; characterTintCache.set(fur, result); return result;
 }
-function tintedFallbackCat(fur: string) {
-  const cached = fallbackCatTintCache.get(fur);
-  if (cached) return cached;
-  const result = document.createElement("canvas"); result.width = catBase.naturalWidth || 305; result.height = catBase.naturalHeight || 460;
-  const layer = result.getContext("2d")!;
-  layer.imageSmoothingEnabled = false; layer.drawImage(catBase, 0, 0);
-  layer.globalCompositeOperation = "source-atop"; layer.globalAlpha = .83; layer.fillStyle = fur; layer.fillRect(0, 0, result.width, result.height);
-  layer.globalAlpha = 1; layer.globalCompositeOperation = "source-over"; layer.drawImage(catEyes, 0, 0);
-  fallbackCatTintCache.set(fur, result); return result;
+function drawAccessory(accessory: string, point: Point, direction: Player["direction"]) {
+  context.save(); context.imageSmoothingEnabled = false;
+  if (accessory === "Bow tie") {
+    context.fillStyle = "#d95f77";
+    context.beginPath(); context.moveTo(point.x - 13, point.y - 12); context.lineTo(point.x - 2, point.y - 18); context.lineTo(point.x - 2, point.y - 6); context.closePath(); context.fill();
+    context.beginPath(); context.moveTo(point.x + 13, point.y - 12); context.lineTo(point.x + 2, point.y - 18); context.lineTo(point.x + 2, point.y - 6); context.closePath(); context.fill();
+    context.fillStyle = "#ffd46b"; context.fillRect(point.x - 3, point.y - 15, 6, 7);
+  } else if (accessory === "Wizard hat") {
+    context.fillStyle = "#3f356e"; context.fillRect(point.x - 21, point.y - 47, 42, 5);
+    context.beginPath(); context.moveTo(point.x - 13, point.y - 48); context.lineTo(point.x + 4, point.y - 75); context.lineTo(point.x + 15, point.y - 48); context.closePath(); context.fill();
+    context.fillStyle = "#a68bdd"; context.fillRect(point.x - 8, point.y - 55, 20, 4);
+    context.fillStyle = "#fff1ad"; context.fillRect(point.x + 1, point.y - 66, 4, 4);
+  } else if (accessory === "Pirate patch") {
+    const eyeX = direction === "left" ? point.x - 8 : direction === "right" ? point.x + 8 : point.x + 7;
+    context.strokeStyle = "#2d2138"; context.lineWidth = 2; context.beginPath(); context.moveTo(eyeX - 8, point.y - 38); context.lineTo(eyeX + 8, point.y - 29); context.stroke();
+    context.fillStyle = "#2d2138"; context.fillRect(eyeX - 5, point.y - 36, 10, 8);
+    context.fillStyle = "#caa6ed"; context.fillRect(eyeX - 1, point.y - 35, 2, 2);
+  } else if (accessory === "Flower crown") {
+    context.fillStyle = "#65a862"; context.fillRect(point.x - 17, point.y - 46, 34, 3);
+    [[-12, "#f09ab8"], [-4, "#ffd36b"], [4, "#b99be5"], [12, "#f09ab8"]].forEach(([offset, color]) => {
+      context.fillStyle = color as string; context.fillRect(point.x + Number(offset) - 3, point.y - 51, 6, 6);
+      context.fillStyle = "#fff4c9"; context.fillRect(point.x + Number(offset) - 1, point.y - 49, 2, 2);
+    });
+  }
+  context.restore();
 }
 function drawPlayer(player: Player) {
   const point = boardPoint(player.x, player.y);
@@ -440,8 +467,8 @@ function drawPlayer(player: Player) {
     const width = frame.width * scale; const height = frame.height * scale;
     context.drawImage(tintedCharacter(player.fur), frame.x, frame.y, frame.width, frame.height, point.x - width / 2, point.y + 19 - height, width, height);
   }
-  else if (catBase.complete && catBase.naturalWidth) context.drawImage(tintedFallbackCat(player.fur), point.x - 23, point.y - 48, 46, 69);
   else { context.fillStyle = player.fur; context.fillRect(point.x - 17, point.y - 40, 34, 52); }
+  drawAccessory(player.accessory, point, player.direction ?? "down");
   drawText(player.name, point.x, point.y + 36, "bold 10px system-ui", "#fff7e9");
   if (!player.connected) drawText("reconnecting…", point.x, point.y + 48, "9px system-ui", "#f07777");
   if (player.drink) drawFinishedDrink(player.drink, point.x + 24, point.y - 36, "idle");
