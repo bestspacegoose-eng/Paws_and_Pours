@@ -21,6 +21,7 @@ import finishedDrinksUrl from "./assets/tilemap/finished-drinks-spritesheet.png"
 import { MixingWorkspace } from "./mixing-workspace";
 import { atlasFrame, COUNTER_FRAME_INDEX, FINISHED_DRINK_FRAME_INDEX, INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
 import { clearSoloSave, defaultSettings, loadSettings, loadSoloSave, saveSettings, saveSoloSave, type DisplayAudioSettings } from "./preferences";
+import { drawTitlePortrait, TITLE_ACCESSORIES, type TitleAccessory } from "./title-portrait";
 import "./style.css";
 
 // Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
@@ -34,6 +35,7 @@ const socket: Socket = io(SERVER_URL, { autoConnect: false, reconnection: true }
 let state: GameState | null = null;
 let roomCode = sessionStorage.getItem("paws-pours-room") ?? "";
 let selectedRole: CatRole = "Tabby";
+let selectedAccessory: TitleAccessory = "Bow tie";
 let sessionMode: "single" | "multiplayer" = sessionStorage.getItem("paws-pours-mode") === "single" ? "single" : "multiplayer";
 let settings: DisplayAudioSettings = loadSettings();
 let move = { x: 0, y: 0 };
@@ -49,6 +51,10 @@ const catPortraits: Record<CatRole, string> = {
   "Tabby": tabbyPortraitUrl, "Siamese": siamesePortraitUrl, "Maine Coon": maineCoonPortraitUrl,
   "Black Cat": blackCatPortraitUrl, "Calico": calicoPortraitUrl
 };
+const titlePortraitImages = Object.fromEntries(Object.entries(catPortraits).map(([role, source]) => {
+  const image = new Image(); image.addEventListener("load", renderTitlePreviews); image.src = source;
+  return [role, image];
+})) as Record<CatRole, HTMLImageElement>;
 const scrapBin = new Image(); scrapBin.src = scrapBinUrl;
 const catBartenderSpritesheet = new Image(); catBartenderSpritesheet.src = catBartenderSpritesheetUrl;
 const ingredientsSpritesheet = new Image(); ingredientsSpritesheet.src = ingredientsSpritesheetUrl;
@@ -88,10 +94,10 @@ app.innerHTML = `
     <section id="menu" class="menu card title-menu">
       <div class="title-scene">
         <div class="title-heading"><p class="title-overline">✦ A CO-OP FANTASY TAVERN ✦</p><h1>PAWS <span>&amp;</span> POURS</h1><p class="title-tagline">Shake, serve, survive the night.</p></div>
-        <div class="title-hero"><img id="hero-character" src="${tabbyPortraitUrl}" alt="Pixel-art tabby bartender" /><span class="title-hero-plaque">YOUR BARTENDER</span></div>
+        <div class="title-hero"><canvas id="hero-character" width="192" height="192" role="img" aria-label="Pixel-art Tabby bartender"></canvas><span class="title-hero-plaque">YOUR BARTENDER</span></div>
       </div>
       <div class="title-console">
-        <section class="customizer-card"><div class="title-section-heading"><span>01</span><div><p class="eyebrow">The crew</p><h2>Choose your cat</h2></div></div><div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><label>Accessory<select id="accessory"><option>Bow tie</option><option>Wizard hat</option><option>Pirate patch</option><option>Flower crown</option></select></label></div><div class="roles" id="roles"></div></section>
+        <section class="customizer-card"><div class="title-section-heading"><span>01</span><div><p class="eyebrow">The crew</p><h2>Choose your cat</h2></div></div><div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><div class="accessory-picker" role="group" aria-label="Accessory"><span>Accessory</span><div class="accessory-controls"><button type="button" id="accessory-prev" aria-label="Previous accessory">&#x276E;</button><output id="accessory-name" aria-live="polite">Bow tie</output><button type="button" id="accessory-next" aria-label="Next accessory">&#x276F;</button></div></div></div><div class="roles" id="roles"></div></section>
         <section class="title-actions" aria-label="Main menu"><div class="title-section-heading"><span>02</span><div><p class="eyebrow">The adventure</p><h2>Begin a shift</h2></div></div><div class="actions"><button class="primary" id="solo">Start solo shift</button><button id="create">Create party</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" value="${roomCode}"/><button id="join">Join party</button></div></div><div class="menu-utilities"><button id="continue" class="secondary">Continue solo</button><button id="settings" class="secondary">Settings</button><button id="delete-save" class="secondary danger">Delete solo save</button></div></section>
       </div>
       <section id="settings-panel" class="settings-panel hidden" aria-label="Game settings">
@@ -128,7 +134,7 @@ function profile() {
   return {
     token, name: (document.querySelector<HTMLInputElement>("#name")!).value.trim() || "Mittens",
     role: selectedRole, fur: (document.querySelector<HTMLInputElement>("#fur")!).value,
-    accessory: (document.querySelector<HTMLSelectElement>("#accessory")!).value
+    accessory: selectedAccessory
   };
 }
 function applySettings() {
@@ -152,13 +158,36 @@ function refreshSoloActions() {
   document.querySelector<HTMLButtonElement>("#delete-save")!.disabled = !save;
 }
 applySettings();
+function renderTitlePreviews() {
+  const fur = document.querySelector<HTMLInputElement>("#fur")?.value;
+  if (!fur) return;
+  const heroCharacter = document.querySelector<HTMLCanvasElement>("#hero-character");
+  if (heroCharacter) {
+    drawTitlePortrait(heroCharacter, titlePortraitImages[selectedRole], selectedRole, fur, selectedAccessory);
+    heroCharacter.setAttribute("aria-label", `Pixel-art ${selectedRole} bartender wearing ${selectedAccessory}`);
+  }
+  document.querySelectorAll<HTMLCanvasElement>(".role-photo").forEach((canvas) => {
+    const role = canvas.closest<HTMLButtonElement>(".role")?.dataset.role as CatRole | undefined;
+    if (role) drawTitlePortrait(canvas, titlePortraitImages[role], role, fur, selectedAccessory);
+  });
+}
 function renderRoles() {
-  document.querySelector("#roles")!.innerHTML = roles.map(({ role, perk }) => `<button class="role ${role === selectedRole ? "selected" : ""}" data-role="${role}" aria-pressed="${role === selectedRole}"><span class="role-portrait"><img class="role-photo" src="${catPortraits[role]}" alt="" /></span><b>${role}</b><small>${perk}</small></button>`).join("");
-  const heroCharacter = document.querySelector<HTMLImageElement>("#hero-character")!;
-  heroCharacter.src = catPortraits[selectedRole]; heroCharacter.alt = `Pixel-art ${selectedRole} bartender`; heroCharacter.dataset.role = selectedRole;
+  document.querySelector("#roles")!.innerHTML = roles.map(({ role, perk }) => `<button class="role ${role === selectedRole ? "selected" : ""}" data-role="${role}" aria-pressed="${role === selectedRole}"><span class="role-portrait"><canvas class="role-photo" width="192" height="192" aria-hidden="true"></canvas></span><b>${role}</b><small>${perk}</small></button>`).join("");
+  renderTitlePreviews();
   document.querySelectorAll<HTMLButtonElement>(".role").forEach((button) => button.onclick = () => { selectedRole = button.dataset.role as CatRole; renderRoles(); });
 }
+function renderAccessoryChoice() {
+  document.querySelector<HTMLOutputElement>("#accessory-name")!.value = selectedAccessory;
+  renderTitlePreviews();
+}
 renderRoles();
+document.querySelector<HTMLInputElement>("#fur")!.addEventListener("input", renderTitlePreviews);
+document.querySelector<HTMLInputElement>("#fur")!.addEventListener("change", renderTitlePreviews);
+(["prev", "next"] as const).forEach((direction) => document.querySelector<HTMLButtonElement>(`#accessory-${direction}`)!.onclick = () => {
+  const offset = direction === "next" ? 1 : -1;
+  selectedAccessory = TITLE_ACCESSORIES[(TITLE_ACCESSORIES.indexOf(selectedAccessory) + offset + TITLE_ACCESSORIES.length) % TITLE_ACCESSORIES.length];
+  renderAccessoryChoice();
+});
 
 function connect(action: "create" | "join") {
   socket.connect();
@@ -201,7 +230,8 @@ document.querySelector<HTMLButtonElement>("#continue")!.onclick = () => {
   const save = loadSoloSave(); if (!save) return;
   document.querySelector<HTMLInputElement>("#name")!.value = save.profile.name;
   document.querySelector<HTMLInputElement>("#fur")!.value = save.profile.fur;
-  document.querySelector<HTMLSelectElement>("#accessory")!.value = save.profile.accessory;
+  selectedAccessory = TITLE_ACCESSORIES.includes(save.profile.accessory as TitleAccessory) ? save.profile.accessory as TitleAccessory : "Bow tie";
+  renderAccessoryChoice();
   selectedRole = save.profile.role as CatRole; renderRoles();
   sessionMode = "single"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create");
 };

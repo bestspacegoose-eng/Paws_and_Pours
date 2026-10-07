@@ -55,6 +55,15 @@ body:has(.title-menu) .topbar{display:none}
 .shell:has(.title-menu){padding-top:18px}
 .shell .title-menu .role[data-role="Calico"] .role-photo{transform:scale(.84)}
 .shell .title-menu .title-hero img[data-role="Calico"]{transform:scale(.88)}
+.shell .title-menu .title-hero canvas{position:absolute;top:45px;left:50%;display:block;width:182px;height:182px;max-height:none;transform:translateX(-50%);background:transparent;image-rendering:pixelated;filter:drop-shadow(2px 3px 0 rgba(18,9,26,.55))}
+.shell .title-menu .role-portrait{align-items:center;justify-content:center}
+.shell .title-menu .role[data-role] .role-photo{display:block;width:72px;height:70px;max-height:none;transform:none;background:transparent;object-fit:contain;image-rendering:pixelated}
+.shell .title-menu .accessory-picker{display:grid;gap:3px;min-width:0;color:#e9d1e7;font-size:10px;font-weight:800}
+.shell .title-menu .accessory-controls{display:grid;grid-template-columns:30px minmax(0,1fr) 30px;align-items:stretch;height:35px;overflow:hidden;border:2px solid #9273a0;border-radius:3px;background:#24172f}
+.shell .title-menu .accessory-controls button{min-width:0;height:31px;padding:0;border:0;border-radius:0;background:#654773;color:#fff0d5;font:800 15px Nunito,sans-serif;box-shadow:none}
+.shell .title-menu .accessory-controls output{display:grid;place-items:center;min-width:0;padding:0 3px;overflow:hidden;color:#fff0d5;font:800 10px Nunito,sans-serif;white-space:nowrap;text-align:center}
+@media(max-width:620px){.shell .title-menu .title-hero canvas{top:17px;width:104px;height:104px}.shell .title-menu .role[data-role] .role-photo{width:60px;height:59px}}
+@media(max-width:400px){.shell .title-menu .title-scene .title-hero{right:16px}.shell .title-menu .title-hero::before{width:100px}.shell .title-menu .role[data-role] .role-photo{width:45px;height:48px}}
 @media(max-width:400px){.shell .title-menu .title-heading{right:auto;max-width:175px}.shell .title-menu .title-heading h1{font-size:32px}.shell .title-menu .title-tagline{width:155px;white-space:normal;line-height:1.35;font-size:8px}.shell .title-menu .title-hero{right:6px;width:90px}.shell .title-menu .roles{grid-template-columns:repeat(3,minmax(0,1fr))}.shell .title-menu .role{min-height:91px;grid-template-rows:50px auto}.shell .title-menu .role-portrait{height:49px}.shell .title-menu .role-photo{width:44px;height:48px}.shell .title-menu .role b{font-size:9px;overflow-wrap:anywhere}}
 .shell .title-menu{width:100%;max-width:1180px;min-height:0;padding:0;overflow:hidden;border:4px solid #9a78ad;border-radius:10px;background:#24172f;box-shadow:0 7px 0 #59436b,0 23px 50px rgba(4,2,10,.6)}
 .title-menu::before,.title-menu::after{display:none}
