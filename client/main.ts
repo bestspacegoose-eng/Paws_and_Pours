@@ -517,7 +517,6 @@ function drawStation(station: Station, theme: Theme) {
     context.fillStyle = "rgba(28,17,35,.82)"; context.fillRect(point.x - 23, point.y + 27, 46, 10);
     drawText(station.ingredient.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df"); return;
   }
-  if (station.kind === "mop") drawText("🪣", point.x, point.y - 7, "19px sans-serif", "#ffffff");
   context.fillStyle = "rgba(28,17,35,.82)"; context.fillRect(point.x - 31, point.y + 27, 62, 11);
   drawText(station.label.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df");
 }
@@ -542,28 +541,40 @@ function tintedCharacter(fur: string) {
   layer.globalCompositeOperation = "source-over"; layer.globalAlpha = .35; layer.drawImage(catBartenderSpritesheet, 0, 0);
   layer.globalAlpha = 1; characterTintCache.set(fur, result); return result;
 }
-function drawAccessory(accessory: string, point: Point, direction: Player["direction"]) {
+function drawAccessory(accessory: string, point: Point, direction: Player["direction"], spriteHeight: number) {
+  const top = Math.round(point.y + 19 - spriteHeight);
+  const neck = Math.round(top + spriteHeight * .63);
+  const forehead = Math.round(top + spriteHeight * .39);
+  const side = direction === "left" ? -4 : direction === "right" ? 4 : 0;
   context.save(); context.imageSmoothingEnabled = false;
   if (accessory === "Bow tie") {
-    context.fillStyle = "#d95f77";
-    context.beginPath(); context.moveTo(point.x - 13, point.y - 12); context.lineTo(point.x - 2, point.y - 18); context.lineTo(point.x - 2, point.y - 6); context.closePath(); context.fill();
-    context.beginPath(); context.moveTo(point.x + 13, point.y - 12); context.lineTo(point.x + 2, point.y - 18); context.lineTo(point.x + 2, point.y - 6); context.closePath(); context.fill();
-    context.fillStyle = "#ffd46b"; context.fillRect(point.x - 3, point.y - 15, 6, 7);
+    if (direction !== "up") {
+      const x = Math.round(point.x + side);
+      context.fillStyle = "#2c1b35"; context.fillRect(x - 7, neck - 4, 14, 8);
+      context.fillStyle = "#a84276"; context.fillRect(x - 6, neck - 3, 5, 6); context.fillRect(x + 1, neck - 3, 5, 6);
+      context.fillStyle = "#e8789a"; context.fillRect(x - 5, neck - 2, 3, 3); context.fillRect(x + 2, neck - 2, 3, 3);
+      context.fillStyle = "#f2c979"; context.fillRect(x - 1, neck - 3, 2, 6);
+    }
   } else if (accessory === "Wizard hat") {
-    context.fillStyle = "#3f356e"; context.fillRect(point.x - 21, point.y - 47, 42, 5);
-    context.beginPath(); context.moveTo(point.x - 13, point.y - 48); context.lineTo(point.x + 4, point.y - 75); context.lineTo(point.x + 15, point.y - 48); context.closePath(); context.fill();
-    context.fillStyle = "#a68bdd"; context.fillRect(point.x - 8, point.y - 55, 20, 4);
-    context.fillStyle = "#fff1ad"; context.fillRect(point.x + 1, point.y - 66, 4, 4);
+    const x = Math.round(point.x + side);
+    context.fillStyle = "#251630"; context.fillRect(x - 15, top + 2, 30, 5);
+    context.fillRect(x - 10, top - 3, 20, 6); context.fillRect(x - 6, top - 10, 12, 8);
+    context.fillRect(x - 3, top - 16, 7, 7);
+    context.fillStyle = "#66528d"; context.fillRect(x - 8, top - 1, 16, 4); context.fillRect(x - 5, top - 8, 10, 6);
+    context.fillStyle = "#e9bd72"; context.fillRect(x - 7, top + 2, 14, 2);
   } else if (accessory === "Pirate patch") {
-    const eyeX = direction === "left" ? point.x - 8 : direction === "right" ? point.x + 8 : point.x + 7;
-    context.strokeStyle = "#2d2138"; context.lineWidth = 2; context.beginPath(); context.moveTo(eyeX - 8, point.y - 38); context.lineTo(eyeX + 8, point.y - 29); context.stroke();
-    context.fillStyle = "#2d2138"; context.fillRect(eyeX - 5, point.y - 36, 10, 8);
-    context.fillStyle = "#caa6ed"; context.fillRect(eyeX - 1, point.y - 35, 2, 2);
+    if (direction !== "up") {
+      const eyeX = Math.round(point.x + (direction === "left" ? -7 : 7));
+      context.strokeStyle = "#2d2138"; context.lineWidth = 2;
+      context.beginPath(); context.moveTo(point.x - 12, forehead - 4); context.lineTo(point.x + 12, forehead + 3); context.stroke();
+      context.fillStyle = "#2d2138"; context.fillRect(eyeX - 4, forehead - 3, 8, 7);
+      context.fillStyle = "#caa6ed"; context.fillRect(eyeX - 1, forehead - 2, 2, 2);
+    }
   } else if (accessory === "Flower crown") {
-    context.fillStyle = "#65a862"; context.fillRect(point.x - 17, point.y - 46, 34, 3);
-    [[-12, "#f09ab8"], [-4, "#ffd36b"], [4, "#b99be5"], [12, "#f09ab8"]].forEach(([offset, color]) => {
-      context.fillStyle = color as string; context.fillRect(point.x + Number(offset) - 3, point.y - 51, 6, 6);
-      context.fillStyle = "#fff4c9"; context.fillRect(point.x + Number(offset) - 1, point.y - 49, 2, 2);
+    context.fillStyle = "#65a862"; context.fillRect(point.x - 13, top + 3, 26, 3);
+    [[-9, "#f09ab8"], [0, "#ffd36b"], [9, "#b99be5"]].forEach(([offset, color]) => {
+      context.fillStyle = color as string; context.fillRect(point.x + Number(offset) - 2, top, 5, 5);
+      context.fillStyle = "#fff4c9"; context.fillRect(point.x + Number(offset), top + 1, 1, 1);
     });
   }
   context.restore();
@@ -573,30 +584,24 @@ function drawPlayer(player: Player) {
   context.strokeStyle = player.id === token ? "#ffd26d" : "#fff3d2"; context.lineWidth = 2;
   context.beginPath(); context.ellipse(point.x, point.y + 17, 23, 7, 0, 0, Math.PI * 2); context.stroke();
   context.fillStyle = "rgba(25,15,30,.36)"; context.beginPath(); context.ellipse(point.x, point.y + 16, 20, 7, 0, 0, Math.PI * 2); context.fill();
+  let spriteHeight = 65;
   if (catBartenderSpritesheet.complete && catBartenderSpritesheet.naturalWidth) {
     const direction = player.direction ?? "down";
     const frameIndex = player.moving ? Math.floor(performance.now() / 135) % 4 : 0;
     const frame = PLAYER_FRAMES[direction][frameIndex]; const scale = 72 / 298;
     const width = frame.width * scale; const height = frame.height * scale;
+    spriteHeight = height;
     context.drawImage(tintedCharacter(player.fur), frame.x, frame.y, frame.width, frame.height, point.x - width / 2, point.y + 19 - height, width, height);
   }
   else { context.fillStyle = player.fur; context.fillRect(point.x - 17, point.y - 40, 34, 52); }
-  drawAccessory(player.accessory, point, player.direction ?? "down");
+  const direction = player.direction ?? "down";
+  drawAccessory(player.accessory, point, direction, spriteHeight);
   drawText(player.name, point.x, point.y + 36, "bold 10px system-ui", "#fff7e9");
   if (!player.connected) drawText("reconnecting…", point.x, point.y + 48, "9px system-ui", "#f07777");
-  if (player.drink) drawFinishedDrink(player.drink, point.x + 24, point.y - 36, "idle");
-}
-function drawFinishedDrink(recipeId: string, x: number, y: number, state: "idle" | "complete") {
-  const frameIndex = FINISHED_DRINK_FRAME_INDEX[recipeId]?.[state];
-  const size = state === "complete" ? 62 : 34;
-  if (frameIndex === undefined || !finishedDrinksSpritesheet.complete || !finishedDrinksSpritesheet.naturalWidth) {
-    drawRecipeDrink(context, recipeById(recipeId), x, y, size);
-    return;
+  if (player.drink) {
+    const handX = point.x + (direction === "left" ? -17 : 17);
+    drawRecipeDrink(context, recipeById(player.drink), handX, point.y - 2, 22);
   }
-  const frame = atlasFrame(finishedDrinksSpritesheet, 3, 2, frameIndex);
-  context.save(); context.beginPath(); context.ellipse(x, y, size * .38, size * .44, 0, 0, Math.PI * 2); context.clip();
-  context.drawImage(finishedDrinksSpritesheet, frame.x, frame.y, frame.width, frame.height, x - size / 2, y - size / 2, size, size);
-  context.restore();
 }
 function drawRecipeBookPage(recipe: Recipe, page: number) {
   const bookCanvas = document.querySelector<HTMLCanvasElement>("#recipe-book-art");
@@ -698,7 +703,7 @@ function drawOrderTickets() {
     context.fillStyle = patience > .35 ? "#7bd99b" : "#e4786b";
     context.fillRect(x + 7, y + 25, 44 * patience, 4);
     context.restore();
-    drawFinishedDrink(order.recipeId, x + 29, y + 16, "idle");
+    drawRecipeDrink(context, recipe, x + 29, y + 15, 27);
   });
 }
 function drawHazard() {
