@@ -1,7 +1,7 @@
 export type Theme = "Cozy Village Pub" | "Haunted Moonlit Inn" | "Pirate Cat Tavern";
 export type CatRole = "Tabby" | "Siamese" | "Maine Coon" | "Black Cat" | "Calico";
 export type FacingDirection = "down" | "left" | "right" | "up";
-export type StationKind = "pantry" | "mix" | "serve" | "mop" | "trash";
+export type StationKind = "pantry" | "mix" | "serve" | "mop" | "trash" | "counter";
 export type Phase = "lobby" | "shift" | "upgrades" | "complete";
 export type CounterVariant = "standard" | "end-cap" | "corner" | "ingredient" | "mixing" | "decorative" | "damaged";
 export type MixingTool = "shaker" | "spoon" | "pourer";
@@ -9,8 +9,9 @@ export type HazardKind = "napkins" | "ectoplasm" | "fire";
 
 export interface Vec { x: number; y: number }
 export interface GridCell { gridX: number; gridY: number }
+export interface PreparedDrink { recipeId: string; quality: number }
 export interface Station extends Vec, GridCell {
-  id: string; kind: StationKind; label: string; counterVariant: CounterVariant; ingredient?: string
+  id: string; kind: StationKind; label: string; counterVariant: CounterVariant; ingredient?: string; drink?: PreparedDrink
 }
 export interface TimedToolAction {
   kind: "timed-tool"; tool: MixingTool; targetMs: number; toleranceMs: number
@@ -47,24 +48,23 @@ export interface GameState {
   pausedAt: number | null; pausedBy: string | null
 }
 
-// The playable floor is a trapezoid in the 2.5D scene. The previous rectangular
-// bound started above the floor, which let cats travel through the rear wall.
-export const BOARD_BOUNDS = { minX: 32, maxX: 768, minY: 190, maxY: 442 } as const;
-// This origin lands counter centres on the first visible row of floor tiles.
-// The prior origin started the top station row on the rear wall artwork.
-export const GRID_ORIGIN = { x: 48, y: 110 } as const;
+export const GRID_ORIGIN = { x: 0, y: 0 } as const;
 export const GRID_CELL_SIZE = 58;
-export const GRID_COLUMNS = 12;
-export const GRID_ROWS = 5;
+export const GRID_COLUMNS = 16;
+export const GRID_ROWS = 11;
 // A cat's contact point is its paws, not the full width of its animated sprite.
 export const PLAYER_COLLISION_RADIUS = 10;
+export const BOARD_BOUNDS = { minX: 10, maxX: GRID_COLUMNS * GRID_CELL_SIZE - 10,
+  minY: 10, maxY: GRID_ROWS * GRID_CELL_SIZE - 10 } as const;
+export const PLAYER_SPAWNS = [gridCellCenter(7, 8), gridCellCenter(8, 8), gridCellCenter(9, 8), gridCellCenter(4, 8)];
+export const INTERACTION_REACH = 74;
 export const MIXING_DURATION_MS = 45_000;
 export const MIXING_MAX_MISTAKES = 3;
 export const PANTRY_FLOOR_PLAN: Record<string, GridCell> = {
-  catnip: { gridX: 1, gridY: 1 }, stardust: { gridX: 2, gridY: 1 },
-  kelp: { gridX: 5, gridY: 1 }, moonmilk: { gridX: 9, gridY: 1 }, lime: { gridX: 10, gridY: 1 },
-  tuna: { gridX: 1, gridY: 3 }, fizz: { gridX: 2, gridY: 3 },
-  tonic: { gridX: 9, gridY: 3 }, cream: { gridX: 10, gridY: 3 }
+  catnip: { gridX: 1, gridY: 0 }, stardust: { gridX: 3, gridY: 0 },
+  kelp: { gridX: 7, gridY: 0 }, moonmilk: { gridX: 11, gridY: 0 }, lime: { gridX: 14, gridY: 0 },
+  tuna: { gridX: 0, gridY: 3 }, fizz: { gridX: 0, gridY: 7 },
+  tonic: { gridX: 15, gridY: 7 }, cream: { gridX: 15, gridY: 3 }
 };
 
 export const RECIPES: Recipe[] = [
@@ -165,11 +165,22 @@ export function makeTavern(seed: number, round = 1): Tavern {
   });
   const stations: Station[] = [
     ...ingredientTable,
-    stationAt({ gridX: 6, gridY: 3 }, { id: "mix", kind: "mix", label: "Shaker & Brewer", counterVariant: "mixing" }),
-    stationAt({ gridX: 8, gridY: 4 }, { id: "serve", kind: "serve", label: "Service Bell", counterVariant: "decorative" }),
-    stationAt({ gridX: 0, gridY: 4 }, { id: "mop", kind: "mop", label: "Mop Bucket", counterVariant: "damaged" }),
-    stationAt({ gridX: 4, gridY: 4 }, { id: "trash", kind: "trash", label: "Scrap Bin", counterVariant: "damaged" })
+    stationAt({ gridX: 5, gridY: 3 }, { id: "mix", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
+    stationAt({ gridX: 10, gridY: 3 }, { id: "mix-east", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
+    stationAt({ gridX: 12, gridY: 10 }, { id: "serve", kind: "serve", label: "Serve", counterVariant: "decorative" }),
+    stationAt({ gridX: 1, gridY: 10 }, { id: "mop", kind: "mop", label: "Clean", counterVariant: "damaged" }),
+    stationAt({ gridX: 3, gridY: 10 }, { id: "trash", kind: "trash", label: "Discard", counterVariant: "damaged" })
   ];
+  const occupied = new Set(stations.map((station) => `${station.gridX}:${station.gridY}`));
+  for (let y = 0; y < GRID_ROWS; y++) for (let x = 0; x < GRID_COLUMNS; x++) {
+    if ((x === 0 || x === 15) && (y === 0 || y === 10)) continue;
+    const perimeter = y === 0 || y === 10 || x === 0 || x === 15;
+    const island = y >= 3 && y <= 6 && (x === 5 || x === 6 || x === 10 || x === 11);
+    if ((!perimeter && !island) || occupied.has(`${x}:${y}`)) continue;
+    stations.push(stationAt({ gridX: x, gridY: y }, {
+      id: `counter-${x}-${y}`, kind: "counter", label: "Counter", counterVariant: "standard"
+    }));
+  }
   const decorations = theme === "Cozy Village Pub" ? ["🍞", "🕯️", "🌿"] :
     theme === "Haunted Moonlit Inn" ? ["👻", "🌙", "🕸️"] : ["⚓", "🏴‍☠️", "🐟"];
   return { seed, theme, stations, decoration: decorations };
@@ -189,9 +200,41 @@ export function pointCollidesWithCounters(tavern: Tavern, point: Vec, radius = P
   });
 }
 
-export function floorBoundsAtY(y: number) {
-  const depth = Math.max(0, Math.min(1, (y - BOARD_BOUNDS.minY) / (BOARD_BOUNDS.maxY - BOARD_BOUNDS.minY)));
-  return { minX: 60 - 28 * depth, maxX: 740 + 28 * depth };
+export function floorBoundsAtY(_y: number) {
+  return { minX: BOARD_BOUNDS.minX, maxX: BOARD_BOUNDS.maxX };
+}
+
+export function nearbyStation(tavern: Tavern, player: Vec): Station | undefined {
+  return tavern.stations.filter((station) => Math.hypot(station.x - player.x, station.y - player.y) < INTERACTION_REACH)
+    .sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))
+    .find((station) => {
+      // A surface behind another counter cannot be reached through its neighbor.
+      for (let t = .1; t < 1; t += .1) {
+        const x = player.x + (station.x - player.x) * t, y = player.y + (station.y - player.y) * t;
+        if (tavern.stations.some((other) => {
+          if (other === station) return false;
+          const b = stationBounds(other);
+          return x > b.left && x < b.right && y > b.top && y < b.bottom;
+        })) return false;
+      }
+      return true;
+    });
+}
+
+export function transferCounterDrink(player: Player, station: Station): "placed" | "picked-up" | "occupied" | "empty" | "unavailable" {
+  if (!["counter", "pantry", "mix"].includes(station.kind)) return "unavailable";
+  if (station.drink) {
+    if (player.drink || player.carrying.length) return "occupied";
+    player.drink = station.drink.recipeId;
+    player.drinkQuality = station.drink.quality;
+    delete station.drink;
+    return "picked-up";
+  }
+  if (!player.drink) return "empty";
+  station.drink = { recipeId: player.drink, quality: player.drinkQuality ?? 1 };
+  delete player.drink;
+  delete player.drinkQuality;
+  return "placed";
 }
 
 function clampToBoard(point: Vec): Vec {

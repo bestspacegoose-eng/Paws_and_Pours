@@ -1,7 +1,7 @@
 import { io, type Socket } from "socket.io-client";
 import {
-  GRID_CELL_SIZE, moveWithCounterCollisions, RECIPES, recipeById, type CatRole,
-  type GameState, type Player, type Recipe, type Station, type Theme
+  moveWithCounterCollisions, nearbyStation, stationBounds, RECIPES, recipeById, type CatRole,
+  type GameState, type Player, type Recipe
 } from "../shared/game";
 import tabbyPortraitUrl from "./assets/characters/tabby.png";
 import siamesePortraitUrl from "./assets/characters/siamese.png";
@@ -9,18 +9,14 @@ import maineCoonPortraitUrl from "./assets/characters/maine-coon.png";
 import blackCatPortraitUrl from "./assets/characters/black-cat.png";
 import calicoPortraitUrl from "./assets/characters/calico.png";
 import scrapBinUrl from "./assets/props/scrap-bin.png";
-import cozyVillagePubUrl from "./assets/tilemap/cozy-village-pub-floorplan.png";
-import hauntedMoonlitInnUrl from "./assets/tilemap/haunted-moonlit-inn-floorplan.png";
-import pirateCatTavernUrl from "./assets/tilemap/pirate-cat-tavern-floorplan.png";
 import catBartenderSpritesheetUrl from "./assets/tilemap/cat-bartender-spritesheet.png";
 import ingredientsSpritesheetUrl from "./assets/tilemap/ingredients-spritesheet.png";
-import cozyCounterBlocksUrl from "./assets/tilemap/counter-blocks-cozy.png";
-import hauntedCounterBlocksUrl from "./assets/tilemap/counter-blocks-haunted.png";
-import pirateCounterBlocksUrl from "./assets/tilemap/counter-blocks-pirate.png";
 import finishedDrinksUrl from "./assets/tilemap/finished-drinks-spritesheet.png";
 import { MixingWorkspace } from "./mixing-workspace";
 import { drawRecipeDrink } from "./drink-art";
-import { atlasFrame, COUNTER_FRAME_INDEX, FINISHED_DRINK_FRAME_INDEX, INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
+import { atlasFrame, FINISHED_DRINK_FRAME_INDEX, INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
+import { boardPoint, drawTavernFloor, drawTavernCounter, drawIngredientIcon, TAVERN_VIEW } from "./tavern-renderer";
+import { OrderHud } from "./order-hud";
 import { clearSoloSave, defaultSettings, loadSettings, loadSoloSave, saveSettings, saveSoloSave, type DisplayAudioSettings } from "./preferences";
 import { drawTitlePortrait, TITLE_ACCESSORIES, type TitleAccessory } from "./title-portrait";
 import "./style.css";
@@ -66,22 +62,6 @@ const refreshOpenRecipeBook = () => {
 };
 ingredientsSpritesheet.addEventListener("load", refreshOpenRecipeBook);
 finishedDrinksSpritesheet.addEventListener("load", refreshOpenRecipeBook);
-const tavernMapSources: Record<Theme, string> = {
-  "Cozy Village Pub": cozyVillagePubUrl,
-  "Haunted Moonlit Inn": hauntedMoonlitInnUrl,
-  "Pirate Cat Tavern": pirateCatTavernUrl
-};
-const tavernMaps = Object.fromEntries(Object.entries(tavernMapSources).map(([theme, source]) => {
-  const image = new Image(); image.src = source; return [theme, image];
-})) as Record<Theme, HTMLImageElement>;
-const counterBlockSources: Record<Theme, string> = {
-  "Cozy Village Pub": cozyCounterBlocksUrl,
-  "Haunted Moonlit Inn": hauntedCounterBlocksUrl,
-  "Pirate Cat Tavern": pirateCounterBlocksUrl
-};
-const counterBlocks = Object.fromEntries(Object.entries(counterBlockSources).map(([theme, source]) => {
-  const image = new Image(); image.src = source; return [theme, image];
-})) as Record<Theme, HTMLImageElement>;
 
 const roles: { role: CatRole; perk: string }[] = [
   { role: "Tabby", perk: "Balanced" }, { role: "Siamese", perk: "Quick paws" },
@@ -114,8 +94,9 @@ app.innerHTML = `
     </section>
     <section id="game" class="game hidden">
       <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span class="heart-status" id="heart-status" aria-label="3 team hearts"><span id="heart-icons" aria-hidden="true">♥♥♥</span><b id="health">3</b></span><span class="timer" id="timer">3:00</span></div><button class="leave" id="game-menu" type="button">Menu · Pause</button></div>
-      <div class="canvas-card"><canvas id="board" width="800" height="480" aria-label="Paws and Pours game board"></canvas><div id="toast" class="toast"></div></div>
-      <p class="controls"><kbd>WASD</kbd> or <kbd>← ↑ ↓ →</kbd> move · <kbd>E</kbd> interact · Ingredient counters → Mixing workspace → Service Bell · <span id="carry">Paws empty</span></p>
+      <section id="order-hud" class="order-hud" aria-label="Current orders and required ingredients"></section>
+      <div class="canvas-card"><canvas id="board" width="1088" height="680" aria-label="Paws and Pours game board"></canvas><div id="toast" class="toast"></div></div>
+      <p class="controls"><kbd>WASD</kbd> move · <kbd>E</kbd> interact · <kbd>Q</kbd> place / pick up drink · <span id="interaction"></span> · <span id="carry">Paws empty</span></p>
     </section>
     <section id="overlay" class="overlay hidden"></section>
   </main>`;
@@ -125,6 +106,8 @@ const game = document.querySelector<HTMLElement>("#game")!;
 const overlay = document.querySelector<HTMLElement>("#overlay")!;
 const canvas = document.querySelector<HTMLCanvasElement>("#board")!;
 const context = canvas.getContext("2d")!;
+canvas.width = TAVERN_VIEW.width; canvas.height = TAVERN_VIEW.height;
+const orderHud = new OrderHud(document.querySelector<HTMLElement>("#order-hud")!, ingredientsSpritesheet);
 const mixingWorkspace = new MixingWorkspace(game, {
   addIngredient: (ingredient) => socket.emit("mix-ingredient", ingredient),
   startTool: (tool) => socket.emit("mix-tool-start", tool),
@@ -277,6 +260,7 @@ function localPlayer() { return state?.players[token]; }
 function time(seconds: number) { return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; }
 function renderUi() {
   if (!state) return;
+  orderHud.render(state.orders);
   document.querySelector("#theme")!.textContent = state.tavern.theme.toUpperCase();
   document.querySelector("#room-display")!.textContent = sessionMode === "single" ? "SOLO SHIFT" : `ROOM ${state.code}`;
   document.querySelector("#coins")!.textContent = String(state.coins);
@@ -418,7 +402,8 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (state?.pausedAt !== null || event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
-  if (event.key.toLowerCase() === "e" && state?.phase === "shift" && !state.mixing[token]) { event.preventDefault(); socket.emit("interact"); }
+  if (!event.repeat && event.key.toLowerCase() === "e" && state?.phase === "shift" && !state.mixing[token]) { event.preventDefault(); socket.emit("interact"); }
+  if (!event.repeat && event.key.toLowerCase() === "q" && state?.phase === "shift" && !state.mixing[token]) { event.preventDefault(); socket.emit("counter-drink"); }
   const axis = movementKeys[event.key]; if (!axis) return;
   if (state?.mixing[token]) return;
   event.preventDefault(); move[axis] = event.key === "w" || event.key === "ArrowUp" || event.key === "a" || event.key === "ArrowLeft" ? -1 : 1;
@@ -426,109 +411,11 @@ window.addEventListener("keydown", (event) => {
 window.addEventListener("keyup", (event) => { const axis = movementKeys[event.key]; if (axis) move[axis] = 0; });
 window.addEventListener("blur", () => { move = { x: 0, y: 0 }; });
 
-const ingredientColors: Record<string, string> = { catnip: "#91dd7d", lime: "#c7e65b", fizz: "#a4e9f3", moonmilk: "#e2dcff", cream: "#fff4d5", stardust: "#f0bdff", tuna: "#ec9b8e", tonic: "#86d2ce", kelp: "#4daf74" };
-const tavernPalettes: Record<Theme, { grass: string; wall: string; floor: string; tile: string; trim: string }> = {
-  "Cozy Village Pub": { grass: "#55704b", wall: "#603947", floor: "#a95d47", tile: "#c97858", trim: "#f1bd76" },
-  "Haunted Moonlit Inn": { grass: "#30384f", wall: "#38305d", floor: "#4f4a75", tile: "#66608f", trim: "#b9a9e8" },
-  "Pirate Cat Tavern": { grass: "#315d62", wall: "#174b5c", floor: "#3e7b78", tile: "#559b91", trim: "#f5c16b" }
-};
 type Point = { x: number; y: number };
 const characterTintCache = new Map<string, HTMLCanvasElement>();
 
-function boardPoint(x: number, y: number): Point {
-  // The background is pixel art. Integer screen coordinates keep each counter's
-  // square footprint locked to the floor tiles instead of shimmering between them.
-  return { x: Math.round(40 + x * 0.94), y: Math.round(70 + (y - 70) * 0.94) };
-}
 function drawText(text: string, x: number, y: number, font: string, color: string) {
   context.font = font; context.fillStyle = color; context.textAlign = "center"; context.fillText(text, x, y);
-}
-function drawFallbackFloor(theme: Theme) {
-  const palette = tavernPalettes[theme];
-  context.fillStyle = palette.grass; context.fillRect(0, 0, 800, 480);
-  context.fillStyle = "rgba(255,255,255,.09)";
-  for (let x = 12; x < 800; x += 29) for (let y = 28; y < 480; y += 33) context.fillRect(x + (y % 3), y, 1, 6);
-  context.fillStyle = "rgba(21,15,29,.38)"; context.fillRect(23, 42, 754, 414);
-  context.fillStyle = palette.wall; context.fillRect(29, 48, 742, 400);
-  context.fillStyle = palette.trim; context.fillRect(34, 54, 732, 8);
-  context.fillStyle = palette.floor; context.fillRect(40, 67, 720, 370);
-  for (let x = 40; x < 760; x += 40) for (let y = 67; y < 437; y += 40) {
-    context.fillStyle = (Math.floor(x / 40) + Math.floor(y / 40)) % 2 ? palette.floor : palette.tile;
-    context.fillRect(x + 1, y + 1, 38, 38);
-  }
-  context.fillStyle = "rgba(33,20,43,.76)"; context.fillRect(256, 10, 288, 33);
-  drawText("PAWS & POURS  •  NIGHT SHIFT", 400, 32, "bold 14px system-ui", "#fff2d0");
-  context.fillStyle = "rgba(43,25,48,.52)"; context.fillRect(48, 75, 242, 352);
-  context.fillStyle = "rgba(30,25,43,.45)"; context.fillRect(507, 75, 242, 352);
-  drawText("PATRON NOOK", 168, 94, "bold 10px system-ui", "#ffe6bc");
-  drawText("BARTENDER'S BAR", 628, 94, "bold 10px system-ui", "#ffe6bc");
-}
-function drawFloor(theme: Theme) {
-  const map = tavernMaps[theme];
-  if (!map.complete || !map.naturalWidth) return drawFallbackFloor(theme);
-  context.drawImage(map, 0, 0, canvas.width, canvas.height);
-}
-function drawCounterBlock(station: Station, theme: Theme) {
-  const point = boardPoint(station.x, station.y);
-  const size = Math.round(GRID_CELL_SIZE * 0.94);
-  const atlas = counterBlocks[theme];
-  context.save();
-  context.shadowColor = "rgba(29,14,35,.42)";
-  context.shadowBlur = 5;
-  context.shadowOffsetY = 4;
-  if (atlas.complete && atlas.naturalWidth) {
-    const frame = atlasFrame(atlas, 4, 2, COUNTER_FRAME_INDEX[station.counterVariant]);
-    context.drawImage(atlas, frame.x, frame.y, frame.width, frame.height, Math.round(point.x - size / 2), Math.round(point.y - size / 2), size, size);
-  } else {
-    context.fillStyle = theme === "Haunted Moonlit Inn" ? "#5e527d" : theme === "Pirate Cat Tavern" ? "#2d7778" : "#99583f";
-    context.fillRect(point.x - size / 2, point.y - size / 2, size, size);
-  }
-  context.restore();
-}
-function drawIngredientSprite(ingredient: string, point: Point) {
-  const frame = INGREDIENT_FRAMES[ingredient];
-  if (!frame || !ingredientsSpritesheet.complete || !ingredientsSpritesheet.naturalWidth) return false;
-  const scale = Math.min(29 / frame.width, 27 / frame.height);
-  const width = frame.width * scale; const height = frame.height * scale;
-  context.save(); context.shadowColor = "rgba(25,12,30,.55)"; context.shadowBlur = 3; context.shadowOffsetY = 2;
-  context.drawImage(ingredientsSpritesheet, frame.x, frame.y, frame.width, frame.height, point.x - width / 2, point.y - 3 - height, width, height);
-  context.restore(); return true;
-}
-function drawStation(station: Station, theme: Theme) {
-  const point = boardPoint(station.x, station.y);
-  const player = localPlayer();
-  if (station.kind === "trash" && player && (player.carrying.length || player.drink)) {
-    context.save(); context.strokeStyle = "#f4d278"; context.lineWidth = 2;
-    context.setLineDash([3, 3]); context.beginPath(); context.ellipse(point.x, point.y + 16, 30, 10, 0, 0, Math.PI * 2); context.stroke(); context.restore();
-  }
-  if (station.kind === "trash") {
-    drawScrapBin(point);
-    context.fillStyle = "rgba(28,17,35,.82)"; context.fillRect(point.x - 31, point.y + 27, 62, 11);
-    drawText(station.label.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df"); return;
-  }
-  drawCounterBlock(station, theme);
-  if (station.ingredient) {
-    const color = ingredientColors[station.ingredient];
-    context.fillStyle = "rgba(29,15,35,.35)"; context.beginPath(); context.ellipse(point.x, point.y - 3, 13, 4, 0, 0, Math.PI * 2); context.fill();
-    if (!drawIngredientSprite(station.ingredient, point)) {
-      context.fillStyle = color; context.beginPath(); context.arc(point.x, point.y - 14, 10, 0, Math.PI * 2); context.fill();
-      context.strokeStyle = "rgba(49,27,53,.78)"; context.lineWidth = 2; context.stroke();
-    }
-    context.fillStyle = "rgba(28,17,35,.82)"; context.fillRect(point.x - 23, point.y + 27, 46, 10);
-    drawText(station.ingredient.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df"); return;
-  }
-  context.fillStyle = "rgba(28,17,35,.82)"; context.fillRect(point.x - 31, point.y + 27, 62, 11);
-  drawText(station.label.toUpperCase(), point.x, point.y + 35, "bold 6px system-ui", "#fff5df");
-}
-function drawScrapBin(point: Point) {
-  context.save(); context.shadowColor = "rgba(29,14,35,.46)"; context.shadowBlur = 4; context.shadowOffsetY = 3;
-  if (scrapBin.complete && scrapBin.naturalWidth) context.drawImage(scrapBin, point.x - 29, point.y - 49, 58, 56);
-  else {
-    context.fillStyle = "#6f5367"; context.fillRect(point.x - 16, point.y - 28, 32, 35);
-    context.fillStyle = "#d59850"; context.fillRect(point.x - 19, point.y - 31, 38, 6);
-    context.fillStyle = "#352442"; context.fillRect(point.x - 10, point.y - 21, 20, 15);
-  }
-  context.restore();
 }
 function tintedCharacter(fur: string) {
   const cached = characterTintCache.get(fur);
@@ -580,7 +467,8 @@ function drawAccessory(accessory: string, point: Point, direction: Player["direc
   context.restore();
 }
 function drawPlayer(player: Player) {
-  const point = boardPoint(player.x, player.y);
+  const foot = boardPoint(player.x, player.y);
+  const point = { x: Math.round(foot.x), y: Math.round(foot.y - 19) };
   context.strokeStyle = player.id === token ? "#ffd26d" : "#fff3d2"; context.lineWidth = 2;
   context.beginPath(); context.ellipse(point.x, point.y + 17, 23, 7, 0, 0, Math.PI * 2); context.stroke();
   context.fillStyle = "rgba(25,15,30,.36)"; context.beginPath(); context.ellipse(point.x, point.y + 16, 20, 7, 0, 0, Math.PI * 2); context.fill();
@@ -601,6 +489,9 @@ function drawPlayer(player: Player) {
   if (player.drink) {
     const handX = point.x + (direction === "left" ? -17 : 17);
     drawRecipeDrink(context, recipeById(player.drink), handX, point.y - 2, 22);
+  } else if (player.carrying.length) {
+    drawIngredientIcon(context, ingredientsSpritesheet, player.carrying[player.carrying.length - 1],
+      point.x + (direction === "left" ? -17 : 17), point.y - 2, 22);
   }
 }
 function drawRecipeBookPage(recipe: Recipe, page: number) {
@@ -681,31 +572,6 @@ function drawRecipeBookPage(recipe: Recipe, page: number) {
     bookContext.drawImage(ingredientsSpritesheet, frame.x, frame.y, frame.width, frame.height, x - imageWidth / 2, 454 - imageHeight / 2, imageWidth, imageHeight);
   });
 }
-function drawOrderWindow() {
-  context.fillStyle = "#f1bd76"; context.fillRect(48, 397, 225, 6); drawText("ORDER WINDOW", 160, 418, "bold 9px system-ui", "#fff2d0");
-}
-function drawOrderTickets() {
-  if (!state) return;
-  state.orders.slice(0, 3).forEach((order, index) => {
-    const recipe = recipeById(order.recipeId);
-    const x = 62 + index * 70;
-    const y = 358;
-    const patience = Math.max(0, Math.min(1, order.patience / order.maxPatience));
-    context.save();
-    context.fillStyle = "rgba(25,15,30,.42)";
-    context.fillRect(x + 3, y + 4, 58, 34);
-    context.fillStyle = "#f7e6bf";
-    context.fillRect(x, y, 58, 34);
-    context.fillStyle = recipe.color;
-    context.fillRect(x, y, 58, 5);
-    context.fillStyle = "#3a2741";
-    context.fillRect(x + 7, y + 25, 44, 4);
-    context.fillStyle = patience > .35 ? "#7bd99b" : "#e4786b";
-    context.fillRect(x + 7, y + 25, 44 * patience, 4);
-    context.restore();
-    drawRecipeDrink(context, recipe, x + 29, y + 15, 27);
-  });
-}
 function drawHazard() {
   const hazard = state?.hazard;
   if (!hazard) return;
@@ -728,14 +594,20 @@ function drawHazard() {
 }
 function renderBoard() {
   requestAnimationFrame(renderBoard); movePlayer(); context.imageSmoothingEnabled = false;
-  const theme = state?.tavern.theme ?? "Cozy Village Pub"; drawFloor(theme); drawOrderWindow(); if (!state) return;
+  if (!state) return;
+  drawTavernFloor(context, state.tavern);
+  const player = localPlayer();
+  const nearby = player && nearbyStation(state.tavern, player);
+  document.querySelector("#interaction")!.textContent = nearby
+    ? nearby.drink ? `E · Pick up ${recipeById(nearby.drink.recipeId).name}` : nearby.kind === "counter"
+      ? "E · Set down drink" : `E · ${nearby.label}` : "Approach a counter";
   const objects = [
-    ...state.tavern.stations.map((station) => ({ depth: station.y + 10, draw: () => drawStation(station, theme) })),
-    ...Object.values(state.players).map((player) => ({ depth: player.y + 18, draw: () => drawPlayer(player) }))
+    ...state.tavern.stations.map((station) => ({ depth: stationBounds(station).bottom, draw: () =>
+      drawTavernCounter(context, state!.tavern, station, ingredientsSpritesheet, scrapBin, station === nearby) })),
+    ...Object.values(state.players).map((player) => ({ depth: player.y, draw: () => drawPlayer(player) }))
   ].sort((left, right) => left.depth - right.depth);
   objects.forEach((object) => object.draw());
-  drawOrderTickets();
   drawHazard();
-  if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(175, 441, 450, 27); drawText(`⚠ ${state.hazard.message}`, 400, 459, "bold 12px system-ui", "white"); }
+  if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(300, 638, 488, 26); drawText(`⚠ ${state.hazard.message}`, 544, 655, "bold 12px system-ui", "white"); }
 }
 renderBoard();

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { io, type Socket } from "socket.io-client";
 import { recipeById, type CatRole, type GameState, type Station } from "../shared/game.js";
+import { GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, gridCellCenter, nearbyStation, pointCollidesWithCounters } from "../shared/game.js";
 
 const serverUrl = process.env.SMOKE_SERVER_URL ?? "http://localhost:3001";
 const hostToken = `smoke-host-${Date.now()}`;
@@ -79,30 +80,33 @@ async function main() {
     await waitForState(guest, () => guestState, (state) => state.pausedAt === null);
 
     const recipe = recipeById(hostState!.orders[0].recipeId);
-    let moveSequence = hostState!.players[hostToken].moveSequence;
-    const moveHost = async (x: number, y: number) => {
-      moveSequence += 1;
-      host.emit("move", { x, y, direction: "down", moving: true, sequence: moveSequence });
-      await waitForState(host, () => hostState, (state) => state.players[hostToken].moveSequence >= moveSequence);
-    };
-    // The authored floor has a central vertical aisle, a clear middle row,
-    // and a southern circuit; use those lanes rather than crossing counters.
-    const laneX = 360;
-    const approachStation = async (station: Station) => {
-      const routeY = 430;
-      const player = hostState!.players[hostToken];
-      if (player.y < 270) await moveHost(laneX, player.y);
-      else await moveHost(player.x, routeY);
-      await moveHost(laneX, routeY);
-      if (station.gridY === 1) {
-        await moveHost(laneX, station.y + 52);
-        await moveHost(station.x, station.y + 52);
-      } else {
-        await moveHost(station.x, routeY);
-        await moveHost(station.x, station.y + 52);
+    const approachStation = async (station: Station, client = host, playerId = hostToken) => {
+      const state = hostState!;
+      const player = state.players[playerId];
+      const start = { gridX: Math.floor(player.x / GRID_CELL_SIZE), gridY: Math.floor(player.y / GRID_CELL_SIZE) };
+      const queue = [{ ...start, path: [] as { x: number; y: number }[] }];
+      const visited = new Set([`${start.gridX}:${start.gridY}`]);
+      let path: { x: number; y: number }[] | undefined;
+      for (let index = 0; index < queue.length; index++) {
+        const cell = queue[index];
+        const point = gridCellCenter(cell.gridX, cell.gridY);
+        if (nearbyStation(state.tavern, point)?.id === station.id) { path = cell.path.concat(point); break; }
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const gridX = cell.gridX + dx, gridY = cell.gridY + dy;
+          const key = `${gridX}:${gridY}`;
+          if (gridX < 0 || gridY < 0 || gridX >= GRID_COLUMNS || gridY >= GRID_ROWS || visited.has(key) ||
+            pointCollidesWithCounters(state.tavern, gridCellCenter(gridX, gridY))) continue;
+          visited.add(key); queue.push({ gridX, gridY, path: cell.path.concat(point) });
+        }
       }
-      assert.ok(Math.hypot(hostState!.players[hostToken].x - station.x,
-        hostState!.players[hostToken].y - station.y) < 74, `station ${station.id} must be reachable`);
+      assert.ok(path, `route to ${station.id} must exist`);
+      for (const point of path) {
+        const sequence = hostState!.players[playerId].moveSequence + 1;
+        client.emit("move", { ...point, direction: "down", moving: true, sequence });
+        await waitForState(host, () => hostState, (state) => state.players[playerId].moveSequence >= sequence);
+        assert.ok(Math.hypot(hostState!.players[playerId].x - point.x, hostState!.players[playerId].y - point.y) < 1);
+      }
+      assert.equal(nearbyStation(hostState!.tavern, hostState!.players[playerId])?.id, station.id);
     };
     const collectRecipe = async (recipeId: string) => {
       const selected = recipeById(recipeId);
@@ -163,6 +167,24 @@ async function main() {
     await prepareRecipe(recipe.id);
     assert.ok((hostState!.players[hostToken].drinkQuality ?? 0) > 0.9, "on-target timing should create a high-quality drink");
 
+    smokeStage = "shared counter handoff";
+    const counter = hostState!.tavern.stations.find((station) => station.id === "counter-6-3")!;
+    const quality = hostState!.players[hostToken].drinkQuality;
+    await approachStation(counter);
+    host.emit("counter-drink");
+    await waitForState(guest, () => guestState, (state) => state.tavern.stations.find((station) => station.id === counter.id)?.drink?.recipeId === recipe.id);
+    assert.equal(guestState!.players[hostToken].drink, undefined);
+    await approachStation(counter, guest, guestToken);
+    guest.emit("interact");
+    await waitForState(host, () => hostState, (state) => state.players[guestToken].drink === recipe.id);
+    assert.equal(hostState!.players[guestToken].drinkQuality, quality);
+    assert.equal(hostState!.tavern.stations.find((station) => station.id === counter.id)?.drink, undefined);
+    guest.emit("counter-drink");
+    await waitForState(host, () => hostState, (state) => Boolean(state.tavern.stations.find((station) => station.id === counter.id)?.drink));
+    host.emit("interact");
+    await waitForState(host, () => hostState, (state) => state.players[hostToken].drink === recipe.id);
+    assert.equal(hostState!.players[hostToken].drinkQuality, quality);
+
     smokeStage = "serve drink";
     const service = hostState!.tavern.stations.find((station) => station.kind === "serve")!;
     await approachStation(service);
@@ -188,7 +210,8 @@ async function main() {
       twoClientMixingObserved: true,
       secondClientMovedDuringMixing: true,
       advancedRhythmActionsCompleted: true,
-      sharedPauseVerified: true
+      sharedPauseVerified: true,
+      counterHandoffVerified: true
     }, null, 2));
   } finally {
     host.disconnect();

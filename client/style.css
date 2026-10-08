@@ -35,10 +35,21 @@ body:has(.title-menu){background:radial-gradient(circle at 50% -15%,#70559b 0,#3
 .game:not(.hidden) .game-header{position:absolute;z-index:4;top:12px;left:18px;right:18px;margin:0;padding:9px 12px;border:1px solid rgba(255,245,223,.16);border-radius:13px;background:rgba(26,17,33,.78);backdrop-filter:blur(5px)}
 .game:not(.hidden) .game-header .eyebrow{display:none}
 .game:not(.hidden) .game-header strong{font-size:16px}
-.game:not(.hidden) .canvas-card{position:absolute;inset:0;border:0;border-radius:0;box-shadow:none;background:#110d16}
-.game:not(.hidden) .canvas-card canvas{width:100%;height:100%;max-height:none;object-fit:contain;object-position:center calc(50% + 18px)}
+.game:not(.hidden) .canvas-card{position:absolute;inset:176px 0 48px;border:0;border-radius:0;box-shadow:none;background:#201828}
+.game:not(.hidden) .canvas-card canvas{width:100%;height:100%;max-height:none;object-fit:contain;object-position:center}
 .game:not(.hidden) .controls{position:absolute;z-index:4;right:18px;bottom:12px;left:18px;margin:0;padding:7px 10px;border:1px solid rgba(255,245,223,.12);border-radius:10px;background:rgba(26,17,33,.76);text-align:center}
-.game:not(.hidden) .toast{z-index:5;top:84px}
+.game:not(.hidden) .toast{z-index:5;top:6px;pointer-events:none;font-size:12px;max-width:80%}
+.order-hud{position:absolute;z-index:4;top:74px;left:18px;right:18px;height:98px;display:flex;gap:10px;overflow-x:auto;align-items:stretch}
+.order-ticket{flex:0 0 220px;padding:6px 8px;background:#ffedcb;border:2px solid #bc925a;box-shadow:0 3px 0 #533c53;color:#382941;display:grid;grid-template-rows:18px 52px 6px;gap:3px;border-radius:5px}
+.order-ticket strong{font-size:12px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.order-ticket canvas{display:block;width:204px;height:49px;image-rendering:pixelated}
+.order-ticket progress{width:100%;height:6px;appearance:none;border:0;background:#d9c6aa}
+.order-ticket progress::-webkit-progress-bar{background:#d9c6aa}
+.order-ticket progress::-webkit-progress-value{background:#5a9a7e}
+.order-ticket progress::-moz-progress-bar{background:#5a9a7e}
+.order-ticket.urgent{border-color:#c96864}.order-ticket.urgent progress::-webkit-progress-value{background:#c96864}
+.orders-waiting{align-self:center;color:#ccb7d6;font-size:13px}
+@media(max-width:600px){.order-hud{left:8px;right:8px;gap:6px}.order-ticket{flex-basis:190px}.order-ticket canvas{width:176px}.game:not(.hidden) .controls{font-size:10px;left:8px;right:8px;bottom:4px}.game:not(.hidden) .canvas-card{bottom:56px}}
 .shell .overlay{z-index:40}
 .overlay .recipe-book{width:min(1040px,calc(100vw - 24px));text-align:center}
 .recipe-book-art{display:block;width:100%;height:auto;max-height:min(69vh,590px);background:transparent;image-rendering:pixelated}

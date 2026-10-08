@@ -7,6 +7,8 @@ import {
   recipeForIngredients, resumeShift, rhythmTimingAccepted, rhythmTimingQuality, seededUpgrades, shiftDurationForRound, stationBounds,
   toolTimingAccepted, toolTimingQuality, RECIPES
 } from "../shared/game.js";
+import { PLAYER_SPAWNS, nearbyStation, transferCounterDrink, type Player } from "../shared/game.js";
+import { boardPoint, TAVERN_VIEW } from "../client/tavern-renderer.js";
 import { handMixFrame } from "../client/mixing-animation.js";
 
 test("a recipe is identified irrespective of ingredient pickup order", () => {
@@ -31,11 +33,11 @@ test("a tavern seed produces a stable, readable layout", () => {
   const first = makeTavern(123456, 2);
   const second = makeTavern(123456, 2);
   assert.deepEqual(first, second);
-  assert.equal(first.stations.length, 13);
+  assert.ok(first.stations.length > 50);
   assert.deepEqual(first.stations.slice(0, 9).map((station) => station.ingredient), [
     "catnip", "lime", "fizz", "moonmilk", "cream", "stardust", "tuna", "tonic", "kelp"
   ]);
-  assert.deepEqual(first.stations.slice(-4).map((station) => station.kind), ["mix", "serve", "mop", "trash"]);
+  assert.equal(first.stations.filter((station) => station.kind === "mix").length, 2);
 });
 
 test("authored pantry wings spread recipes across the floor and leave four safe spawns", () => {
@@ -47,15 +49,13 @@ test("authored pantry wings spread recipes across the floor and leave four safe 
     const xs = recipe.ingredients.map((ingredient) => tavern.stations.find((station) => station.ingredient === ingredient)!.x);
     assert.ok(Math.max(...xs) - Math.min(...xs) >= 200, `${recipe.name} should require a cross-room route`);
   }
-  for (let index = 0; index < 4; index += 1) {
-    assert.equal(pointCollidesWithCounters(tavern, { x: 260 + index * 70, y: 420 }), false);
-  }
+  for (const spawn of PLAYER_SPAWNS) assert.equal(pointCollidesWithCounters(tavern, spawn), false);
 });
 
 test("all counter interaction points are reachable through the designed floor aisles", () => {
   const tavern = makeTavern(73, 1);
-  const queue = [{ x: 260, y: 420 }];
-  const visited = new Set(["260:420"]);
+  const queue = [PLAYER_SPAWNS[0]];
+  const visited = new Set([`${queue[0].x}:${queue[0].y}`]);
   for (let index = 0; index < queue.length; index += 1) {
     const current = queue[index];
     for (const [dx, dy] of [[10, 0], [-10, 0], [0, 10], [0, -10]]) {
@@ -70,9 +70,7 @@ test("all counter interaction points are reachable through the designed floor ai
   }
   for (const station of tavern.stations) {
     assert.ok(queue.some((point) => {
-      const distance = Math.hypot(point.x - station.x, point.y - station.y);
-      return distance < 70 && tavern.stations.every((other) => other === station ||
-        distance < Math.hypot(point.x - other.x, point.y - other.y));
+      return nearbyStation(tavern, point)?.id === station.id;
     }), `${station.id} needs a reachable point where it is the nearest station`);
   }
 });
@@ -91,9 +89,12 @@ test("every generated counter owns one unique square grid cell", () => {
     assert.equal(bounds.right - bounds.left, GRID_CELL_SIZE);
     assert.equal(bounds.bottom - bounds.top, GRID_CELL_SIZE);
   }
-  assert.deepEqual(new Set(tavern.stations.map((station) => station.counterVariant)), new Set([
-    "standard", "end-cap", "corner", "ingredient", "mixing", "decorative", "damaged"
-  ]));
+  for (const station of tavern.stations) {
+    const bounds = stationBounds(station);
+    const a = boardPoint(bounds.left, bounds.top), b = boardPoint(bounds.right, bounds.bottom);
+    assert.equal(b.x - a.x, GRID_CELL_SIZE);
+    assert.ok(Math.abs(b.y - a.y - GRID_CELL_SIZE * TAVERN_VIEW.depth) < .001);
+  }
 });
 
 test("counter collision prevents tunnelling through a square footprint", () => {
@@ -108,19 +109,44 @@ test("counter collision prevents tunnelling through a square footprint", () => {
 
 test("cat paws can pass clear counter corners without entering the square footprint", () => {
   const tavern = makeTavern(4321, 1);
+  tavern.stations = tavern.stations.filter((station) => station.id === "mix");
   const bounds = stationBounds(tavern.stations.find((station) => station.id === "mix")!);
   assert.equal(pointCollidesWithCounters(tavern, { x: bounds.right + 8, y: bounds.bottom + 8 }), false);
   assert.equal(pointCollidesWithCounters(tavern, { x: bounds.right + 5, y: bounds.bottom + 5 }), true);
 });
 
-test("trapezoid floor bounds reject upper-wall traversal and constrain diagonal movement", () => {
+test("rectangular floor bounds constrain movement to the rendered room", () => {
   const tavern = makeTavern(4321, 1);
-  const start = { x: 450, y: BOARD_BOUNDS.minY + 20 };
-  const resolved = moveWithCounterCollisions(tavern, start, { x: 900, y: 0 });
+  tavern.stations = [];
+  const start = PLAYER_SPAWNS[0];
+  const resolved = moveWithCounterCollisions(tavern, start, { x: 1200, y: -100 });
   const floor = floorBoundsAtY(resolved.y);
   assert.ok(Math.abs(resolved.y - BOARD_BOUNDS.minY) < .001);
   assert.ok(resolved.x >= floor.minX && resolved.x <= floor.maxX);
-  assert.ok(floor.minX > BOARD_BOUNDS.minX, "upper floor must be narrower than the lower board");
+  assert.equal(floor.minX, BOARD_BOUNDS.minX);
+});
+
+test("counter handoffs preserve quality and never overwrite or duplicate drinks", () => {
+  const station = makeTavern(1).stations.find((candidate) => candidate.kind === "counter")!;
+  const player: Player = { id: "host", name: "Cat", role: "Tabby", fur: "#ffffff", accessory: "Bow tie",
+    ...PLAYER_SPAWNS[0], direction: "down", moving: false, moveSequence: 0, carrying: [], connected: true, score: 0,
+    drink: "catnip", drinkQuality: .83 };
+  const guest: Player = { ...player, id: "guest", drink: undefined, drinkQuality: undefined, carrying: [] };
+  assert.equal(transferCounterDrink(player, station), "placed");
+  assert.deepEqual(station.drink, { recipeId: "catnip", quality: .83 });
+  assert.equal(player.drink, undefined);
+  guest.carrying = ["lime"];
+  assert.equal(transferCounterDrink(guest, station), "occupied");
+  guest.carrying = [];
+  assert.equal(transferCounterDrink(guest, station), "picked-up");
+  assert.equal(guest.drinkQuality, .83);
+  assert.equal(transferCounterDrink(player, station), "empty");
+  assert.equal(station.drink, undefined);
+  assert.equal(transferCounterDrink(guest, station), "placed");
+  player.drink = "tuna";
+  assert.equal(transferCounterDrink(player, station), "occupied");
+  assert.deepEqual(station.drink, { recipeId: "catnip", quality: .83 });
+  assert.equal(transferCounterDrink(player, makeTavern(1).stations.find((candidate) => candidate.kind === "trash")!), "unavailable");
 });
 
 test("mixing steps derive ingredient order from the recipe and append preparation actions", () => {

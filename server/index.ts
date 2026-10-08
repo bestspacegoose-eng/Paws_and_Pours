@@ -8,8 +8,9 @@ import {
   applyMissedOrderPenalty, createMixingSession, expectedMixingStep, type CatRole, type FacingDirection, type GameState,
   initialState, makeOrder, makeTavern, MIXING_MAX_MISTAKES, mixingQuality,
   moveWithCounterCollisions, mulberry32, pauseShift, recipeById, recipeForIngredients, resumeShift, seededUpgrades,
+  nearbyStation, transferCounterDrink, PLAYER_SPAWNS,
   rhythmTimingAccepted, rhythmTimingQuality, shiftDurationForRound, toolTimingAccepted, toolTimingQuality,
-  type Hazard, type MixingSession, type MixingTool, type Player, type RhythmAction
+  type Hazard, type MixingSession, type MixingTool, type Player, type RhythmAction, type Station
 } from "../shared/game.js";
 
 const app = express();
@@ -39,6 +40,17 @@ function playerFor(socketId: string, state: GameState) {
   return token ? state.players[token] : undefined;
 }
 function setMessage(state: GameState, message: string) { state.message = message; }
+function counterHandoff(state: GameState, player: Player, station: Station) {
+  const result = transferCounterDrink(player, station);
+  const messages = {
+    placed: `${player.name} left a drink on the counter for the crew.`,
+    "picked-up": `${player.name} picked up the prepared drink.`,
+    occupied: "That surface or your paws are full. Use an empty counter first.",
+    empty: "Finish mixing a drink, then set it here for another bartender.",
+    unavailable: "Use a preparation counter to set down a drink."
+  };
+  setMessage(state, messages[result]);
+}
 
 function nextMixingInstruction(session: MixingSession) {
   const next = expectedMixingStep(session);
@@ -91,6 +103,10 @@ function startShift(state: GameState) {
   state.shiftSeconds = shiftDurationForRound(state.round);
   state.orders = [];
   state.hazard = null;
+  Object.values(state.players).forEach((player, index) => {
+    Object.assign(player, PLAYER_SPAWNS[index % PLAYER_SPAWNS.length]);
+    player.carrying = []; player.drink = undefined; player.drinkQuality = undefined; player.moving = false;
+  });
   state.message = `${state.tavern.theme}: shift ${state.round} is on!`;
   spawnOrder(state);
 }
@@ -110,9 +126,9 @@ function spawnHazard(state: GameState): Hazard {
   const counter = (hazardCounters.get(state.code) ?? 0) + 1;
   hazardCounters.set(state.code, counter);
   const definitions: Omit<Hazard, "id">[] = [
-    { kind: "napkins", message: "A mischievous mouse scatters napkins!", x: 510, y: 340 },
-    { kind: "ectoplasm", message: "The spectral tap is leaking ectoplasm!", x: 610, y: 290 },
-    { kind: "fire", message: "A tiny kitchen fire is sizzling!", x: 455, y: 378 }
+    { kind: "napkins", message: "A mischievous mouse scatters napkins!", x: 493, y: 319 },
+    { kind: "ectoplasm", message: "The spectral tap is leaking ectoplasm!", x: 783, y: 377 },
+    { kind: "fire", message: "A tiny kitchen fire is sizzling!", x: 203, y: 377 }
   ];
   const hazard = { id: `hazard-${counter}`, ...definitions[Math.floor(random() * definitions.length)] };
   state.hazard = hazard;
@@ -196,12 +212,14 @@ io.on("connection", (socket) => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.phase !== "shift" || state.pausedAt !== null) return;
     if (state.mixing[player.id]) return;
-    const nearby = state.tavern.stations
-      .filter((station) => Math.hypot(station.x - player.x, station.y - player.y) < 74)
-      .sort((left, right) => Math.hypot(left.x - player.x, left.y - player.y) - Math.hypot(right.x - player.x, right.y - player.y))[0];
+    const nearby = nearbyStation(state.tavern, player);
     if (!nearby) return setMessage(state, "Walk up to a brightly colored station, then press E.");
+    if (nearby.kind === "counter" || nearby.drink) {
+      counterHandoff(state, player, nearby); broadcast(state); return;
+    }
     if (nearby.kind === "pantry") {
-      if (player.carrying.length >= 3) setMessage(state, `${player.name}'s paws are full—mix those ingredients first.`);
+      if (player.drink) setMessage(state, "Set your finished drink on a counter with Q, or serve it first.");
+      else if (player.carrying.length >= 3) setMessage(state, `${player.name}'s paws are full—mix those ingredients first.`);
       else {
         const ingredient = nearby.ingredient;
         if (!ingredient) return setMessage(state, "Choose an ingredient from the prep table.");
@@ -253,6 +271,15 @@ io.on("connection", (socket) => {
       } else setMessage(state, "Nothing to toss out. Your paws are clear.");
     }
     if (nearby.kind === "mop" && state.hazard) { state.hazard = null; setMessage(state, `${player.name} cleaned up the hazard. Good kitty!`); }
+    broadcast(state);
+  });
+
+  socket.on("counter-drink", () => {
+    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || state.mixing[player.id]) return;
+    const station = nearbyStation(state.tavern, player);
+    if (station) counterHandoff(state, player, station);
+    else setMessage(state, "Move beside a counter to place or pick up a drink.");
     broadcast(state);
   });
 
@@ -378,7 +405,7 @@ function joinRoom(socketId: string, state: GameState, payload: { token: string; 
   const existing = state.players[payload.token];
   state.players[payload.token] = existing ?? {
     id: payload.token, name: payload.name.slice(0, 16) || "Mittens", role: payload.role, fur: payload.fur,
-    accessory: payload.accessory, x: 260 + Object.keys(state.players).length * 70, y: 420,
+    accessory: payload.accessory, ...PLAYER_SPAWNS[Object.keys(state.players).length % PLAYER_SPAWNS.length],
     direction: "down", moving: false, moveSequence: 0, carrying: [], connected: true, score: 0
   } as Player;
   Object.assign(state.players[payload.token], { name: payload.name.slice(0, 16) || "Mittens", role: payload.role, fur: payload.fur, accessory: payload.accessory, connected: true });
