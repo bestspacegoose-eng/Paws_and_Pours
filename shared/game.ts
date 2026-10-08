@@ -49,7 +49,7 @@ export interface GameState {
 
 // The playable floor is a trapezoid in the 2.5D scene. The previous rectangular
 // bound started above the floor, which let cats travel through the rear wall.
-export const BOARD_BOUNDS = { minX: 32, maxX: 768, minY: 155, maxY: 442 } as const;
+export const BOARD_BOUNDS = { minX: 32, maxX: 768, minY: 190, maxY: 442 } as const;
 // This origin lands counter centres on the first visible row of floor tiles.
 // The prior origin started the top station row on the rear wall artwork.
 export const GRID_ORIGIN = { x: 48, y: 110 } as const;
@@ -60,6 +60,12 @@ export const GRID_ROWS = 5;
 export const PLAYER_COLLISION_RADIUS = 10;
 export const MIXING_DURATION_MS = 45_000;
 export const MIXING_MAX_MISTAKES = 3;
+export const PANTRY_FLOOR_PLAN: Record<string, GridCell> = {
+  catnip: { gridX: 1, gridY: 1 }, stardust: { gridX: 2, gridY: 1 },
+  kelp: { gridX: 5, gridY: 1 }, moonmilk: { gridX: 9, gridY: 1 }, lime: { gridX: 10, gridY: 1 },
+  tuna: { gridX: 1, gridY: 3 }, fizz: { gridX: 2, gridY: 3 },
+  tonic: { gridX: 9, gridY: 3 }, cream: { gridX: 10, gridY: 3 }
+};
 
 export const RECIPES: Recipe[] = [
   {
@@ -145,29 +151,24 @@ export function makeTavern(seed: number, round = 1): Tavern {
   const random = mulberry32(seed + round * 997);
   const themes: Theme[] = ["Cozy Village Pub", "Haunted Moonlit Inn", "Pirate Cat Tavern"];
   const theme = themes[Math.floor(random() * themes.length)];
-  const leftOffset = random() > 0.5 ? 1 : 0;
-  const pantryCells = INGREDIENTS.map((_ingredient, index): GridCell => index < 5
-    ? { gridX: leftOffset + index, gridY: 1 }
-    : { gridX: leftOffset + index - 5, gridY: 3 });
   const ingredientTable = INGREDIENTS.map((ingredient, index): Station => ({
     id: `ingredient-${ingredient}`,
     kind: "pantry",
     label: ingredient,
     ingredient,
     counterVariant: counterVariantForPantry(index),
-    ...pantryCells[index],
-    ...gridCellCenter(pantryCells[index].gridX, pantryCells[index].gridY)
+    ...PANTRY_FLOOR_PLAN[ingredient],
+    ...gridCellCenter(PANTRY_FLOOR_PLAN[ingredient].gridX, PANTRY_FLOOR_PLAN[ingredient].gridY)
   }));
-  const utilityRow = random() > 0.5 ? 1 : 4;
   const stationAt = (cell: GridCell, station: Omit<Station, keyof Vec | keyof GridCell>): Station => ({
     ...station, ...cell, ...gridCellCenter(cell.gridX, cell.gridY)
   });
   const stations: Station[] = [
     ...ingredientTable,
-    stationAt({ gridX: 6, gridY: 2 }, { id: "mix", kind: "mix", label: "Shaker & Brewer", counterVariant: "mixing" }),
-    stationAt({ gridX: 10, gridY: 2 }, { id: "serve", kind: "serve", label: "Service Bell", counterVariant: "decorative" }),
-    stationAt({ gridX: 11, gridY: utilityRow }, { id: "mop", kind: "mop", label: "Mop Bucket", counterVariant: "damaged" }),
-    stationAt({ gridX: 9, gridY: utilityRow === 1 ? 4 : 1 }, { id: "trash", kind: "trash", label: "Scrap Bin", counterVariant: "damaged" })
+    stationAt({ gridX: 6, gridY: 3 }, { id: "mix", kind: "mix", label: "Shaker & Brewer", counterVariant: "mixing" }),
+    stationAt({ gridX: 8, gridY: 4 }, { id: "serve", kind: "serve", label: "Service Bell", counterVariant: "decorative" }),
+    stationAt({ gridX: 0, gridY: 4 }, { id: "mop", kind: "mop", label: "Mop Bucket", counterVariant: "damaged" }),
+    stationAt({ gridX: 4, gridY: 4 }, { id: "trash", kind: "trash", label: "Scrap Bin", counterVariant: "damaged" })
   ];
   const decorations = theme === "Cozy Village Pub" ? ["🍞", "🕯️", "🌿"] :
     theme === "Haunted Moonlit Inn" ? ["👻", "🌙", "🕸️"] : ["⚓", "🏴‍☠️", "🐟"];

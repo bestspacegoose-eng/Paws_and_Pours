@@ -378,7 +378,7 @@ function joinRoom(socketId: string, state: GameState, payload: { token: string; 
   const existing = state.players[payload.token];
   state.players[payload.token] = existing ?? {
     id: payload.token, name: payload.name.slice(0, 16) || "Mittens", role: payload.role, fur: payload.fur,
-    accessory: payload.accessory, x: 260 + Object.keys(state.players).length * 70, y: 390,
+    accessory: payload.accessory, x: 260 + Object.keys(state.players).length * 70, y: 420,
     direction: "down", moving: false, moveSequence: 0, carrying: [], connected: true, score: 0
   } as Player;
   Object.assign(state.players[payload.token], { name: payload.name.slice(0, 16) || "Mittens", role: payload.role, fur: payload.fur, accessory: payload.accessory, connected: true });

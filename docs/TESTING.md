@@ -13,6 +13,7 @@ The shared test suite validates:
 
 - recipe matching independent of pickup order;
 - deterministic tavern generation;
+- authored pantry wings that spread every recipe across the floor, safe spawns, and reachable interaction points;
 - unique in-bounds counter cells;
 - exact square counter footprints;
 - swept collision that cannot tunnel through a counter;
@@ -61,6 +62,7 @@ Expected output includes `"ok": true`, the completed recipe, awarded coins, and 
 12. Let an order expire, then leave an order unserved when a shift ends. Verify each costs one shared heart and reputation; the run ends at zero hearts. On the next shift, verify the order pool and patience become harder.
 13. Check the shift starts at 3:00. Pause from either client (including the mixer header), verify both see the same pause menu and no time or patience passes. Open Settings and the illustrated Recipe Book, then resume from the other client.
 14. During Kelp Swirl or Seafoam Shake, verify the mixing bowl, liquid, and paws sway continuously and react more strongly to each hit. Turn on Reduced motion and verify that movement stops while timing controls remain usable.
+15. Start shifts in all three tavern themes. Verify the rear edge of each themed floor is visible, upper counters rest on floor tiles instead of the wall, and the pantry wings, central aisle, mixer, and service bell remain readable at both desktop and narrow widths. Walk between the left and right ingredients of each recipe without entering a hidden blocked area.
 
 ## Failure and recovery cases
 
@@ -87,6 +89,7 @@ Expected output includes `"ok": true`, the completed recipe, awarded coins, and 
 - A synchronized Scrap Bin station for clearing carried ingredients plus a live, accessible tool-hold timing bar in the mixing workspace.
 - Multiplayer state indicators and two-client smoke coverage.
 - A shared server-authoritative pause menu containing settings and the illustrated recipe book, three-minute shifts, traversable paw-sized counter corners, and hand-mixing animation.
+- Three matching themed floor-plan backgrounds and one authored pantry layout with accessible cross-room routes.
 - Recorded high-level game roadmap, asset inventory, risks, and UI redesign plan.
 
 ## Intentionally deferred

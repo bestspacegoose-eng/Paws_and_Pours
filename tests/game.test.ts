@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   applyMissedOrderPenalty, BOARD_BOUNDS, createMixingSession, expectedMixingStep, floorBoundsAtY,
   GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, gridCellCenter, initialState, makeOrder, makeTavern,
-  mixingStepsForRecipe, moveWithCounterCollisions, pauseShift, PLAYER_COLLISION_RADIUS, pointCollidesWithCounters,
+  mixingStepsForRecipe, moveWithCounterCollisions, PANTRY_FLOOR_PLAN, pauseShift, PLAYER_COLLISION_RADIUS, pointCollidesWithCounters,
   recipeForIngredients, resumeShift, rhythmTimingAccepted, rhythmTimingQuality, seededUpgrades, shiftDurationForRound, stationBounds,
   toolTimingAccepted, toolTimingQuality, RECIPES
 } from "../shared/game.js";
@@ -36,6 +36,45 @@ test("a tavern seed produces a stable, readable layout", () => {
     "catnip", "lime", "fizz", "moonmilk", "cream", "stardust", "tuna", "tonic", "kelp"
   ]);
   assert.deepEqual(first.stations.slice(-4).map((station) => station.kind), ["mix", "serve", "mop", "trash"]);
+});
+
+test("authored pantry wings spread recipes across the floor and leave four safe spawns", () => {
+  const tavern = makeTavern(123456, 2);
+  for (const station of tavern.stations.filter((candidate) => candidate.ingredient)) {
+    assert.deepEqual({ gridX: station.gridX, gridY: station.gridY }, PANTRY_FLOOR_PLAN[station.ingredient!]);
+  }
+  for (const recipe of RECIPES) {
+    const xs = recipe.ingredients.map((ingredient) => tavern.stations.find((station) => station.ingredient === ingredient)!.x);
+    assert.ok(Math.max(...xs) - Math.min(...xs) >= 200, `${recipe.name} should require a cross-room route`);
+  }
+  for (let index = 0; index < 4; index += 1) {
+    assert.equal(pointCollidesWithCounters(tavern, { x: 260 + index * 70, y: 420 }), false);
+  }
+});
+
+test("all counter interaction points are reachable through the designed floor aisles", () => {
+  const tavern = makeTavern(73, 1);
+  const queue = [{ x: 260, y: 420 }];
+  const visited = new Set(["260:420"]);
+  for (let index = 0; index < queue.length; index += 1) {
+    const current = queue[index];
+    for (const [dx, dy] of [[10, 0], [-10, 0], [0, 10], [0, -10]]) {
+      const next = { x: current.x + dx, y: current.y + dy };
+      const key = `${next.x}:${next.y}`;
+      const floor = floorBoundsAtY(next.y);
+      if (next.y < BOARD_BOUNDS.minY || next.y > BOARD_BOUNDS.maxY ||
+        next.x < floor.minX || next.x > floor.maxX || visited.has(key) || pointCollidesWithCounters(tavern, next)) continue;
+      visited.add(key);
+      queue.push(next);
+    }
+  }
+  for (const station of tavern.stations) {
+    assert.ok(queue.some((point) => {
+      const distance = Math.hypot(point.x - station.x, point.y - station.y);
+      return distance < 70 && tavern.stations.every((other) => other === station ||
+        distance < Math.hypot(point.x - other.x, point.y - other.y));
+    }), `${station.id} needs a reachable point where it is the nearest station`);
+  }
 });
 
 test("every generated counter owns one unique square grid cell", () => {
@@ -76,7 +115,7 @@ test("cat paws can pass clear counter corners without entering the square footpr
 
 test("trapezoid floor bounds reject upper-wall traversal and constrain diagonal movement", () => {
   const tavern = makeTavern(4321, 1);
-  const start = { x: 400, y: BOARD_BOUNDS.minY + 20 };
+  const start = { x: 450, y: BOARD_BOUNDS.minY + 20 };
   const resolved = moveWithCounterCollisions(tavern, start, { x: 900, y: 0 });
   const floor = floorBoundsAtY(resolved.y);
   assert.ok(Math.abs(resolved.y - BOARD_BOUNDS.minY) < .001);

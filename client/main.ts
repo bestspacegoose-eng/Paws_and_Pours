@@ -9,9 +9,9 @@ import maineCoonPortraitUrl from "./assets/characters/maine-coon.png";
 import blackCatPortraitUrl from "./assets/characters/black-cat.png";
 import calicoPortraitUrl from "./assets/characters/calico.png";
 import scrapBinUrl from "./assets/props/scrap-bin.png";
-import cozyVillagePubUrl from "./assets/tilemap/cozy-village-pub.png";
-import hauntedMoonlitInnUrl from "./assets/tilemap/haunted-moonlit-inn.png";
-import pirateCatTavernUrl from "./assets/tilemap/pirate-cat-tavern.png";
+import cozyVillagePubUrl from "./assets/tilemap/cozy-village-pub-floorplan.png";
+import hauntedMoonlitInnUrl from "./assets/tilemap/haunted-moonlit-inn-floorplan.png";
+import pirateCatTavernUrl from "./assets/tilemap/pirate-cat-tavern-floorplan.png";
 import catBartenderSpritesheetUrl from "./assets/tilemap/cat-bartender-spritesheet.png";
 import ingredientsSpritesheetUrl from "./assets/tilemap/ingredients-spritesheet.png";
 import cozyCounterBlocksUrl from "./assets/tilemap/counter-blocks-cozy.png";
@@ -438,7 +438,7 @@ const characterTintCache = new Map<string, HTMLCanvasElement>();
 function boardPoint(x: number, y: number): Point {
   // The background is pixel art. Integer screen coordinates keep each counter's
   // square footprint locked to the floor tiles instead of shimmering between them.
-  return { x: Math.round(40 + x * 0.94), y: Math.round(52 + (y - 70) * 0.94) };
+  return { x: Math.round(40 + x * 0.94), y: Math.round(70 + (y - 70) * 0.94) };
 }
 function drawText(text: string, x: number, y: number, font: string, color: string) {
   context.font = font; context.fillStyle = color; context.textAlign = "center"; context.fillText(text, x, y);

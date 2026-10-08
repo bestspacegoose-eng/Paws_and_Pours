@@ -43,7 +43,7 @@ npm test
 - Later orders introduce harder recipes and shorter patience windows. Every expired or unserved order costs a shared heart and reputation; a Nine Lives keepsake can restore one heart.
 - Square one-cell counter primitives with shared client/server collision and seven visual variants per tavern theme.
 - Three-minute shifts and a server-wide pause: any player can pause or resume; clocks, orders, movement, and mixing deadlines freeze together.
-- Deterministic tavern generation from a server seed, cycling among cozy, haunted, and pirate themes.
+- Deterministic tavern themes from a server seed, with an authored two-wing pantry floor plan and open routes to mixing and service.
 - Title menu with solo/create/join flow, locally persisted display/audio preferences, and solo-only profile/progress summary.
 - Trapezoid floor collision bounds, world-space hazard effects, finished-drink sprites, and discard support for ingredients or completed drinks.
 - Responsive desktop/smaller-screen interface with no art-asset download required.
@@ -90,7 +90,7 @@ npm run test:multiplayer
 
 The smoke test creates two Socket.IO clients and verifies the shared pause, gathering, an independently controlled player during mixing, ordered recipe actions, server-owned timing and quality, drink completion, and serving the matching live order.
 
-See [`docs/TESTING.md`](docs/TESTING.md) for manual browser cases and [`docs/EXPANSION_PLAN.md`](docs/EXPANSION_PLAN.md) for the architecture, full sprite inventory, risks, larger roadmap, and future UI plan.
+See [`docs/FLOOR_PLAN.md`](docs/FLOOR_PLAN.md) for the tavern layout, [`docs/TESTING.md`](docs/TESTING.md) for manual browser cases, and [`docs/EXPANSION_PLAN.md`](docs/EXPANSION_PLAN.md) for the architecture, full sprite inventory, risks, larger roadmap, and future UI plan.
 
 ## Future work
 

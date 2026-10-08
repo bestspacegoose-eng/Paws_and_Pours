@@ -85,19 +85,24 @@ async function main() {
       host.emit("move", { x, y, direction: "down", moving: true, sequence: moveSequence });
       await waitForState(host, () => hostState, (state) => state.players[hostToken].moveSequence >= moveSequence);
     };
-    // This lane sits between the lower pantry row and the mixer, allowing the
-    // scripted route to reach either pantry row without crossing a counter.
+    // The authored floor has a central vertical aisle, a clear middle row,
+    // and a southern circuit; use those lanes rather than crossing counters.
     const laneX = 360;
     const approachStation = async (station: Station) => {
-      // Every station now sits squarely on the visible floor. Approach from the
-      // clear lower lane, then move up to the tile below the one-cell footprint.
-      const approachY = station.y + 52;
-      // The utility counters can occupy row four, so use the clear bottom
-      // lane before approaching a station from below.
       const routeY = 430;
+      const player = hostState!.players[hostToken];
+      if (player.y < 270) await moveHost(laneX, player.y);
+      else await moveHost(player.x, routeY);
       await moveHost(laneX, routeY);
-      await moveHost(laneX, approachY);
-      await moveHost(station.x, approachY);
+      if (station.gridY === 1) {
+        await moveHost(laneX, station.y + 52);
+        await moveHost(station.x, station.y + 52);
+      } else {
+        await moveHost(station.x, routeY);
+        await moveHost(station.x, station.y + 52);
+      }
+      assert.ok(Math.hypot(hostState!.players[hostToken].x - station.x,
+        hostState!.players[hostToken].y - station.y) < 74, `station ${station.id} must be reachable`);
     };
     const collectRecipe = async (recipeId: string) => {
       const selected = recipeById(recipeId);
