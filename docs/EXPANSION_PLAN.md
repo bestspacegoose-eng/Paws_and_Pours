@@ -7,9 +7,9 @@ Paws & Pours is a compact server-authoritative multiplayer prototype:
 - `shared/game.ts` owns serializable game types, recipes, deterministic tavern generation, and shared lookup helpers.
 - `server/index.ts` owns rooms, player identity/reconnection, movement, interactions, shift timing, orders, hazards, rewards, and round changes.
 - `client/main.ts` owns the DOM shell, keyboard input, local movement prediction, canvas rendering, asset loading, and Socket.IO presentation.
-- The generated tavern backgrounds are decorative 2.5D scenes. Stations are currently free-positioned points with no collision footprint.
-- Recipes currently resolve from an unordered set of three gathered ingredients and produce a drink immediately at the mixer.
-- The UI is derived from each server snapshot. Lobby, upgrade, and run-complete states use one modal layer; gameplay has no pause/settings state.
+- The generated tavern backgrounds are decorative 2.5D scenes. Stations occupy deterministic one-cell square footprints, with shared client/server paw collision.
+- Recipes resolve from a set of three gathered ingredients, then open ordered, timed preparation steps in the private mixer.
+- The UI is derived from each server snapshot. A room-wide pause is authoritative; recipe-book and settings pages are local views inside its menu.
 - The asset pipeline uses PNG imports through Vite. Runtime atlas rectangles are declared in the canvas renderer; there is no separate manifest file.
 
 The repository has no persistent save or authored level files to migrate. Deterministic seeded taverns are the compatibility surface, so the grid migration must remain deterministic for an existing `(seed, round)` pair.
@@ -186,18 +186,15 @@ All visual variants occupy the same square gameplay footprint. Runtime neighbour
 5. **UX/accessibility:** menu/settings system, remapping, controller/touch support, readable status alternatives, reduced motion, scalable/pixel-perfect rendering, audio mixing, and localisation.
 6. **Online hardening:** rate limits, explicit session expiry, host migration, spectator/rejoin rules, metrics, persistence, and deployment smoke tests.
 
-## Future UI redesign (planned, not part of this feature pass)
+## UI redesign status and remaining work
 
-The next UI phase should introduce a UI state store independent from `GameState`. Local menu state must never pause, mutate, or disconnect the shared simulation.
+The gameplay menu button, illustrated recipe book, display/audio settings, and server-wide pause are implemented. The server freezes movement, orders, shift time, and mixing deadlines. Local menu pages do not mutate the shared simulation; only pause/resume commands do.
 
-Planned surfaces:
+Remaining surfaces:
 
-- persistent gameplay menu button with keyboard/controller shortcut;
-- non-blocking pause/settings shell (the online shift continues and says so clearly);
-- fullscreen, resolution/scaling, pixel-perfect mode, brightness, and reduced motion;
-- master/music/effects volume and mute;
+- brightness and broader resolution/scaling choices;
 - keyboard remapping, mouse sensitivity where relevant, controller mapping, and focus-visible navigation;
 - safe-area/responsive HUD layouts and text-scale controls;
-- local persistence for preferences, separate from room and simulation state.
+- playable audio assets behind the existing persisted volume controls.
 
-Foundation allowed in this pass: the mixing workspace will keep modal/presentation state separate from authoritative simulation state and expose accessible DOM controls. A general settings menu is intentionally deferred until its state/input architecture can be applied consistently across lobby, tavern, and mixing views.
+The current pause may be triggered or resumed by any connected player to avoid leaving a room stuck; future lobby moderation can introduce a host-only vote or consent model if griefing becomes a problem.

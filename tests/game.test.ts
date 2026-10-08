@@ -1,16 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  BOARD_BOUNDS, createMixingSession, expectedMixingStep, floorBoundsAtY, GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS,
-  gridCellCenter, makeOrder, makeTavern, mixingStepsForRecipe, moveWithCounterCollisions,
-  PLAYER_COLLISION_RADIUS, recipeForIngredients, seededUpgrades, stationBounds,
+  applyMissedOrderPenalty, BOARD_BOUNDS, createMixingSession, expectedMixingStep, floorBoundsAtY,
+  GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, gridCellCenter, initialState, makeOrder, makeTavern,
+  mixingStepsForRecipe, moveWithCounterCollisions, pauseShift, PLAYER_COLLISION_RADIUS, pointCollidesWithCounters,
+  recipeForIngredients, resumeShift, rhythmTimingAccepted, rhythmTimingQuality, seededUpgrades, shiftDurationForRound, stationBounds,
   toolTimingAccepted, toolTimingQuality, RECIPES
 } from "../shared/game.js";
+import { handMixFrame } from "../client/mixing-animation.js";
 
 test("a recipe is identified irrespective of ingredient pickup order", () => {
   const recipe = RECIPES[0];
   assert.equal(recipeForIngredients([...recipe.ingredients].reverse())?.id, recipe.id);
   assert.equal(recipeForIngredients(["catnip", "tuna", "fizz"]), undefined);
+});
+
+test("expanded recipes use unique three-ingredient sets from the existing pantry", () => {
+  const pantry = new Set(makeTavern(123).stations.flatMap((station) => station.ingredient ? [station.ingredient] : []));
+  const combinations = RECIPES.map((recipe) => [...recipe.ingredients].sort().join("|"));
+  assert.equal(new Set(combinations).size, RECIPES.length);
+  assert.ok(RECIPES.length >= 7);
+  for (const recipe of RECIPES) {
+    assert.equal(recipe.ingredients.length, 3);
+    assert.ok(recipe.ingredients.every((ingredient) => pantry.has(ingredient)));
+    assert.equal(recipeForIngredients([...recipe.ingredients].reverse())?.id, recipe.id);
+  }
 });
 
 test("a tavern seed produces a stable, readable layout", () => {
@@ -53,6 +67,13 @@ test("counter collision prevents tunnelling through a square footprint", () => {
   assert.equal(resolved.y, start.y);
 });
 
+test("cat paws can pass clear counter corners without entering the square footprint", () => {
+  const tavern = makeTavern(4321, 1);
+  const bounds = stationBounds(tavern.stations.find((station) => station.id === "mix")!);
+  assert.equal(pointCollidesWithCounters(tavern, { x: bounds.right + 8, y: bounds.bottom + 8 }), false);
+  assert.equal(pointCollidesWithCounters(tavern, { x: bounds.right + 5, y: bounds.bottom + 5 }), true);
+});
+
 test("trapezoid floor bounds reject upper-wall traversal and constrain diagonal movement", () => {
   const tavern = makeTavern(4321, 1);
   const start = { x: 400, y: BOARD_BOUNDS.minY + 20 };
@@ -73,19 +94,72 @@ test("mixing steps derive ingredient order from the recipe and append preparatio
   assert.equal(session.deadlineAt - session.startedAt, 45_000);
 });
 
+test("every round lasts three minutes and pausing preserves preparation time", () => {
+  assert.equal(shiftDurationForRound(1), 180);
+  assert.equal(shiftDurationForRound(4), 180);
+  const state = initialState("TEST", "host", 1);
+  state.phase = "shift";
+  state.mixing.host = createMixingSession("host", "catnip", 1000);
+  state.mixing.host.toolStartedAt = 1500;
+  const deadline = state.mixing.host.deadlineAt;
+  assert.equal(pauseShift(state, "host", 2000), true);
+  assert.equal(state.mixing.host.toolStartedAt, undefined);
+  assert.equal(resumeShift(state, 7000), true);
+  assert.equal(state.mixing.host.deadlineAt, deadline + 5000);
+  assert.equal(state.pausedAt, null);
+  assert.equal(state.shiftSeconds, 180);
+});
+
+test("hand-mixing frame animates crisply and honors reduced motion", () => {
+  const still = handMixFrame(1000, 1000, true);
+  assert.deepEqual(still, { bowlX: 0, bowlY: 0, liquidX: 0, leftPawX: 0, rightPawX: 0 });
+  const frames = [1000, 1040, 1080, 1120, 1160].map((time) => handMixFrame(time, 1000));
+  assert.ok(new Set(frames.map((frame) => `${frame.bowlX}:${frame.bowlY}:${frame.liquidX}`)).size > 2);
+  assert.ok(frames.every((frame) => Object.values(frame).every((offset) => offset % 2 === 0 && Math.abs(offset) <= 20)));
+});
+
 test("timed preparation evaluates accuracy and rejects extreme timing", () => {
   const action = RECIPES[0].preparation.actions[0];
+  assert.equal(action.kind, "timed-tool");
+  if (action.kind !== "timed-tool") return;
   assert.equal(toolTimingQuality(action.targetMs, action), 1);
   assert.equal(toolTimingAccepted(action.targetMs, action), true);
   assert.equal(toolTimingAccepted(100, action), false);
   assert.equal(toolTimingQuality(action.targetMs + action.toleranceMs * 2, action), 0);
 });
 
-test("customer patience includes time for gathering and the mixing workspace", () => {
+test("rhythm preparation supports chopping and alternating-paw mixing", () => {
+  const styles = new Set(RECIPES.flatMap((recipe) => recipe.preparation.actions
+    .filter((action) => action.kind === "rhythm").map((action) => action.style)));
+  assert.deepEqual(styles, new Set(["chop", "hand-mix"]));
+  const action = RECIPES.flatMap((recipe) => recipe.preparation.actions).find((step) => step.kind === "rhythm");
+  assert.ok(action && action.kind === "rhythm");
+  assert.equal(rhythmTimingAccepted(action.intervalMs, action), true);
+  assert.equal(rhythmTimingAccepted(action.intervalMs - action.toleranceMs - 1, action), false);
+  assert.equal(rhythmTimingQuality(action.intervalMs, action), 1);
+  assert.ok(rhythmTimingQuality(action.intervalMs + action.toleranceMs, action) < 1);
+});
+
+test("later orders unlock harder recipes and lose patience without becoming impossible", () => {
   const quickest = makeOrder("quick", () => 0);
   const longest = makeOrder("long", () => 0.999);
-  assert.equal(quickest.maxPatience, 60);
-  assert.equal(longest.maxPatience, 80);
+  const late = makeOrder("late", () => .999, 3, shiftDurationForRound(3) / 2);
+  assert.equal(quickest.maxPatience, 68);
+  assert.equal(longest.maxPatience, 85);
+  assert.ok(late.maxPatience < longest.maxPatience);
+  assert.equal(RECIPES.find((recipe) => recipe.id === late.recipeId)?.tier, 2);
+  assert.ok(makeOrder("bonus", () => .999, 3, shiftDurationForRound(3) / 2, 12).maxPatience > late.maxPatience);
+});
+
+test("each missed order costs a team heart and reputation, including shift-end misses", () => {
+  const state = initialState("TEST", "host", 1);
+  state.reputation = 2;
+  applyMissedOrderPenalty(state, 1);
+  assert.equal(state.health, 2);
+  assert.equal(state.reputation, 1);
+  applyMissedOrderPenalty(state, 3);
+  assert.equal(state.health, 0);
+  assert.equal(state.reputation, 0);
 });
 
 test("upgrade choices are deterministic and offer three distinct options", () => {

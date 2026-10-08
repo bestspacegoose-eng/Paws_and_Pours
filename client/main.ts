@@ -19,6 +19,7 @@ import hauntedCounterBlocksUrl from "./assets/tilemap/counter-blocks-haunted.png
 import pirateCounterBlocksUrl from "./assets/tilemap/counter-blocks-pirate.png";
 import finishedDrinksUrl from "./assets/tilemap/finished-drinks-spritesheet.png";
 import { MixingWorkspace } from "./mixing-workspace";
+import { drawRecipeDrink } from "./drink-art";
 import { atlasFrame, COUNTER_FRAME_INDEX, FINISHED_DRINK_FRAME_INDEX, INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
 import { clearSoloSave, defaultSettings, loadSettings, loadSoloSave, saveSettings, saveSoloSave, type DisplayAudioSettings } from "./preferences";
 import { drawTitlePortrait, TITLE_ACCESSORIES, type TitleAccessory } from "./title-portrait";
@@ -46,6 +47,7 @@ let localPrediction: LocalPrediction | null = null;
 let lastSentMoveSequence = 0;
 let recipeBookOpen = false;
 let recipeBookPage = 0;
+let pausePanel: "main" | "settings" = "main";
 
 const catPortraits: Record<CatRole, string> = {
   "Tabby": tabbyPortraitUrl, "Siamese": siamesePortraitUrl, "Maine Coon": maineCoonPortraitUrl,
@@ -111,7 +113,7 @@ app.innerHTML = `
       <p class="fineprint">Solo saves stay on this device. Parties use shared server state only · Press <kbd>E</kbd> near a station to interact</p>
     </section>
     <section id="game" class="game hidden">
-      <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span>♥ <b id="health">3</b></span><span class="timer" id="timer">1:30</span></div><button class="leave" id="recipe-book">Recipe book</button><button class="leave" id="leave">Leave</button></div>
+      <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span class="heart-status" id="heart-status" aria-label="3 team hearts"><span id="heart-icons" aria-hidden="true">♥♥♥</span><b id="health">3</b></span><span class="timer" id="timer">3:00</span></div><button class="leave" id="game-menu" type="button">Menu · Pause</button></div>
       <div class="canvas-card"><canvas id="board" width="800" height="480" aria-label="Paws and Pours game board"></canvas><div id="toast" class="toast"></div></div>
       <p class="controls"><kbd>WASD</kbd> or <kbd>← ↑ ↓ →</kbd> move · <kbd>E</kbd> interact · Ingredient counters → Mixing workspace → Service Bell · <span id="carry">Paws empty</span></p>
     </section>
@@ -127,6 +129,8 @@ const mixingWorkspace = new MixingWorkspace(game, {
   addIngredient: (ingredient) => socket.emit("mix-ingredient", ingredient),
   startTool: (tool) => socket.emit("mix-tool-start", tool),
   finishTool: (tool) => socket.emit("mix-tool-finish", tool),
+  rhythmHit: (style, hand) => socket.emit("mix-rhythm-hit", { style, hand }),
+  pause: () => socket.emit("set-pause", true),
   cancel: () => socket.emit("cancel-mixing")
 });
 
@@ -204,11 +208,8 @@ function connect(action: "create" | "join") {
 document.querySelector<HTMLButtonElement>("#solo")!.onclick = () => { sessionMode = "single"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create"); };
 document.querySelector<HTMLButtonElement>("#create")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create"); };
 document.querySelector<HTMLButtonElement>("#join")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("join"); };
-document.querySelector<HTMLButtonElement>("#leave")!.onclick = () => { sessionStorage.removeItem("paws-pours-room"); location.reload(); };
-document.querySelector<HTMLButtonElement>("#recipe-book")!.onclick = () => {
-  recipeBookOpen = !recipeBookOpen;
-  if (recipeBookOpen) recipeBookPage = 0;
-  renderOverlay();
+document.querySelector<HTMLButtonElement>("#game-menu")!.onclick = () => {
+  if (state?.phase === "shift" && state.pausedAt === null) socket.emit("set-pause", true);
 };
 document.querySelector<HTMLButtonElement>("#settings")!.onclick = () => { syncSettingsForm(); document.querySelector("#settings-panel")!.classList.remove("hidden"); };
 document.querySelector<HTMLButtonElement>("#close-settings")!.onclick = () => document.querySelector("#settings-panel")!.classList.add("hidden");
@@ -242,7 +243,11 @@ socket.on("joined", ({ code }: { code: string }) => { roomCode = code; sessionSt
 socket.on("state", (next: GameState) => {
   const authoritativePlayer = next.players[token];
   if (authoritativePlayer) {
-    if (next.mixing[token]) {
+    if (next.pausedAt !== null) {
+      move = { x: 0, y: 0 };
+      localPrediction = null;
+      authoritativePlayer.moving = false;
+    } else if (next.mixing[token]) {
       move = { x: 0, y: 0 };
       localPrediction = null;
       authoritativePlayer.moving = false;
@@ -276,8 +281,14 @@ function renderUi() {
   document.querySelector("#room-display")!.textContent = sessionMode === "single" ? "SOLO SHIFT" : `ROOM ${state.code}`;
   document.querySelector("#coins")!.textContent = String(state.coins);
   document.querySelector("#rep")!.textContent = String(state.reputation);
-  document.querySelector("#health")!.textContent = String(Math.max(0, state.health));
-  document.querySelector("#timer")!.textContent = state.phase === "shift" ? time(state.shiftSeconds) : state.phase.toUpperCase();
+  const hearts = Math.max(0, Math.min(3, state.health));
+  document.querySelector("#health")!.textContent = String(hearts);
+  document.querySelector("#heart-icons")!.textContent = "♥".repeat(hearts) + "♡".repeat(3 - hearts);
+  const heartStatus = document.querySelector<HTMLElement>("#heart-status")!;
+  heartStatus.setAttribute("aria-label", `${hearts} team heart${hearts === 1 ? "" : "s"}`);
+  heartStatus.classList.toggle("critical", hearts <= 1);
+  document.querySelector("#timer")!.textContent = state.phase === "shift" ? `${state.pausedAt !== null ? "Ⅱ " : ""}${time(state.shiftSeconds)}` : state.phase.toUpperCase();
+  document.querySelector<HTMLButtonElement>("#game-menu")!.disabled = state.phase !== "shift" || state.pausedAt !== null;
   const player = localPlayer();
   document.querySelector("#carry")!.textContent = state.mixing[token] ? `Preparing: ${recipeById(state.mixing[token].recipeId).name}` : player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.join(", ")}` : "Paws empty";
   if (state.message !== lastStateMessage) {
@@ -289,14 +300,38 @@ function renderUi() {
 }
 function renderOverlay() {
   if (!state) return;
-  if (recipeBookOpen && state.phase === "shift") {
+  overlay.classList.toggle("pause-overlay", state.phase === "shift" && state.pausedAt !== null);
+  if (state.phase === "shift" && state.pausedAt !== null && recipeBookOpen) {
     overlay.classList.remove("hidden");
     const recipe = RECIPES[recipeBookPage];
-    overlay.innerHTML = `<section class="recipe-book" aria-label="Bartender's recipe book"><canvas id="recipe-book-art" class="recipe-book-art" width="1000" height="590" aria-label="Illustrated recipe page for ${recipe.name}"></canvas><div class="recipe-book-controls"><button class="recipe-book-page" id="previous-recipe" ${recipeBookPage === 0 ? "disabled" : ""}>← Previous</button><span aria-live="polite">Recipe ${recipeBookPage + 1} of ${RECIPES.length}</span><button class="recipe-book-page" id="next-recipe" ${recipeBookPage === RECIPES.length - 1 ? "disabled" : ""}>Next →</button></div><button class="recipe-book-close" id="close-book">Close recipe book</button></section>`;
+    overlay.innerHTML = `<section class="recipe-book" aria-label="Bartender's recipe book"><canvas id="recipe-book-art" class="recipe-book-art" width="1000" height="590" aria-label="Illustrated recipe page for ${recipe.name}"></canvas><div class="recipe-book-controls"><button class="recipe-book-page" id="previous-recipe" ${recipeBookPage === 0 ? "disabled" : ""}>← Previous</button><span aria-live="polite">Recipe ${recipeBookPage + 1} of ${RECIPES.length}</span><button class="recipe-book-page" id="next-recipe" ${recipeBookPage === RECIPES.length - 1 ? "disabled" : ""}>Next →</button></div><button class="recipe-book-close" id="close-book">← Pause menu</button></section>`;
     document.querySelector<HTMLButtonElement>("#previous-recipe")!.onclick = () => { recipeBookPage -= 1; renderOverlay(); };
     document.querySelector<HTMLButtonElement>("#next-recipe")!.onclick = () => { recipeBookPage += 1; renderOverlay(); };
     document.querySelector<HTMLButtonElement>("#close-book")!.onclick = () => { recipeBookOpen = false; renderOverlay(); };
     window.requestAnimationFrame(() => drawRecipeBookPage(recipe, recipeBookPage));
+  } else if (state.phase === "shift" && state.pausedAt !== null) {
+    overlay.classList.remove("hidden");
+    const pauser = state.players[state.pausedBy ?? ""]?.name ?? "A player";
+    if (pausePanel === "settings") {
+      overlay.innerHTML = `<div class="modal card pause-menu"><p class="eyebrow">SHIFT PAUSED FOR EVERYONE</p><h2>Settings</h2><div class="pause-settings settings-panel">
+        <label>Display scale<select id="pause-scale"><option value="1">100%</option><option value="0.85">85%</option><option value="1.15">115%</option></select></label>
+        <label class="toggle"><input id="pause-pixel" type="checkbox" /> Pixel-perfect rendering</label><label class="toggle"><input id="pause-motion" type="checkbox" /> Reduced motion</label>
+        <button id="pause-fullscreen" class="secondary" type="button">Toggle fullscreen</button>
+        <label>Master volume<input id="pause-master" type="range" min="0" max="100" /></label><label>Music volume<input id="pause-music" type="range" min="0" max="100" /></label><label>Effects volume<input id="pause-effects" type="range" min="0" max="100" /></label><label class="toggle"><input id="pause-muted" type="checkbox" /> Mute audio</label>
+        <button id="pause-reset" class="secondary" type="button">Reset settings</button></div><button class="recipe-book-close" id="pause-back" type="button">← Pause menu</button></div>`;
+      syncPauseSettingsForm();
+      for (const key of ["scale", "pixel", "motion", "master", "music", "effects", "muted"]) document.querySelector(`#pause-${key}`)!.addEventListener("input", readPauseSettingsForm);
+      document.querySelector<HTMLButtonElement>("#pause-fullscreen")!.onclick = () => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.(); };
+      document.querySelector<HTMLButtonElement>("#pause-reset")!.onclick = () => { settings = { ...defaultSettings }; applySettings(); syncPauseSettingsForm(); syncSettingsForm(); };
+      document.querySelector<HTMLButtonElement>("#pause-back")!.onclick = () => { pausePanel = "main"; renderOverlay(); };
+    } else {
+      overlay.innerHTML = `<div class="modal card pause-menu" role="dialog" aria-modal="true" aria-label="Paused game menu"><p class="eyebrow">SHIFT PAUSED FOR EVERYONE</p><h2>Pause menu</h2><p><span id="pause-by-name"></span> paused the tavern. The shift, orders, and preparation timers are frozen for all cats.</p><div class="pause-actions"><button class="primary" id="resume-shift" type="button">Resume for everyone</button><button id="open-pause-book" type="button">Recipe book</button><button id="open-pause-settings" type="button">Settings</button><button id="leave-game" type="button">Leave game</button></div></div>`;
+      document.querySelector("#pause-by-name")!.textContent = pauser;
+      document.querySelector<HTMLButtonElement>("#resume-shift")!.onclick = () => socket.emit("set-pause", false);
+      document.querySelector<HTMLButtonElement>("#open-pause-book")!.onclick = () => { recipeBookPage = 0; recipeBookOpen = true; renderOverlay(); };
+      document.querySelector<HTMLButtonElement>("#open-pause-settings")!.onclick = () => { pausePanel = "settings"; renderOverlay(); };
+      document.querySelector<HTMLButtonElement>("#leave-game")!.onclick = () => { sessionStorage.removeItem("paws-pours-room"); location.reload(); };
+    }
   } else if (state.phase === "lobby") {
     overlay.classList.remove("hidden");
     const isHost = state.hostId === token;
@@ -308,7 +343,33 @@ function renderOverlay() {
     document.querySelectorAll<HTMLButtonElement>("[data-upgrade]").forEach((button) => button.onclick = () => socket.emit("choose-upgrade", button.dataset.upgrade));
   } else if (state.phase === "complete") {
     overlay.classList.remove("hidden"); overlay.innerHTML = `<div class="modal card"><p class="eyebrow">RUN OVER</p><h2>A furry good effort.</h2><p>You earned ${state.coins} coins and ${state.reputation} reputation across ${state.round} tavern${state.round > 1 ? "s" : ""}.</p><button class="primary" onclick="location.reload()">Return to menu</button></div>`;
-  } else overlay.classList.add("hidden");
+  } else {
+    recipeBookOpen = false;
+    pausePanel = "main";
+    overlay.classList.add("hidden");
+  }
+}
+
+function syncPauseSettingsForm() {
+  document.querySelector<HTMLSelectElement>("#pause-scale")!.value = String(settings.scale);
+  for (const [key, value] of [["pixel", settings.pixelPerfect], ["motion", settings.reducedMotion], ["muted", settings.muted]] as const)
+    document.querySelector<HTMLInputElement>(`#pause-${key}`)!.checked = value;
+  for (const [key, value] of [["master", settings.masterVolume], ["music", settings.musicVolume], ["effects", settings.effectsVolume]] as const)
+    document.querySelector<HTMLInputElement>(`#pause-${key}`)!.value = String(value);
+}
+
+function readPauseSettingsForm() {
+  settings = {
+    scale: Number(document.querySelector<HTMLSelectElement>("#pause-scale")!.value) as DisplayAudioSettings["scale"],
+    pixelPerfect: document.querySelector<HTMLInputElement>("#pause-pixel")!.checked,
+    reducedMotion: document.querySelector<HTMLInputElement>("#pause-motion")!.checked,
+    masterVolume: Number(document.querySelector<HTMLInputElement>("#pause-master")!.value),
+    musicVolume: Number(document.querySelector<HTMLInputElement>("#pause-music")!.value),
+    effectsVolume: Number(document.querySelector<HTMLInputElement>("#pause-effects")!.value),
+    muted: document.querySelector<HTMLInputElement>("#pause-muted")!.checked
+  };
+  applySettings();
+  syncSettingsForm();
 }
 
 function rememberLocalPrediction(player: Player) {
@@ -327,7 +388,7 @@ function emitMovement(player: Player, moving: boolean) {
 }
 function movePlayer() {
   const player = localPlayer();
-  if (!state || !player || state.phase !== "shift" || state.mixing[token]) return;
+  if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || state.mixing[token]) return;
   if (!move.x && !move.y) {
     if (player.moving) emitMovement(player, false);
     return;
@@ -349,6 +410,14 @@ function movePlayer() {
 }
 const movementKeys: Record<string, keyof typeof move> = { w: "y", ArrowUp: "y", s: "y", ArrowDown: "y", a: "x", ArrowLeft: "x", d: "x", ArrowRight: "x" };
 window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state?.phase === "shift") {
+    event.preventDefault();
+    if (state.pausedAt === null) socket.emit("set-pause", true);
+    else if (recipeBookOpen || pausePanel === "settings") { recipeBookOpen = false; pausePanel = "main"; renderOverlay(); }
+    else socket.emit("set-pause", false);
+    return;
+  }
+  if (state?.pausedAt !== null || event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
   if (event.key.toLowerCase() === "e" && state?.phase === "shift" && !state.mixing[token]) { event.preventDefault(); socket.emit("interact"); }
   const axis = movementKeys[event.key]; if (!axis) return;
   if (state?.mixing[token]) return;
@@ -519,9 +588,12 @@ function drawPlayer(player: Player) {
 }
 function drawFinishedDrink(recipeId: string, x: number, y: number, state: "idle" | "complete") {
   const frameIndex = FINISHED_DRINK_FRAME_INDEX[recipeId]?.[state];
-  if (frameIndex === undefined || !finishedDrinksSpritesheet.complete || !finishedDrinksSpritesheet.naturalWidth) return;
-  const frame = atlasFrame(finishedDrinksSpritesheet, 3, 2, frameIndex);
   const size = state === "complete" ? 62 : 34;
+  if (frameIndex === undefined || !finishedDrinksSpritesheet.complete || !finishedDrinksSpritesheet.naturalWidth) {
+    drawRecipeDrink(context, recipeById(recipeId), x, y, size);
+    return;
+  }
+  const frame = atlasFrame(finishedDrinksSpritesheet, 3, 2, frameIndex);
   context.save(); context.beginPath(); context.ellipse(x, y, size * .38, size * .44, 0, 0, Math.PI * 2); context.clip();
   context.drawImage(finishedDrinksSpritesheet, frame.x, frame.y, frame.width, frame.height, x - size / 2, y - size / 2, size, size);
   context.restore();
@@ -567,7 +639,9 @@ function drawRecipeBookPage(recipe: Recipe, page: number) {
   bookContext.font = "700 19px 'DM Mono', monospace";
   bookContext.fillText("MIX THESE THREE", 84, 254);
   bookContext.font = "600 14px 'DM Mono', monospace";
-  bookContext.fillText("Gather in order · shake · serve", 84, 287);
+  const actionSummary = recipe.preparation.actions.map((action) => action.kind === "rhythm"
+    ? action.style === "chop" ? "chop" : "paw mix" : action.tool).join(" · ");
+  bookContext.fillText(`Add in order · ${actionSummary} · serve`, 84, 287, 358);
   bookContext.fillText("Illustrated ingredient notes", 84, 315);
   bookContext.fillStyle = "rgba(92, 54, 53, .28)";
   bookContext.fillRect(84, 347, 300, 4);
@@ -584,7 +658,7 @@ function drawRecipeBookPage(recipe: Recipe, page: number) {
   if (drinkFrameIndex !== undefined && finishedDrinksSpritesheet.complete && finishedDrinksSpritesheet.naturalWidth) {
     const frame = atlasFrame(finishedDrinksSpritesheet, 3, 2, drinkFrameIndex);
     bookContext.drawImage(finishedDrinksSpritesheet, frame.x, frame.y, frame.width, frame.height, 621, 107, 230, 230);
-  }
+  } else drawRecipeDrink(bookContext, recipe, 736, 222, 205);
   bookContext.fillStyle = "#543247";
   bookContext.font = "700 17px 'DM Mono', monospace";
   bookContext.fillText("INGREDIENTS", 548, 379);

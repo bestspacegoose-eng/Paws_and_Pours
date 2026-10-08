@@ -60,6 +60,23 @@ async function main() {
     smokeStage = "start shift";
     host.emit("start-shift");
     await waitForState(host, () => hostState, (state) => state.phase === "shift" && state.orders.length > 0);
+    assert.equal(hostState!.shiftSeconds, 180, "each shift should start at three minutes");
+
+    smokeStage = "shared pause";
+    guest.emit("set-pause", true);
+    await waitForState(host, () => hostState, (state) => state.pausedAt !== null);
+    await waitForState(guest, () => guestState, (state) => state.pausedAt !== null);
+    const frozenSeconds = hostState!.shiftSeconds;
+    const frozenPatience = hostState!.orders[0].patience;
+    const frozenX = hostState!.players[hostToken].x;
+    host.emit("move", { x: frozenX + 20, y: hostState!.players[hostToken].y, sequence: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 1250));
+    assert.equal(hostState!.shiftSeconds, frozenSeconds, "the shift clock should stop for both players");
+    assert.equal(hostState!.orders[0].patience, frozenPatience, "orders should not age while paused");
+    assert.equal(hostState!.players[hostToken].x, frozenX, "movement should be rejected while paused");
+    guest.emit("set-pause", false);
+    await waitForState(host, () => hostState, (state) => state.pausedAt === null);
+    await waitForState(guest, () => guestState, (state) => state.pausedAt === null);
 
     const recipe = recipeById(hostState!.orders[0].recipeId);
     let moveSequence = hostState!.players[hostToken].moveSequence;
@@ -82,22 +99,54 @@ async function main() {
       await moveHost(laneX, approachY);
       await moveHost(station.x, approachY);
     };
-
-    for (const ingredient of recipe.ingredients) {
-      smokeStage = `collect ${ingredient}`;
-      const station = hostState!.tavern.stations.find((candidate) => candidate.ingredient === ingredient);
-      assert.ok(station, `missing station for ${ingredient}`);
-      await approachStation(station);
+    const collectRecipe = async (recipeId: string) => {
+      const selected = recipeById(recipeId);
+      for (const ingredient of selected.ingredients) {
+        smokeStage = `collect ${ingredient}`;
+        const station = hostState!.tavern.stations.find((candidate) => candidate.ingredient === ingredient);
+        assert.ok(station, `missing station for ${ingredient}`);
+        await approachStation(station);
+        host.emit("interact");
+        await waitForState(host, () => hostState, (state) => state.players[hostToken].carrying.includes(ingredient));
+      }
+      await approachStation(hostState!.tavern.stations.find((station) => station.kind === "mix")!);
       host.emit("interact");
-      await waitForState(host, () => hostState, (state) => state.players[hostToken].carrying.includes(ingredient));
-    }
+      await waitForState(host, () => hostState, (state) => state.mixing[hostToken]?.recipeId === selected.id);
+    };
+    const prepareRecipe = async (recipeId: string) => {
+      const selected = recipeById(recipeId);
+      for (const ingredient of selected.ingredients) {
+        smokeStage = `mix ${ingredient}`;
+        host.emit("mix-ingredient", ingredient);
+        await waitForState(host, () => hostState, (state) => state.mixing[hostToken]?.usedIngredients.includes(ingredient) ?? false);
+      }
+      for (const action of selected.preparation.actions) {
+        const previousStep = hostState!.mixing[hostToken].stepIndex;
+        if (action.kind === "timed-tool") {
+          smokeStage = `time ${action.tool}`;
+          host.emit("mix-tool-start", action.tool);
+          await waitForState(host, () => hostState, (state) => Boolean(state.mixing[hostToken]?.toolStartedAt));
+          await new Promise((resolve) => setTimeout(resolve, action.targetMs));
+          host.emit("mix-tool-finish", action.tool);
+        } else {
+          smokeStage = `${action.style} rhythm`;
+          for (let hit = 0; hit < action.hits; hit++) {
+            if (hit) await new Promise((resolve) => setTimeout(resolve, action.intervalMs));
+            host.emit("mix-rhythm-hit", { style: action.style, hand: action.style === "hand-mix" ? hit % 2 ? "right" : "left" : undefined });
+            if (hit < action.hits - 1) await waitForState(host, () => hostState,
+              (state) => state.mixing[hostToken]?.rhythmHits === hit + 1);
+          }
+        }
+        await waitForState(host, () => hostState, (state) =>
+          (state.mixing[hostToken]?.stepIndex ?? Number.MAX_SAFE_INTEGER) > previousStep);
+      }
+      await waitForState(host, () => hostState, (state) => state.players[hostToken].drink === selected.id && !state.mixing[hostToken]);
+    };
+
+    await collectRecipe(recipe.id);
     assert.deepEqual([...hostState!.players[hostToken].carrying].sort(), [...recipe.ingredients].sort());
 
     smokeStage = "open mixer";
-    const mixer = hostState!.tavern.stations.find((station) => station.kind === "mix")!;
-    await approachStation(mixer);
-    host.emit("interact");
-    await waitForState(host, () => hostState, (state) => state.mixing[hostToken]?.recipeId === recipe.id);
     await waitForState(guest, () => guestState, (state) => state.mixing[hostToken]?.recipeId === recipe.id);
 
     const guestBefore = guestState!.players[guestToken];
@@ -106,18 +155,7 @@ async function main() {
     await waitForState(guest, () => guestState, (state) => state.players[guestToken].moveSequence >= guestSequence);
     assert.notEqual(guestState!.players[guestToken].x, guestBefore.x, "the non-mixing client should remain mobile");
 
-    for (const ingredient of recipe.ingredients) {
-      smokeStage = `mix ${ingredient}`;
-      host.emit("mix-ingredient", ingredient);
-      await waitForState(host, () => hostState, (state) => state.mixing[hostToken]?.usedIngredients.includes(ingredient) ?? false);
-    }
-    smokeStage = "time tool";
-    const tool = recipe.preparation.actions[0];
-    host.emit("mix-tool-start", tool.tool);
-    await waitForState(host, () => hostState, (state) => Boolean(state.mixing[hostToken]?.toolStartedAt));
-    await new Promise((resolve) => setTimeout(resolve, tool.targetMs));
-    host.emit("mix-tool-finish", tool.tool);
-    await waitForState(host, () => hostState, (state) => state.players[hostToken].drink === recipe.id && !state.mixing[hostToken]);
+    await prepareRecipe(recipe.id);
     assert.ok((hostState!.players[hostToken].drinkQuality ?? 0) > 0.9, "on-target timing should create a high-quality drink");
 
     smokeStage = "serve drink";
@@ -128,13 +166,24 @@ async function main() {
     await waitForState(host, () => hostState, (state) => state.coins > coinsBefore && !state.players[hostToken].drink);
     assert.equal(hostState!.orders.some((order) => order.recipeId === recipe.id), false);
 
+    // The advanced drink exercises both new actions while the second client
+    // stays in the same authoritative room and keeps its own movement state.
+    smokeStage = "advanced chop and hand mix";
+    await collectRecipe("seafoam-shake");
+    await prepareRecipe("seafoam-shake");
+    assert.ok((hostState!.players[hostToken].drinkQuality ?? 0) > .85);
+    await waitForState(guest, () => guestState, (state) => state.players[hostToken].drink === "seafoam-shake");
+    assert.equal(guestState!.players[hostToken].drink, "seafoam-shake");
+
     console.log(JSON.stringify({
       ok: true,
       room: code,
       recipe: recipe.name,
       coinsAwarded: hostState!.coins - coinsBefore,
       twoClientMixingObserved: true,
-      secondClientMovedDuringMixing: true
+      secondClientMovedDuringMixing: true,
+      advancedRhythmActionsCompleted: true,
+      sharedPauseVerified: true
     }, null, 2));
   } finally {
     host.disconnect();

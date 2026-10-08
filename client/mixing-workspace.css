@@ -6,6 +6,7 @@
 .mixing-metrics{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;font:500 11px 'DM Mono',monospace;color:#ead4c7}
 .mixing-metrics>span{padding:8px 10px;border-radius:8px;background:#39263f;border:1px solid rgba(255,255,255,.08)}
 .mixing-cancel{padding:8px 12px;border-radius:8px;background:#513443;color:#ffe4d1}
+.mixing-pause{padding:8px 12px;border-radius:8px;background:#624666;color:#fff0d6}
 .mixing-stage{position:relative;overflow:hidden;border:1px solid rgba(255,245,223,.2);border-radius:14px;background:#4b2c3e;box-shadow:inset 0 0 0 2px rgba(22,13,27,.32)}
 .mixing-stage canvas{width:100%;height:auto;max-height:min(64vh,580px);object-fit:contain;image-rendering:pixelated;background:#4b2c3e}
 .mixing-status{position:absolute;top:12px;left:50%;width:min(560px,calc(100% - 150px));transform:translateX(-50%);padding:8px 13px;border:1px solid rgba(255,245,223,.18);border-radius:11px;background:rgba(26,16,33,.88);text-align:center;pointer-events:none}
@@ -24,10 +25,13 @@
 .tool-timing-track i[data-phase="late"]{background:#e2736e}
 .mixing-actions{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;padding:13px 4px 3px}
 .mixing-action{min-width:150px;border:1px solid rgba(255,245,223,.16);border-radius:9px;padding:10px 14px;background:#f0c47c;color:#2b1b32;box-shadow:0 4px 0 #7f4a46}
-.mixing-action:focus-visible,.mixing-cancel:focus-visible{outline:3px solid #8ee6dd;outline-offset:3px}
+.mixing-action:focus-visible,.mixing-cancel:focus-visible,.mixing-pause:focus-visible{outline:3px solid #8ee6dd;outline-offset:3px}
 .mixing-action:disabled{box-shadow:none;background:#4b3a50;color:#ad9caf}
 .tool-action{min-width:260px;background:#83dac8}
 .tool-holding .tool-action{transform:translateY(3px);filter:brightness(1.18);box-shadow:0 1px 0 #315d62}
+.rhythm-action{min-width:170px;background:#9a829f;color:#fff0d7;box-shadow:0 4px 0 #50394f}
+.rhythm-action.rhythm-next{background:#f0c47c;color:#2b1b32;box-shadow:0 4px 0 #805242}
+.rhythm-action:active{transform:translateY(3px);box-shadow:0 1px 0 #50394f}
 .mixing-help{margin:8px auto 2px;text-align:center;font-size:11px;color:#cdbac3}
 .mixing-workspace[data-theme="Haunted Moonlit Inn"] .mixing-shell{background:#211a38}
 .mixing-workspace[data-theme="Pirate Cat Tavern"] .mixing-shell{background:#132c38}

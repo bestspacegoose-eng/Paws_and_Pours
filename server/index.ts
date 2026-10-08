@@ -5,10 +5,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import {
-  createMixingSession, expectedMixingStep, type CatRole, type FacingDirection, type GameState,
+  applyMissedOrderPenalty, createMixingSession, expectedMixingStep, type CatRole, type FacingDirection, type GameState,
   initialState, makeOrder, makeTavern, MIXING_MAX_MISTAKES, mixingQuality,
-  moveWithCounterCollisions, mulberry32, recipeById, recipeForIngredients, seededUpgrades,
-  toolTimingAccepted, toolTimingQuality, type Hazard, type MixingSession, type MixingTool, type Player
+  moveWithCounterCollisions, mulberry32, pauseShift, recipeById, recipeForIngredients, resumeShift, seededUpgrades,
+  rhythmTimingAccepted, rhythmTimingQuality, shiftDurationForRound, toolTimingAccepted, toolTimingQuality,
+  type Hazard, type MixingSession, type MixingTool, type Player, type RhythmAction
 } from "../shared/game.js";
 
 const app = express();
@@ -43,6 +44,9 @@ function nextMixingInstruction(session: MixingSession) {
   const next = expectedMixingStep(session);
   if (!next) return "Drink complete.";
   if (next.kind === "ingredient") return `Add ${next.ingredient}.`;
+  if (next.kind === "rhythm") return next.style === "chop"
+    ? `Chop ${next.ingredient} ${next.hits} times to the beat.`
+    : `Mix by alternating left and right paws ${next.hits} times to the beat.`;
   return `Hold the ${next.tool} for about ${(next.targetMs / 1000).toFixed(1)} seconds.`;
 }
 
@@ -56,6 +60,9 @@ function failMixing(state: GameState, player: Player, message: string) {
 function mixingMistake(state: GameState, player: Player, session: MixingSession, message: string) {
   session.mistakes += 1;
   session.toolStartedAt = undefined;
+  session.rhythmHits = 0;
+  session.rhythmLastHitAt = undefined;
+  session.rhythmQualityPoints = 0;
   if (session.mistakes >= MIXING_MAX_MISTAKES) {
     failMixing(state, player, `${player.name}'s mixture failed after three mistakes. The ingredients were spoiled.`);
     return;
@@ -78,8 +85,10 @@ function completeMixing(state: GameState, player: Player, session: MixingSession
 
 function startShift(state: GameState) {
   state.phase = "shift";
+  state.pausedAt = null;
+  state.pausedBy = null;
   state.mixing = {};
-  state.shiftSeconds = Math.max(56, 90 - (state.round - 1) * 8);
+  state.shiftSeconds = shiftDurationForRound(state.round);
   state.orders = [];
   state.hazard = null;
   state.message = `${state.tavern.theme}: shift ${state.round} is on!`;
@@ -88,7 +97,14 @@ function startShift(state: GameState) {
 function spawnOrder(state: GameState) {
   const counter = (orderCounters.get(state.code) ?? 0) + 1;
   orderCounters.set(state.code, counter);
-  state.orders.push(makeOrder(`order-${counter}`, mulberry32((seeds.get(state.code) ?? 1) + counter * 31)));
+  const elapsed = shiftDurationForRound(state.round) - state.shiftSeconds;
+  state.orders.push(makeOrder(`order-${counter}`, mulberry32((seeds.get(state.code) ?? 1) + counter * 31),
+    state.round, elapsed, state.orderPatienceBonus));
+}
+function loseOrders(state: GameState, count: number, reason: string) {
+  if (!count) return;
+  applyMissedOrderPenalty(state, count);
+  setMessage(state, `${reason} ${count} team heart${count === 1 ? "" : "s"} lost — ${state.health} left.`);
 }
 function spawnHazard(state: GameState): Hazard {
   const counter = (hazardCounters.get(state.code) ?? 0) + 1;
@@ -117,9 +133,12 @@ function resetForRound(state: GameState, upgradeId: string) {
   const seed = seeds.get(state.code) ?? 1;
   state.round += 1;
   state.tavern = makeTavern(seed, state.round);
-  if (upgradeId === "patient-patrons") state.message = "Patient Patrons acquired: every next order gets extra time.";
-  if (upgradeId === "swift-paws") state.message = "Swift Paws acquired: the cats feel zoomy.";
+  state.orderPatienceBonus = upgradeId === "patient-patrons" ? 12 : 0;
+  if (upgradeId === "nine-lives") state.health = Math.min(3, state.health + 1);
   startShift(state);
+  if (upgradeId === "nine-lives") state.message = `Nine Lives restored a heart. ${state.health} team hearts remain.`;
+  else if (upgradeId === "patient-patrons") state.message = "Patient Patrons gives each order 12 extra seconds this shift.";
+  else if (upgradeId === "swift-paws") state.message = "Swift Paws acquired: the cats feel zoomy.";
 }
 
 io.on("connection", (socket) => {
@@ -145,9 +164,18 @@ io.on("connection", (socket) => {
     startShift(state); broadcast(state);
   });
 
+  socket.on("set-pause", (paused: boolean) => {
+    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    if (!state || !player || !player.connected || state.phase !== "shift" || typeof paused !== "boolean") return;
+    const changed = paused ? pauseShift(state, player.id) : resumeShift(state);
+    if (!changed) return;
+    setMessage(state, paused ? `${player.name} paused the shift for everyone.` : `${player.name} resumed the shift.`);
+    broadcast(state);
+  });
+
   socket.on("move", (position: { x: number; y: number; direction?: FacingDirection; moving?: boolean; sequence?: number }) => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
-    if (!state || !player || state.phase !== "shift") return;
+    if (!state || !player || state.phase !== "shift" || state.pausedAt !== null) return;
     if (state.mixing[player.id]) {
       if (player.moving) { player.moving = false; broadcast(state); }
       return;
@@ -166,7 +194,7 @@ io.on("connection", (socket) => {
 
   socket.on("interact", () => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
-    if (!state || !player || state.phase !== "shift") return;
+    if (!state || !player || state.phase !== "shift" || state.pausedAt !== null) return;
     if (state.mixing[player.id]) return;
     const nearby = state.tavern.stations
       .filter((station) => Math.hypot(station.x - player.x, station.y - player.y) < 74)
@@ -230,7 +258,7 @@ io.on("connection", (socket) => {
 
   socket.on("mix-ingredient", (ingredient: string) => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
-    if (!state || !player || state.phase !== "shift" || typeof ingredient !== "string") return;
+    if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || typeof ingredient !== "string") return;
     const session = state.mixing[player.id];
     if (!session) return;
     const expected = expectedMixingStep(session);
@@ -250,7 +278,7 @@ io.on("connection", (socket) => {
 
   socket.on("mix-tool-start", (tool: MixingTool) => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
-    if (!state || !player || state.phase !== "shift") return;
+    if (!state || !player || state.phase !== "shift" || state.pausedAt !== null) return;
     const session = state.mixing[player.id];
     if (!session) return;
     const expected = expectedMixingStep(session);
@@ -265,7 +293,7 @@ io.on("connection", (socket) => {
 
   socket.on("mix-tool-finish", (tool: MixingTool) => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
-    if (!state || !player || state.phase !== "shift") return;
+    if (!state || !player || state.phase !== "shift" || state.pausedAt !== null) return;
     const session = state.mixing[player.id];
     if (!session) return;
     const expected = expectedMixingStep(session);
@@ -286,9 +314,43 @@ io.on("connection", (socket) => {
     broadcast(state);
   });
 
+  socket.on("mix-rhythm-hit", (payload: { style: RhythmAction["style"]; hand?: "left" | "right" }) => {
+    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || !payload || typeof payload !== "object") return;
+    const session = state.mixing[player.id];
+    if (!session) return;
+    const expected = expectedMixingStep(session);
+    if (!expected || expected.kind !== "rhythm" || expected.style !== payload.style ||
+      (expected.style === "hand-mix" && payload.hand !== (session.rhythmHits % 2 === 0 ? "left" : "right"))) {
+      mixingMistake(state, player, session, "That was the wrong preparation move.");
+    } else {
+      const now = Date.now();
+      const elapsed = session.rhythmLastHitAt === undefined ? undefined : now - session.rhythmLastHitAt;
+      if (elapsed !== undefined && !rhythmTimingAccepted(elapsed, expected)) {
+        mixingMistake(state, player, session, elapsed < expected.intervalMs ? "Too soon for the beat." : "Missed the beat.");
+      } else {
+        session.rhythmHits += 1;
+        session.rhythmLastHitAt = now;
+        if (elapsed !== undefined) session.rhythmQualityPoints += rhythmTimingQuality(elapsed, expected);
+        if (session.rhythmHits >= expected.hits) {
+          session.qualityPoints += (1 + session.rhythmQualityPoints) / expected.hits;
+          session.rhythmHits = 0;
+          session.rhythmLastHitAt = undefined;
+          session.rhythmQualityPoints = 0;
+          session.stepIndex += 1;
+          if (expectedMixingStep(session)) session.feedback = nextMixingInstruction(session);
+          else completeMixing(state, player, session);
+        } else {
+          session.feedback = `${expected.style === "chop" ? "Chop" : "Hand mix"} ${session.rhythmHits}/${expected.hits} · follow the beat.`;
+        }
+      }
+    }
+    broadcast(state);
+  });
+
   socket.on("cancel-mixing", () => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
-    if (!state || !player || !state.mixing[player.id]) return;
+    if (!state || !player || state.pausedAt !== null || !state.mixing[player.id]) return;
     delete state.mixing[player.id];
     player.moving = false;
     setMessage(state, `${player.name} stepped away from the workbench. Ingredients were kept.`);
@@ -328,7 +390,7 @@ function joinRoom(socketId: string, state: GameState, payload: { token: string; 
 
 setInterval(() => {
   for (const state of rooms.values()) {
-    if (state.phase !== "shift") continue;
+    if (state.phase !== "shift" || state.pausedAt !== null) continue;
     const now = Date.now();
     for (const [playerId, session] of Object.entries(state.mixing)) {
       if (now < session.deadlineAt) continue;
@@ -339,13 +401,29 @@ setInterval(() => {
     state.shiftSeconds -= 1;
     state.orders.forEach((order) => order.patience -= 1);
     const lost = state.orders.filter((order) => order.patience <= 0);
-    if (lost.length) { state.orders = state.orders.filter((order) => order.patience > 0); state.health -= lost.length; setMessage(state, "A customer stormed out! Team hearts dropped."); }
-    if (state.shiftSeconds > 0 && state.shiftSeconds % 12 === 0 && state.orders.length < 3) spawnOrder(state);
+    if (lost.length) {
+      state.orders = state.orders.filter((order) => order.patience > 0);
+      loseOrders(state, lost.length, "Customers stormed out!");
+    }
+    const elapsed = shiftDurationForRound(state.round) - state.shiftSeconds;
+    const spawnInterval = Math.max(9, 12 - (state.round - 1));
+    const activeCrew = Object.values(state.players).filter((player) => player.connected).length;
+    const maxPendingOrders = activeCrew > 1 ? 3 : 2;
+    if (state.shiftSeconds >= 35 && elapsed > 0 && elapsed % spawnInterval === 0 && state.orders.length < maxPendingOrders) spawnOrder(state);
     if (state.shiftSeconds > 0 && state.shiftSeconds % 18 === 0) {
       const hazard = spawnHazard(state);
       setMessage(state, `Hazard: ${hazard.message} Use the mop bucket!`);
     }
-    if (state.health <= 0) failRun(state); else if (state.shiftSeconds <= 0) endShift(state);
+    const closingMisses = state.shiftSeconds <= 0 ? state.orders.length : 0;
+    if (closingMisses) {
+      loseOrders(state, closingMisses, "Unserved orders closed with the shift!");
+      state.orders = [];
+    }
+    if (state.health <= 0) failRun(state);
+    else if (state.shiftSeconds <= 0) {
+      endShift(state);
+      if (closingMisses) setMessage(state, `Shift complete, but ${closingMisses} unserved order${closingMisses === 1 ? "" : "s"} cost team hearts. ${state.health} remain.`);
+    }
     broadcast(state);
   }
 }, 1000);

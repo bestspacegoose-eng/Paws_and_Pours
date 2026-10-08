@@ -1,6 +1,6 @@
 import {
   expectedMixingStep, mixingStepsForRecipe, recipeById, type GameState,
-  type MixingSession, type MixingTool, type Recipe, type Theme
+  type MixingSession, type MixingTool, type Recipe, type RhythmAction, type Theme
 } from "../shared/game";
 import workspaceUrl from "./assets/tilemap/mixing-workspace.png";
 import ingredientsUrl from "./assets/tilemap/ingredients-spritesheet.png";
@@ -11,12 +11,16 @@ import {
   atlasFrame, FINISHED_DRINK_FRAME_INDEX, GLASS_FRAME_INDEX, INGREDIENT_FRAMES, MIXING_EFFECT_FRAME_INDEX,
   MIXING_TOOL_FRAME_INDEX, type FrameRect
 } from "./sprite-frames";
+import { drawRecipeDrink } from "./drink-art";
+import { handMixFrame } from "./mixing-animation";
 import "./mixing-workspace.css";
 
 export interface MixingWorkspaceEvents {
   addIngredient: (ingredient: string) => void;
   startTool: (tool: MixingTool) => void;
   finishTool: (tool: MixingTool) => void;
+  rhythmHit: (style: RhythmAction["style"], hand?: "left" | "right") => void;
+  pause: () => void;
   cancel: () => void;
 }
 
@@ -55,7 +59,13 @@ export class MixingWorkspace {
   private activeTool?: MixingTool;
   private toolHoldStartedAt?: number;
   private toolTimingFrame?: number;
+  private rhythmTimingFrame?: number;
+  private visualFrame?: number;
+  private rhythmServerHitAt?: number;
+  private rhythmLocalHitAt?: number;
+  private pendingRhythmHitAt?: number;
   private cancelRequested = false;
+  private paused = false;
   private outcome?: "success" | "failure";
   private outcomeRecipeId?: string;
   private outcomeTimer?: number;
@@ -70,7 +80,7 @@ export class MixingWorkspace {
       <div class="mixing-shell">
         <header class="mixing-header">
           <div><p class="eyebrow">YOUR PRIVATE WORKBENCH · SHIFT CONTINUES</p><h2 id="mixing-title">Prepare the drink</h2></div>
-          <div class="mixing-metrics"><span id="mixing-time">0:30</span><span id="mixing-mistakes">0 / 3 mistakes</span><button class="mixing-cancel" type="button">Cancel</button></div>
+          <div class="mixing-metrics"><span id="mixing-time">0:30</span><span id="mixing-mistakes">0 / 3 mistakes</span><button class="mixing-pause" type="button">Menu · Pause</button><button class="mixing-cancel" type="button">Cancel</button></div>
         </header>
         <div class="mixing-stage">
           <canvas width="800" height="480" aria-label="First-person drink mixing workbench"></canvas>
@@ -84,7 +94,7 @@ export class MixingWorkspace {
           </div>
         </div>
         <div class="mixing-actions" aria-label="Mixing actions"></div>
-        <p class="mixing-help">Select ingredients in recipe order. For the final tool, press and hold the highlighted button, then release near the target time.</p>
+        <p class="mixing-help">Add ingredients in recipe order. Hold tools near the target time; for chopping or paw mixing, tap along with the beat.</p>
       </div>`;
     mount.append(this.root);
     this.canvas = this.root.querySelector("canvas")!;
@@ -100,6 +110,7 @@ export class MixingWorkspace {
     this.toolTimingTrack = this.root.querySelector(".tool-timing-track")!;
     this.toolTimingLabel = this.root.querySelector(".tool-timing output")!;
     this.actions = this.root.querySelector(".mixing-actions")!;
+    this.root.querySelector<HTMLButtonElement>(".mixing-pause")!.onclick = () => this.events.pause();
     this.root.querySelector<HTMLButtonElement>(".mixing-cancel")!.onclick = () => {
       this.cancelRequested = true;
       this.stopToolTiming();
@@ -117,9 +128,22 @@ export class MixingWorkspace {
   isOpen() { return !this.root.classList.contains("hidden"); }
 
   render(state: GameState, playerId: string) {
+    if (state.pausedAt !== null && !this.paused) {
+      this.paused = true;
+      this.toolHolding = false;
+      this.activeTool = undefined;
+      this.stopToolTiming();
+      this.stopRhythmTiming();
+      this.stopVisualAnimation();
+      this.rhythmServerHitAt = undefined;
+      this.rhythmLocalHitAt = undefined;
+      this.pendingRhythmHitAt = undefined;
+      this.root.classList.remove("tool-holding");
+    } else if (state.pausedAt === null) this.paused = false;
     const session = state.mixing[playerId];
     const player = state.players[playerId];
     if (!session) {
+      this.stopVisualAnimation();
       if (this.session) {
         const cancelled = this.cancelRequested;
         this.outcome = player?.drink ? "success" : "failure";
@@ -129,6 +153,10 @@ export class MixingWorkspace {
         this.toolHolding = false;
         this.activeTool = undefined;
         this.stopToolTiming();
+        this.stopRhythmTiming();
+        this.rhythmServerHitAt = undefined;
+        this.rhythmLocalHitAt = undefined;
+        this.pendingRhythmHitAt = undefined;
         this.actions.innerHTML = "";
         this.controlsKey = "";
         this.cancelRequested = false;
@@ -167,13 +195,35 @@ export class MixingWorkspace {
     this.configureToolTiming(expectedMixingStep(session));
     this.renderControls(justOpened);
     this.draw();
+    this.syncVisualAnimation();
+  }
+
+  private syncVisualAnimation() {
+    const action = this.session && expectedMixingStep(this.session);
+    const animate = !this.paused && action?.kind === "rhythm" && action.style === "hand-mix" &&
+      document.body.dataset.reducedMotion !== "true" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!animate) { this.stopVisualAnimation(); return; }
+    if (this.visualFrame !== undefined) return;
+    const frame = () => {
+      this.visualFrame = undefined;
+      const next = this.session && expectedMixingStep(this.session);
+      if (this.paused || !next || next.kind !== "rhythm" || next.style !== "hand-mix" || this.root.classList.contains("hidden")) return;
+      this.draw();
+      this.visualFrame = window.requestAnimationFrame(frame);
+    };
+    this.visualFrame = window.requestAnimationFrame(frame);
+  }
+
+  private stopVisualAnimation() {
+    if (this.visualFrame !== undefined) window.cancelAnimationFrame(this.visualFrame);
+    this.visualFrame = undefined;
   }
 
   private renderControls(focusFirst: boolean) {
     if (!this.session || !this.recipe) return;
     const expected = expectedMixingStep(this.session);
     const key = `${this.session.recipeId}:${this.session.stepIndex}:${this.playerIngredients.join("|")}`;
-    if (key === this.controlsKey) return;
+    if (key === this.controlsKey) { this.updateRhythmControls(expected); return; }
     this.controlsKey = key;
     this.actions.innerHTML = "";
     if (expected?.kind === "ingredient") {
@@ -208,11 +258,48 @@ export class MixingWorkspace {
         if (event.key === " " || event.key === "Enter") finish(event);
       });
       this.actions.append(button);
+    } else if (expected?.kind === "rhythm") {
+      if (expected.style === "chop") {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "mixing-action rhythm-action";
+        button.dataset.hand = "chop";
+        button.onclick = () => this.sendRhythmHit("chop");
+        this.actions.append(button);
+      } else for (const hand of ["left", "right"] as const) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "mixing-action rhythm-action";
+        button.dataset.hand = hand;
+        button.onclick = () => this.sendRhythmHit("hand-mix", hand);
+        this.actions.append(button);
+      }
+      this.updateRhythmControls(expected);
     }
     if (focusFirst) window.setTimeout(() => this.actions.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus(), 0);
   }
 
+  private sendRhythmHit(style: RhythmAction["style"], hand?: "left" | "right") {
+    if (this.paused) return;
+    this.pendingRhythmHitAt = performance.now();
+    this.events.rhythmHit(style, hand);
+  }
+
+  private updateRhythmControls(expected: ReturnType<typeof expectedMixingStep>) {
+    if (!this.session || !expected || expected.kind !== "rhythm") return;
+    this.actions.querySelectorAll<HTMLButtonElement>(".rhythm-action").forEach((button) => {
+      const nextHand = this.session!.rhythmHits % 2 === 0 ? "left" : "right";
+      const selected = expected.style === "chop" || button.dataset.hand === nextHand;
+      button.classList.toggle("rhythm-next", selected);
+      button.setAttribute("aria-pressed", String(selected));
+      button.textContent = expected.style === "chop"
+        ? `Chop ${expected.ingredient} · ${this.session!.rhythmHits}/${expected.hits}`
+        : `${button.dataset.hand === "left" ? "Left" : "Right"} paw · ${this.session!.rhythmHits}/${expected.hits}`;
+    });
+  }
+
   private startTool(tool: MixingTool) {
+    if (this.paused) return;
     const expected = this.session && expectedMixingStep(this.session);
     if (this.toolHolding || !expected || expected.kind !== "timed-tool" || expected.tool !== tool) return;
     this.toolHolding = true;
@@ -225,6 +312,7 @@ export class MixingWorkspace {
   }
 
   private finishTool() {
+    if (this.paused) return;
     if (!this.toolHolding || !this.activeTool) return;
     const tool = this.activeTool;
     this.toolHolding = false;
@@ -236,22 +324,65 @@ export class MixingWorkspace {
   }
 
   private configureToolTiming(expected: ReturnType<typeof expectedMixingStep>) {
-    if (!expected || expected.kind !== "timed-tool") {
+    this.stopRhythmTiming();
+    if (!expected || (expected.kind !== "timed-tool" && expected.kind !== "rhythm")) {
       this.toolTiming.classList.add("hidden");
       return;
     }
     this.toolTiming.classList.remove("hidden");
-    const maximum = expected.targetMs + expected.toleranceMs * 2;
+    const target = expected.kind === "timed-tool" ? expected.targetMs : expected.intervalMs;
+    const maximum = target + expected.toleranceMs * 1.5;
     const toPercent = (milliseconds: number) => Math.max(0, Math.min(100, milliseconds / maximum * 100));
-    this.toolTimingTrack.style.setProperty("--target", `${toPercent(expected.targetMs)}%`);
-    this.toolTimingTrack.style.setProperty("--sweet-start", `${toPercent(expected.targetMs - expected.toleranceMs)}%`);
-    this.toolTimingTrack.style.setProperty("--sweet-end", `${toPercent(expected.targetMs + expected.toleranceMs)}%`);
+    this.toolTimingTrack.style.setProperty("--target", `${toPercent(target)}%`);
+    this.toolTimingTrack.style.setProperty("--sweet-start", `${toPercent(target - expected.toleranceMs)}%`);
+    this.toolTimingTrack.style.setProperty("--sweet-end", `${toPercent(target + expected.toleranceMs)}%`);
+    this.toolTimingTrack.setAttribute("aria-label", expected.kind === "rhythm" ? "Preparation beat timing" : "Tool hold timing");
+    this.root.querySelector(".tool-timing-heading span")!.textContent = expected.kind === "rhythm" ? "Next beat" : "Hold timing";
+    if (expected.kind === "rhythm") {
+      if (this.session?.rhythmHits && this.session.rhythmLastHitAt) {
+        if (this.rhythmServerHitAt !== this.session.rhythmLastHitAt) {
+          this.rhythmServerHitAt = this.session.rhythmLastHitAt;
+          this.rhythmLocalHitAt = this.pendingRhythmHitAt ?? performance.now();
+          this.pendingRhythmHitAt = undefined;
+        }
+        this.updateRhythmTiming(expected);
+      }
+      else {
+        this.rhythmServerHitAt = undefined;
+        this.rhythmLocalHitAt = undefined;
+        this.pendingRhythmHitAt = undefined;
+        this.toolTimingFill.style.width = "0%";
+        this.toolTimingFill.dataset.phase = "ready";
+        this.toolTimingTrack.setAttribute("aria-valuenow", "0");
+        this.toolTimingLabel.textContent = `Tap once to start · ${(target / 1000).toFixed(2)} sec beat`;
+      }
+      return;
+    }
     if (!this.toolHolding) {
       this.toolTimingFill.style.width = "0%";
       this.toolTimingFill.dataset.phase = "ready";
       this.toolTimingTrack.setAttribute("aria-valuenow", "0");
       this.toolTimingLabel.textContent = `Aim for ${(expected.targetMs / 1000).toFixed(1)} sec`;
     }
+  }
+
+  private updateRhythmTiming(action: RhythmAction) {
+    if (!this.session?.rhythmLastHitAt || this.rhythmLocalHitAt === undefined || expectedMixingStep(this.session) !== action) return;
+    const elapsed = performance.now() - this.rhythmLocalHitAt;
+    const maximum = action.intervalMs + action.toleranceMs * 1.5;
+    const percent = Math.max(0, Math.min(100, elapsed / maximum * 100));
+    const phase = Math.abs(elapsed - action.intervalMs) <= action.toleranceMs ? "sweet" : elapsed < action.intervalMs ? "early" : "late";
+    this.toolTimingFill.style.width = `${percent}%`;
+    this.toolTimingFill.dataset.phase = phase;
+    this.toolTimingTrack.setAttribute("aria-valuenow", String(Math.round(percent)));
+    this.toolTimingLabel.textContent = `${this.session.rhythmHits}/${action.hits} · ${phase === "sweet" ? "tap now!" : phase === "early" ? "wait for the beat" : "beat missed"}`;
+    if (action.style !== "hand-mix") this.draw();
+    this.rhythmTimingFrame = window.requestAnimationFrame(() => this.updateRhythmTiming(action));
+  }
+
+  private stopRhythmTiming() {
+    if (this.rhythmTimingFrame !== undefined) window.cancelAnimationFrame(this.rhythmTimingFrame);
+    this.rhythmTimingFrame = undefined;
   }
 
   private updateToolTiming(action: Extract<ReturnType<typeof expectedMixingStep>, { kind: "timed-tool" }>) {
@@ -319,6 +450,8 @@ export class MixingWorkspace {
       } else {
         this.drawAtlasContained(this.toolsImage, 3, 2, MIXING_TOOL_FRAME_INDEX[expected.tool], 400, 310, 190, 172);
       }
+    } else if (expected?.kind === "rhythm") {
+      this.drawRhythmAction(expected);
     }
     this.drawAtlasContained(
       this.effectsImage, 3, 2,
@@ -331,6 +464,54 @@ export class MixingWorkspace {
     context.fillRect(640, 105, 120, 8);
     context.fillStyle = this.recipe.color;
     context.fillRect(640, 105, 120 * Math.min(1, this.session.stepIndex / steps.length), 8);
+  }
+
+  private drawRhythmAction(action: RhythmAction) {
+    const context = this.context;
+    context.save();
+    if (action.style === "chop") {
+      context.fillStyle = "#3b2332"; context.fillRect(318, 280, 164, 83);
+      context.fillStyle = "#b57953"; context.fillRect(324, 284, 152, 73);
+      context.fillStyle = "#d79b65"; context.fillRect(331, 290, 138, 57);
+      const pieces = Math.max(1, this.session?.rhythmHits ?? 0);
+      for (let index = 0; index < pieces; index++) {
+        context.fillStyle = this.recipe?.color ?? "#8ee17a";
+        context.fillRect(352 + index * 28, 314 + (index % 2) * 9, 19, 12);
+        context.fillStyle = "#f6dda9"; context.fillRect(354 + index * 28, 315 + (index % 2) * 9, 5, 4);
+      }
+      const bounce = this.rhythmLocalHitAt !== undefined && performance.now() - this.rhythmLocalHitAt < 150 ? 8 : 0;
+      context.fillStyle = "#34233c"; context.fillRect(399, 273 - bounce, 72, 12);
+      context.fillStyle = "#f2c57d"; context.fillRect(402, 276 - bounce, 55, 6);
+      context.fillStyle = "#454c66"; context.fillRect(356, 285 - bounce, 51, 12);
+      context.fillStyle = "#d8e5e7"; context.fillRect(356, 286 - bounce, 47, 7);
+      context.fillStyle = "#fff8d9"; context.fillRect(359, 287 - bounce, 39, 2);
+    } else {
+      const lastHitAt = this.pendingRhythmHitAt ?? this.rhythmLocalHitAt;
+      const reducedMotion = document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const pose = handMixFrame(performance.now(), lastHitAt, reducedMotion);
+      context.translate(pose.bowlX, pose.bowlY);
+      context.fillStyle = "rgba(28,16,38,.35)"; context.fillRect(342 - pose.bowlX, 346 - pose.bowlY, 116, 7);
+      context.fillStyle = "#35243a";
+      context.fillRect(351, 278, 98, 7); context.fillRect(339, 285, 122, 27);
+      context.fillRect(347, 312, 106, 20); context.fillRect(359, 332, 82, 14);
+      context.fillStyle = "#b98263";
+      context.fillRect(345, 287, 110, 21); context.fillRect(353, 308, 94, 19); context.fillRect(365, 327, 70, 13);
+      context.fillStyle = "#e1ac78"; context.fillRect(350, 289, 100, 5);
+      context.fillStyle = "#4b3448"; context.fillRect(352, 294, 96, 17);
+      context.fillStyle = this.recipe?.color ?? "#a9dbc4";
+      context.fillRect(357 + pose.liquidX, 296, 86, 13); context.fillRect(364 - pose.liquidX, 309, 72, 5);
+      const left = (this.session?.rhythmHits ?? 0) % 2 === 0;
+      context.fillStyle = "#f6d09c";
+      context.fillRect(302 + pose.leftPawX, 290, 26, 29);
+      context.fillRect(467 - pose.rightPawX, 290, 26, 29);
+      context.fillStyle = "#d98f93";
+      context.fillRect(310 + pose.leftPawX, 296, 11, 10);
+      context.fillRect(475 - pose.rightPawX, 296, 11, 10);
+      context.fillStyle = "#fff0cd";
+      context.fillRect((left ? 308 + pose.leftPawX : 473 - pose.rightPawX), 311, 15, 5);
+      context.fillStyle = "#fff2cf"; context.fillRect(386 + pose.liquidX, 301, 26, 3); context.fillRect(407 - pose.liquidX, 304, 3, 9);
+    }
+    context.restore();
   }
 
   private drawIngredient(ingredient: string, x: number, y: number, alpha: number) {
@@ -346,7 +527,10 @@ export class MixingWorkspace {
 
   private drawFinishedDrink(recipeId: string, x: number, y: number) {
     const frameIndex = FINISHED_DRINK_FRAME_INDEX[recipeId]?.complete;
-    if (frameIndex === undefined || !this.finishedDrinksImage.complete || !this.finishedDrinksImage.naturalWidth) return;
+    if (frameIndex === undefined || !this.finishedDrinksImage.complete || !this.finishedDrinksImage.naturalWidth) {
+      drawRecipeDrink(this.context, recipeById(recipeId), x, y, 150);
+      return;
+    }
     const frame = atlasFrame(this.finishedDrinksImage, 3, 2, frameIndex);
     this.context.save(); this.context.beginPath(); this.context.ellipse(x, y, 58, 66, 0, 0, Math.PI * 2); this.context.clip();
     this.context.drawImage(this.finishedDrinksImage, frame.x, frame.y, frame.width, frame.height, x - 77, y - 77, 154, 154);

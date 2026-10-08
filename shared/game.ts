@@ -15,16 +15,20 @@ export interface Station extends Vec, GridCell {
 export interface TimedToolAction {
   kind: "timed-tool"; tool: MixingTool; targetMs: number; toleranceMs: number
 }
-export type PreparationAction = TimedToolAction;
+export interface RhythmAction {
+  kind: "rhythm"; style: "chop" | "hand-mix"; hits: number; intervalMs: number; toleranceMs: number; ingredient?: string
+}
+export type PreparationAction = TimedToolAction | RhythmAction;
 export type MixingStep = { kind: "ingredient"; ingredient: string } | PreparationAction;
 export interface Recipe {
   id: string; name: string; ingredients: string[]; color: string; glass: string;
-  preparation: { actions: PreparationAction[] }
+  tier: 0 | 1 | 2; preparation: { actions: PreparationAction[] }
 }
 export interface MixingSession {
   playerId: string; recipeId: string; stepIndex: number; mistakes: number;
   startedAt: number; deadlineAt: number; qualityPoints: number;
-  usedIngredients: string[]; toolStartedAt?: number; feedback: string
+  usedIngredients: string[]; toolStartedAt?: number; rhythmHits: number;
+  rhythmLastHitAt?: number; rhythmQualityPoints: number; feedback: string
 }
 export interface Order { id: string; recipeId: string; customer: string; patience: number; maxPatience: number }
 export interface Hazard extends Vec { id: string; kind: HazardKind; message: string }
@@ -39,7 +43,8 @@ export interface GameState {
   code: string; hostId: string; phase: Phase; players: Record<string, Player>; tavern: Tavern;
   orders: Order[]; mixing: Record<string, MixingSession>; shiftSeconds: number; coins: number;
   reputation: number; health: number; round: number; hazard: Hazard | null;
-  upgrades: Upgrade[]; message: string
+  upgrades: Upgrade[]; orderPatienceBonus: number; message: string;
+  pausedAt: number | null; pausedBy: string | null
 }
 
 // The playable floor is a trapezoid in the 2.5D scene. The previous rectangular
@@ -51,25 +56,57 @@ export const GRID_ORIGIN = { x: 48, y: 110 } as const;
 export const GRID_CELL_SIZE = 58;
 export const GRID_COLUMNS = 12;
 export const GRID_ROWS = 5;
-export const PLAYER_COLLISION_RADIUS = 14;
+// A cat's contact point is its paws, not the full width of its animated sprite.
+export const PLAYER_COLLISION_RADIUS = 10;
 export const MIXING_DURATION_MS = 45_000;
 export const MIXING_MAX_MISTAKES = 3;
 
 export const RECIPES: Recipe[] = [
   {
     id: "catnip", name: "Catnip Cooler", ingredients: ["catnip", "lime", "fizz"],
-    color: "#8ee17a", glass: "tall",
+    color: "#8ee17a", glass: "tall", tier: 0,
     preparation: { actions: [{ kind: "timed-tool", tool: "shaker", targetMs: 1_800, toleranceMs: 500 }] }
   },
   {
     id: "moonmilk", name: "Moonmilk Latte", ingredients: ["moonmilk", "cream", "stardust"],
-    color: "#ddd5ff", glass: "mug",
+    color: "#ddd5ff", glass: "mug", tier: 0,
     preparation: { actions: [{ kind: "timed-tool", tool: "spoon", targetMs: 2_200, toleranceMs: 550 }] }
   },
   {
     id: "tuna", name: "Tuna Tonic", ingredients: ["tuna", "tonic", "kelp"],
-    color: "#7bd8d1", glass: "goblet",
+    color: "#7bd8d1", glass: "goblet", tier: 0,
     preparation: { actions: [{ kind: "timed-tool", tool: "pourer", targetMs: 1_500, toleranceMs: 450 }] }
+  },
+  {
+    id: "lunar-fizz", name: "Lunar Fizz", ingredients: ["moonmilk", "lime", "fizz"],
+    color: "#bcb2ed", glass: "tall", tier: 1,
+    preparation: { actions: [
+      { kind: "rhythm", style: "chop", ingredient: "lime", hits: 3, intervalMs: 650, toleranceMs: 270 },
+      { kind: "timed-tool", tool: "shaker", targetMs: 1_600, toleranceMs: 430 }
+    ] }
+  },
+  {
+    id: "kelp-swirl", name: "Kelp Swirl", ingredients: ["kelp", "cream", "tonic"],
+    color: "#a9dbc4", glass: "goblet", tier: 1,
+    preparation: { actions: [
+      { kind: "rhythm", style: "hand-mix", hits: 4, intervalMs: 700, toleranceMs: 290 }
+    ] }
+  },
+  {
+    id: "star-spritz", name: "Star Spritz", ingredients: ["stardust", "lime", "tonic"],
+    color: "#dbc1f2", glass: "tall", tier: 2,
+    preparation: { actions: [
+      { kind: "rhythm", style: "chop", ingredient: "lime", hits: 4, intervalMs: 570, toleranceMs: 220 },
+      { kind: "timed-tool", tool: "pourer", targetMs: 1_750, toleranceMs: 380 }
+    ] }
+  },
+  {
+    id: "seafoam-shake", name: "Seafoam Shake", ingredients: ["tuna", "kelp", "cream"],
+    color: "#86c9be", glass: "mug", tier: 2,
+    preparation: { actions: [
+      { kind: "rhythm", style: "chop", ingredient: "kelp", hits: 3, intervalMs: 560, toleranceMs: 210 },
+      { kind: "rhythm", style: "hand-mix", hits: 4, intervalMs: 610, toleranceMs: 230 }
+    ] }
   }
 ];
 export const INGREDIENTS = ["catnip", "lime", "fizz", "moonmilk", "cream", "stardust", "tuna", "tonic", "kelp"];
@@ -77,7 +114,8 @@ export const UPGRADES: Upgrade[] = [
   { id: "swift-paws", title: "Swift Paws", body: "+20% movement speed next shift" },
   { id: "patient-patrons", title: "Patient Patrons", body: "+12 patience on all orders" },
   { id: "lucky-whiskers", title: "Lucky Whiskers", body: "+2 bonus coins per perfect pour" },
-  { id: "bottomless-bag", title: "Bottomless Bag", body: "Carry four ingredients at once" }
+  { id: "bottomless-bag", title: "Bottomless Bag", body: "Carry four ingredients at once" },
+  { id: "nine-lives", title: "Nine Lives", body: "Restore one team heart (up to three)" }
 ];
 
 export function mulberry32(seed: number) {
@@ -144,8 +182,9 @@ export function stationBounds(station: Station) {
 export function pointCollidesWithCounters(tavern: Tavern, point: Vec, radius = PLAYER_COLLISION_RADIUS) {
   return tavern.stations.some((station) => {
     const bounds = stationBounds(station);
-    return point.x > bounds.left - radius && point.x < bounds.right + radius &&
-      point.y > bounds.top - radius && point.y < bounds.bottom + radius;
+    const nearestX = Math.max(bounds.left, Math.min(bounds.right, point.x));
+    const nearestY = Math.max(bounds.top, Math.min(bounds.bottom, point.y));
+    return Math.hypot(point.x - nearestX, point.y - nearestY) < radius;
   });
 }
 
@@ -206,6 +245,19 @@ export function toolTimingAccepted(elapsedMs: number, action: TimedToolAction): 
   return elapsedMs >= Math.max(250, action.targetMs - window) && elapsedMs <= action.targetMs + window;
 }
 
+export function rhythmTimingQuality(elapsedMs: number, action: RhythmAction): number {
+  return Math.max(0, Math.min(1, 1 - Math.abs(elapsedMs - action.intervalMs) / (action.toleranceMs * 2)));
+}
+
+export function rhythmTimingAccepted(elapsedMs: number, action: RhythmAction): boolean {
+  return Math.abs(elapsedMs - action.intervalMs) <= action.toleranceMs;
+}
+
+export function applyMissedOrderPenalty(state: Pick<GameState, "health" | "reputation">, count: number): void {
+  state.health = Math.max(0, state.health - count);
+  state.reputation = Math.max(0, state.reputation - count);
+}
+
 export function mixingQuality(session: MixingSession, recipe = recipeById(session.recipeId)): number {
   const stepCount = Math.max(1, mixingStepsForRecipe(recipe).length);
   return Math.max(0, Math.min(1, session.qualityPoints / stepCount - session.mistakes * 0.12));
@@ -215,6 +267,7 @@ export function createMixingSession(playerId: string, recipeId: string, now = Da
   return {
     playerId, recipeId, stepIndex: 0, mistakes: 0, startedAt: now,
     deadlineAt: now + MIXING_DURATION_MS, qualityPoints: 0, usedIngredients: [],
+    rhythmHits: 0, rhythmQualityPoints: 0,
     feedback: "Choose the first recipe ingredient."
   };
 }
@@ -232,18 +285,52 @@ export function recipeForIngredients(ingredients: string[]): Recipe | undefined 
 export function initialState(code: string, hostId: string, seed: number): GameState {
   return {
     code, hostId, phase: "lobby", players: {}, tavern: makeTavern(seed), orders: [], mixing: {},
-    shiftSeconds: 90, coins: 0, reputation: 0, health: 3, round: 1, hazard: null,
-    upgrades: [], message: "Pick your cat, then the host can begin the shift."
+    shiftSeconds: shiftDurationForRound(1), coins: 0, reputation: 0, health: 3, round: 1, hazard: null,
+    upgrades: [], orderPatienceBonus: 0, message: "Pick your cat, then the host can begin the shift.",
+    pausedAt: null, pausedBy: null
   };
 }
 
-export function makeOrder(id: string, random: () => number): Order {
-  const recipe = RECIPES[Math.floor(random() * RECIPES.length)];
+export function shiftDurationForRound(_round: number): number {
+  return 180;
+}
+
+export function pauseShift(state: GameState, playerId: string, now = Date.now()): boolean {
+  if (state.phase !== "shift" || state.pausedAt !== null) return false;
+  state.pausedAt = now;
+  state.pausedBy = playerId;
+  Object.values(state.players).forEach((player) => { player.moving = false; });
+  // An in-progress gesture restarts after resume without consuming a mistake.
+  for (const session of Object.values(state.mixing)) {
+    session.toolStartedAt = undefined;
+    session.rhythmHits = 0;
+    session.rhythmLastHitAt = undefined;
+    session.rhythmQualityPoints = 0;
+    session.feedback = "Paused. Resume to restart this preparation step.";
+  }
+  return true;
+}
+
+export function resumeShift(state: GameState, now = Date.now()): boolean {
+  if (state.phase !== "shift" || state.pausedAt === null) return false;
+  const pausedMs = Math.max(0, now - state.pausedAt);
+  for (const session of Object.values(state.mixing)) {
+    session.deadlineAt += pausedMs;
+    session.feedback = "Shift resumed. Restart this preparation step.";
+  }
+  state.pausedAt = null;
+  state.pausedBy = null;
+  return true;
+}
+
+export function makeOrder(id: string, random: () => number, round = 1, elapsedSeconds = 0, patienceBonus = 0): Order {
+  const progress = Math.min(1, Math.max(0, elapsedSeconds / shiftDurationForRound(round)));
+  const tier = Math.min(2, Math.max(0, round - 1) + Math.floor(progress * 2));
+  const available = RECIPES.filter((recipe) => recipe.tier <= tier);
+  const recipe = available[Math.floor(random() * available.length)];
   const customers = ["Sir Whiskerton", "Mothra the Bard", "Captain Claw", "Glimmer Gnome", "Mewsli the Mage"];
-  // The original instant-craft loop used a ~30 second window. The first-person
-  // preparation phase adds deliberate interaction time, so orders now allow a
-  // full gather-and-mix route without changing how patience quality is scored.
-  const maxPatience = 60 + Math.floor(random() * 21);
+  const pressure = Math.min(20, (round - 1) * 5 + Math.floor(progress * 12));
+  const maxPatience = Math.max(40, 68 + Math.floor(random() * 18) - pressure + patienceBonus);
   return { id, recipeId: recipe.id, customer: customers[Math.floor(random() * customers.length)], patience: maxPatience, maxPatience };
 }
 
