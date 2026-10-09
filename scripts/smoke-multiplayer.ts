@@ -112,11 +112,21 @@ async function main() {
       const selected = recipeById(recipeId);
       for (const ingredient of selected.ingredients) {
         smokeStage = `collect ${ingredient}`;
-        const station = hostState!.tavern.stations.find((candidate) => candidate.ingredient === ingredient);
+        const rawIngredient = ingredient === "chopped-tuna" ? "tuna" : ingredient;
+        const station = hostState!.tavern.stations.find((candidate) => candidate.ingredient === rawIngredient);
         assert.ok(station, `missing station for ${ingredient}`);
         await approachStation(station);
         host.emit("interact");
-        await waitForState(host, () => hostState, (state) => state.players[hostToken].carrying.includes(ingredient));
+        await waitForState(host, () => hostState, (state) => state.players[hostToken].carrying.includes(rawIngredient));
+        if (ingredient === "chopped-tuna") {
+          const board = hostState!.tavern.stations.find((candidate) => candidate.kind === "chop")!;
+          await approachStation(board);
+          host.emit("interact");
+          await waitForState(host, () => hostState, (state) => state.tavern.stations.find((candidate) => candidate.id === board.id)?.preparedIngredient === ingredient);
+          await waitForState(guest, () => guestState, (state) => state.tavern.stations.find((candidate) => candidate.id === board.id)?.preparedIngredient === ingredient);
+          host.emit("interact");
+          await waitForState(host, () => hostState, (state) => state.players[hostToken].carrying.includes(ingredient));
+        }
       }
       await approachStation(hostState!.tavern.stations.find((station) => station.kind === "mix")!);
       host.emit("interact");
@@ -124,7 +134,7 @@ async function main() {
     };
     const prepareRecipe = async (recipeId: string) => {
       const selected = recipeById(recipeId);
-      for (const ingredient of selected.ingredients) {
+      for (const ingredient of [...selected.ingredients].reverse()) {
         smokeStage = `mix ${ingredient}`;
         host.emit("mix-ingredient", ingredient);
         await waitForState(host, () => hostState, (state) => state.mixing[hostToken]?.usedIngredients.includes(ingredient) ?? false);

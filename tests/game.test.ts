@@ -10,6 +10,46 @@ import {
 import { PLAYER_SPAWNS, nearbyStation, transferCounterDrink, type Player } from "../shared/game.js";
 import { boardPoint, TAVERN_VIEW } from "../client/tavern-projection.js";
 import { DRINK_SPRITES } from "../client/drink-sprites.js";
+import { addMixingIngredient, chopTuna } from "../shared/game.js";
+import { toolAnimationFrame } from "../client/mixing-animation.js";
+
+test("ingredients can be added in every permutation without order penalties", () => {
+  for (const recipe of RECIPES) {
+    const [a, b, c] = recipe.ingredients;
+    for (const order of [[a,b,c], [a,c,b], [b,a,c], [b,c,a], [c,a,b], [c,b,a]]) {
+      const session = createMixingSession("cat", recipe.id);
+      for (const ingredient of order) assert.equal(addMixingIngredient(session, recipe.ingredients, ingredient), true);
+      assert.equal(session.mistakes, 0);
+      assert.equal(session.stepIndex, 3);
+      assert.equal(addMixingIngredient(session, recipe.ingredients, a), false);
+      assert.notEqual(expectedMixingStep(session)?.kind, "ingredient");
+    }
+  }
+});
+
+test("chopping produces one shared pickup and never duplicates or overwrites it", () => {
+  const board = makeTavern(1).stations.find((station) => station.kind === "chop")!;
+  const player = { carrying: ["tuna"], drink: undefined } as Player;
+  const guest = { carrying: ["cream", "kelp"], drink: undefined } as Player;
+  assert.equal(chopTuna(player, board), "chopped");
+  assert.deepEqual(player.carrying, []);
+  assert.equal(board.preparedIngredient, "chopped-tuna");
+  assert.equal(chopTuna(guest, board), "picked-up");
+  assert.equal(board.preparedIngredient, undefined);
+  assert.equal(chopTuna(player, board), "needs-tuna");
+  assert.equal(recipeForIngredients(guest.carrying)?.id, "seafoam-shake");
+  player.carrying = ["tuna"];
+  assert.equal(chopTuna(player, board), "chopped");
+  assert.equal(chopTuna(guest, board), "full");
+  assert.equal(board.preparedIngredient, "chopped-tuna");
+});
+
+test("every timed tool has distinct moving frames and reduced-motion support", () => {
+  for (const tool of ["shaker", "spoon", "pourer"] as const) {
+    assert.notDeepEqual(toolAnimationFrame(tool, 120), toolAnimationFrame(tool, 470));
+    assert.deepEqual(toolAnimationFrame(tool, 470, true), { x: 0, y: 0, angle: 0, stream: 0 });
+  }
+});
 
 test("every recipe has its own illustrated drink frame", () => {
   assert.deepEqual(Object.keys(DRINK_SPRITES).sort(), RECIPES.map((recipe) => recipe.id).sort());
@@ -30,7 +70,7 @@ test("expanded recipes use unique three-ingredient sets from the existing pantry
   assert.ok(RECIPES.length >= 7);
   for (const recipe of RECIPES) {
     assert.equal(recipe.ingredients.length, 3);
-    assert.ok(recipe.ingredients.every((ingredient) => pantry.has(ingredient)));
+    assert.ok(recipe.ingredients.every((ingredient) => pantry.has(ingredient === "chopped-tuna" ? "tuna" : ingredient)));
     assert.equal(recipeForIngredients([...recipe.ingredients].reverse())?.id, recipe.id);
   }
 });
@@ -52,7 +92,7 @@ test("authored pantry wings spread recipes across the floor and leave four safe 
     assert.deepEqual({ gridX: station.gridX, gridY: station.gridY }, PANTRY_FLOOR_PLAN[station.ingredient!]);
   }
   for (const recipe of RECIPES) {
-    const locations = recipe.ingredients.map((ingredient) => tavern.stations.find((station) => station.ingredient === ingredient)!);
+    const locations = recipe.ingredients.map((ingredient) => tavern.stations.find((station) => station.ingredient === (ingredient === "chopped-tuna" ? "tuna" : ingredient))!);
     assert.ok(locations.some((a) => locations.some((b) => Math.hypot(a.x - b.x, a.y - b.y) >= 200)), `${recipe.name} should require a cross-kitchen route`);
   }
   for (const spawn of PLAYER_SPAWNS) assert.equal(pointCollidesWithCounters(tavern, spawn), false);

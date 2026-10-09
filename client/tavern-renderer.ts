@@ -1,13 +1,41 @@
-import { GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, stationBounds, recipeById, type Order, type Station, type Tavern } from "../shared/game";
+import { GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, stationBounds, recipeById, type Order, type Player, type Station, type Tavern } from "../shared/game";
 import { INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
 import { drawRecipeDrink } from "./drink-art";
 import decorUrl from "./assets/tilemap/cozy-decor-atlas.png";
 import toolsUrl from "./assets/tilemap/mixing-tools-spritesheet.png";
+import surfacesUrl from "./assets/tilemap/handdrawn-surfaces.png";
+import { drawPreparationArt } from "./preparation-art";
 import { boardPoint, TAVERN_VIEW } from "./tavern-projection";
 export { boardPoint, TAVERN_VIEW } from "./tavern-projection";
 
+let gateAmount = 0;
+let gateFrameAt = 0;
+export function drawBarGate(context: CanvasRenderingContext2D, players: Player[], paused: boolean) {
+  const now = performance.now(), dt = Math.min(50, now - gateFrameAt); gateFrameAt = now;
+  const target = players.some((player) => Math.abs(player.x - 8.5 * GRID_CELL_SIZE) < 110 && player.y > 5.5 * GRID_CELL_SIZE && player.y < 9.5 * GRID_CELL_SIZE) ? 1 : 0;
+  if (!paused) gateAmount += (target - gateAmount) * Math.min(1, dt / 130);
+  const reducedMotion = document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const openness = reducedMotion ? target : gateAmount;
+  const top = boardPoint(8.5 * GRID_CELL_SIZE, 6 * GRID_CELL_SIZE);
+  const bottom = boardPoint(8.5 * GRID_CELL_SIZE, 9 * GRID_CELL_SIZE);
+  const length = (bottom.y - top.y) / 2 - 3;
+  // Automatic saloon leaves are visual, not a second hidden collision barrier.
+  for (const [point, sign] of [[top, 1], [bottom, -1]] as const) {
+    context.save(); context.translate(point.x, point.y); context.rotate(sign * openness * 1.28);
+    context.fillStyle = "#65506e"; context.fillRect(-9, sign > 0 ? 0 : -length, 18, length);
+    context.fillStyle = "#bc9fa9"; context.fillRect(-6, sign > 0 ? 3 : -length + 3, 12, length - 6);
+    context.fillStyle = "#e1c6a5";
+    for (let y = 9; y < length - 4; y += 10) context.fillRect(-5, sign * y, 10, 3);
+    context.fillStyle = "#f0d7a8"; context.fillRect(-3, sign * (length - 12), 6, 6);
+    context.restore();
+    context.fillStyle = "#66516b"; context.fillRect(point.x - 11, point.y - 5, 22, 10);
+    context.fillStyle = "#ddc19c"; context.fillRect(point.x - 7, point.y - 4, 14, 4);
+  }
+}
+
 const decor = new Image(); decor.src = decorUrl;
 const tools = new Image(); tools.src = toolsUrl;
+const surfaces = new Image(); surfaces.src = surfacesUrl;
 const decorFrames = [
   { x: 46, y: 72, width: 468, height: 462 }, { x: 559, y: 47, width: 421, height: 485 },
   { x: 1025, y: 112, width: 472, height: 498 }, { x: 107, y: 599, width: 344, height: 376 },
@@ -42,6 +70,14 @@ export function drawTavernFloor(context: CanvasRenderingContext2D, tavern: Taver
     context.fillStyle = x < 9 ? p.floor[(x + y) % 2] : ["#c5a6ac", "#cbb0b3"][(x + y) % 2]; context.fillRect(a.x + 1, a.y + 1, cell - 2, b.y - a.y - 2);
     context.fillStyle = "#ffffff0a"; context.fillRect(a.x + 3, a.y + 3, cell - 6, 2);
     context.fillStyle = "#35263c13"; context.fillRect(a.x + 10 + (y % 2) * 9, a.y + 17, 24, 1);
+    if (surfaces.complete && surfaces.naturalWidth) {
+      const half = surfaces.naturalWidth / 2;
+      // One painted ceramic tile per world cell; wood uses contiguous atlas sections.
+      const sx = x < 9 ? half + half / 3 : (x % 3) * half / 3;
+      const sy = x < 9 ? half / 3 : (y % 3) * half / 3;
+      context.drawImage(surfaces, sx, sy, half / 3, half / 3, a.x + 1, a.y + 1, cell - 2, b.y - a.y - 2);
+      context.fillStyle = "#d3c4d02a"; context.fillRect(a.x + 1, a.y + 1, cell - 2, b.y - a.y - 2);
+    }
   }
   // Flat, low-contrast woven rugs do not change the walkable grid.
   for (const row of [1, 6]) {
@@ -73,6 +109,7 @@ export function drawTavernFloor(context: CanvasRenderingContext2D, tavern: Taver
 
 export function drawIngredientIcon(context: CanvasRenderingContext2D, image: HTMLImageElement, ingredient: string,
   x: number, y: number, size: number) {
+  if (ingredient === "chopped-tuna") { drawPreparationArt(context, 1, x, y, size); return; }
   const frame = INGREDIENT_FRAMES[ingredient];
   if (!frame || !image.complete || !image.naturalWidth) return;
   const scale = Math.min(size / frame.width, size / frame.height);
@@ -141,6 +178,12 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
   const neighbor = (dx: number, dy: number) => tavern.stations.some((other) => other.gridX === station.gridX + dx && other.gridY === station.gridY + dy);
   const front = neighbor(0, 1) ? 0 : 10;
   context.fillStyle = p.top; context.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+  if (surfaces.complete && surfaces.naturalWidth) {
+    const half = surfaces.naturalWidth / 2, piece = half / 3;
+    const base = station.gridX === 8 || tavern.theme !== "Pirate Cat Tavern" ? 0 : half;
+    context.drawImage(surfaces, base + (station.gridX % 3) * piece, half + (station.gridY % 3) * piece, piece, piece,
+      a.x + 2, a.y + 2, 54, b.y - a.y - front - 3);
+  }
   context.fillStyle = "#ffffff12"; context.fillRect(a.x + 6, a.y + 10, 22, 2);
   context.fillStyle = "#62546b18"; context.fillRect(a.x + 30, a.y + 25, 18, 2);
   context.fillStyle = "#ffffff0c"; context.fillRect(a.x + 3, a.y + 3, 52, 2);
@@ -161,7 +204,20 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
   if (!neighbor(-1, 0) && !neighbor(0, -1)) context.fillRect(a.x + 2, a.y + 2, 5, 5);
   if (!neighbor(1, 0) && !neighbor(0, -1)) context.fillRect(b.x - 7, a.y + 2, 5, 5);
   const x = center.x, y = center.y - 5;
-  if (station.drink) {
+  if (station.gridX === 8) {
+    // A continuous carved bar fascia and brass foot rail face the dining room.
+    context.fillStyle = "#69506e"; context.fillRect(b.x - 14, a.y, 14, b.y - a.y);
+    context.fillStyle = "#ac889b"; context.fillRect(b.x - 11, a.y + 5, 6, b.y - a.y - 10);
+    context.fillStyle = "#e0c69d"; context.fillRect(b.x - 3, a.y, 3, b.y - a.y);
+    context.fillStyle = "#ddc0a8"; context.fillRect(b.x - 10, center.y - 3, 4, 6);
+  }
+  if (station.kind === "chop") {
+    drawPreparationArt(context, 0, x, y - 2, 43);
+    if (station.preparedIngredient) {
+      context.fillStyle = "#ecd7b6"; context.fillRect(x - 15, y - 14, 30, 22);
+      drawPreparationArt(context, 1, x, y - 2, 29);
+    }
+  } else if (station.drink) {
     context.fillStyle = "#e1be7f66"; context.beginPath(); context.ellipse(x, y + 10, 14, 5, 0, 0, Math.PI * 2); context.fill();
     drawRecipeDrink(context, recipeById(station.drink.recipeId), x, y - 4, 38);
   } else if (station.ingredient) {

@@ -11,8 +11,9 @@ import {
   MIXING_TOOL_FRAME_INDEX, type FrameRect
 } from "./sprite-frames";
 import { drawRecipeDrink, onDrinkArtReady } from "./drink-art";
-import { handMixFrame } from "./mixing-animation";
+import { handMixFrame, toolAnimationFrame } from "./mixing-animation";
 import "./mixing-workspace.css";
+import { drawPreparationArt, onPreparationArtReady } from "./preparation-art";
 
 export interface MixingWorkspaceEvents {
   addIngredient: (ingredient: string) => void;
@@ -92,7 +93,7 @@ export class MixingWorkspace {
           </div>
         </div>
         <div class="mixing-actions" aria-label="Mixing actions"></div>
-        <p class="mixing-help">Add ingredients in recipe order. Hold tools near the target time; for chopping or paw mixing, tap along with the beat.</p>
+        <p class="mixing-help">Add ingredients in any order. Hold tools near the target time; for chopping or paw mixing, tap along with the beat.</p>
       </div>`;
     mount.append(this.root);
     this.canvas = this.root.querySelector("canvas")!;
@@ -120,6 +121,7 @@ export class MixingWorkspace {
     this.toolsImage = image(toolsUrl, redraw);
     this.effectsImage = image(effectsUrl, redraw);
     onDrinkArtReady(redraw);
+    onPreparationArtReady(redraw);
     window.addEventListener("pointerup", () => this.finishTool());
   }
 
@@ -394,7 +396,7 @@ export class MixingWorkspace {
     this.toolTimingFill.dataset.phase = phase;
     this.toolTimingTrack.setAttribute("aria-valuenow", String(Math.round(percent)));
     this.toolTimingLabel.textContent = `${(elapsed / 1000).toFixed(1)} sec · ${phase === "sweet" ? "sweet spot" : phase === "early" ? "keep holding" : "release now"}`;
-    if (action.tool === "shaker") this.draw();
+    this.draw();
     this.toolTimingFrame = window.requestAnimationFrame(() => this.updateToolTiming(action));
   }
 
@@ -438,13 +440,19 @@ export class MixingWorkspace {
     });
 
     if (expected?.kind === "timed-tool") {
-      if (this.toolHolding && expected.tool === "shaker") {
-        const shake = performance.now() / 52;
+      if (this.toolHolding) {
+        const reducedMotion = this.paused || document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const pose = toolAnimationFrame(expected.tool, performance.now() - (this.toolHoldStartedAt ?? performance.now()), reducedMotion);
         context.save();
-        context.translate(400 + Math.sin(shake * 2.7) * 7, 310 + Math.cos(shake * 4.1) * 3);
-        context.rotate(Math.sin(shake * 3.3) * .16);
+        context.translate(400 + pose.x, 310 + pose.y);
+        context.rotate(pose.angle);
         this.drawAtlasContained(this.toolsImage, 3, 2, MIXING_TOOL_FRAME_INDEX[expected.tool], 0, 0, 190, 172);
         context.restore();
+        if (pose.stream) {
+          context.fillStyle = this.recipe.color;
+          context.fillRect(373, 250, 5, Math.round(52 * pose.stream));
+          context.fillStyle = "#fff2d7"; context.fillRect(374, 258, 2, 24);
+        }
       } else {
         this.drawAtlasContained(this.toolsImage, 3, 2, MIXING_TOOL_FRAME_INDEX[expected.tool], 400, 310, 190, 172);
       }
@@ -477,7 +485,9 @@ export class MixingWorkspace {
         context.fillRect(352 + index * 28, 314 + (index % 2) * 9, 19, 12);
         context.fillStyle = "#f6dda9"; context.fillRect(354 + index * 28, 315 + (index % 2) * 9, 5, 4);
       }
-      const bounce = this.rhythmLocalHitAt !== undefined && performance.now() - this.rhythmLocalHitAt < 150 ? 8 : 0;
+      const motion = !this.paused && document.body.dataset.reducedMotion !== "true" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const age = performance.now() - (this.pendingRhythmHitAt ?? this.rhythmLocalHitAt ?? -Infinity);
+      const bounce = motion && age < 220 ? Math.round(Math.sin(age / 220 * Math.PI) * 18) : 0;
       context.fillStyle = "#34233c"; context.fillRect(399, 273 - bounce, 72, 12);
       context.fillStyle = "#f2c57d"; context.fillRect(402, 276 - bounce, 55, 6);
       context.fillStyle = "#454c66"; context.fillRect(356, 285 - bounce, 51, 12);
@@ -485,7 +495,7 @@ export class MixingWorkspace {
       context.fillStyle = "#fff8d9"; context.fillRect(359, 287 - bounce, 39, 2);
     } else {
       const lastHitAt = this.pendingRhythmHitAt ?? this.rhythmLocalHitAt;
-      const reducedMotion = document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const reducedMotion = this.paused || document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const pose = handMixFrame(performance.now(), lastHitAt, reducedMotion);
       context.translate(pose.bowlX, pose.bowlY);
       context.fillStyle = "rgba(28,16,38,.35)"; context.fillRect(342 - pose.bowlX, 346 - pose.bowlY, 116, 7);
@@ -513,6 +523,10 @@ export class MixingWorkspace {
   }
 
   private drawIngredient(ingredient: string, x: number, y: number, alpha: number) {
+    if (ingredient === "chopped-tuna") {
+      this.context.save(); this.context.globalAlpha = alpha;
+      drawPreparationArt(this.context, 1, x, y, 112); this.context.restore(); return;
+    }
     const frame = INGREDIENT_FRAMES[ingredient];
     if (!frame || !this.ingredientsImage.complete || !this.ingredientsImage.naturalWidth) return;
     this.drawFrameContained(this.ingredientsImage, frame, x, y, 118, 112, alpha);

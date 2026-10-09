@@ -6,6 +6,14 @@ export interface HandMixFrame {
   rightPawX: number;
 }
 
+export function toolAnimationFrame(tool: "shaker" | "spoon" | "pourer", elapsed: number, reducedMotion = false) {
+  if (reducedMotion) return { x: 0, y: 0, angle: 0, stream: 0 };
+  const phase = elapsed / 160;
+  if (tool === "shaker") return { x: Math.round(Math.sin(phase * 2) * 12), y: Math.round(Math.cos(phase * 2) * 5), angle: Math.sin(phase * 2) * .16, stream: 0 };
+  if (tool === "spoon") return { x: Math.round(Math.cos(phase) * 7), y: Math.round(Math.sin(phase) * 3), angle: Math.sin(phase) * .06, stream: 0 };
+  return { x: 12, y: Math.round(Math.sin(phase) * 2), angle: -.55 * Math.min(1, elapsed / 250), stream: Math.min(1, elapsed / 250) };
+}
+
 // Pixel-snapped offsets keep the existing block shading crisp while a hit
 // briefly gives the bowl and paws more energy.
 export function handMixFrame(now: number, lastHitAt?: number, reducedMotion = false): HandMixFrame {

@@ -14,13 +14,16 @@ import ingredientsSpritesheetUrl from "./assets/tilemap/ingredients-spritesheet.
 import { MixingWorkspace } from "./mixing-workspace";
 import { drawRecipeDrink, onDrinkArtReady } from "./drink-art";
 import { INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
-import { boardPoint, drawTavernFloor, drawTavernCounter, drawIngredientIcon, ornament, TAVERN_VIEW } from "./tavern-renderer";
+import { boardPoint, drawTavernFloor, drawTavernCounter, drawIngredientIcon, drawBarGate, ornament, TAVERN_VIEW } from "./tavern-renderer";
 import { OrderHud } from "./order-hud";
 import { PLAYER_ANCHORS, transformAnchors } from "./character-anchors";
 import { drawCatAccessory } from "./accessory-art";
-import { clearSoloSave, defaultSettings, loadSettings, loadSoloSave, saveSettings, saveSoloSave, type DisplayAudioSettings } from "./preferences";
+import { defaultSettings, loadSettings, loadSoloSlots, saveSettings, saveSoloSlot, type DisplayAudioSettings, type SoloSave } from "./preferences";
+import { captureSoloSnapshot } from "../shared/solo-save";
 import { drawTitlePortrait, TITLE_ACCESSORIES, type TitleAccessory } from "./title-portrait";
 import "./style.css";
+import "./title-menu.css";
+import { drawChopBadge, onPreparationArtReady } from "./preparation-art";
 
 // Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
 // same public origin for both the page and WebSocket connection.
@@ -45,6 +48,10 @@ let lastSentMoveSequence = 0;
 let recipeBookOpen = false;
 let recipeBookPage = 0;
 let pausePanel: "main" | "settings" = "main";
+let activeSaveSlot = Number(sessionStorage.getItem("paws-pours-save-slot") ?? -1);
+let pendingSave: SoloSave | undefined;
+let lastSaveAt = 0;
+let saveStorageFailed = false;
 
 const catPortraits: Record<CatRole, string> = {
   "Tabby": tabbyPortraitUrl, "Siamese": siamesePortraitUrl, "Maine Coon": maineCoonPortraitUrl,
@@ -61,6 +68,7 @@ const refreshOpenRecipeBook = () => {
   if (recipeBookOpen) drawRecipeBookPage(RECIPES[recipeBookPage], recipeBookPage);
 };
 ingredientsSpritesheet.addEventListener("load", refreshOpenRecipeBook);
+onPreparationArtReady(refreshOpenRecipeBook);
 onDrinkArtReady(refreshOpenRecipeBook);
 
 const roles: { role: CatRole; perk: string }[] = [
@@ -80,8 +88,8 @@ app.innerHTML = `
         <div class="title-hero"><canvas id="hero-character" width="192" height="192" role="img" aria-label="Pixel-art Tabby bartender"></canvas><span class="title-hero-plaque">YOUR BARTENDER</span></div>
       </div>
       <div class="title-console">
-        <section class="customizer-card"><div class="title-section-heading"><span>01</span><div><p class="eyebrow">The crew</p><h2>Choose your cat</h2></div></div><div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><div class="accessory-picker" role="group" aria-label="Accessory"><span>Accessory</span><div class="accessory-controls"><button type="button" id="accessory-prev" aria-label="Previous accessory">&#x276E;</button><output id="accessory-name" aria-live="polite">Bow tie</output><button type="button" id="accessory-next" aria-label="Next accessory">&#x276F;</button></div></div></div><div class="roles" id="roles"></div></section>
-        <section class="title-actions" aria-label="Main menu"><div class="title-section-heading"><span>02</span><div><p class="eyebrow">The adventure</p><h2>Begin a shift</h2></div></div><div class="actions"><button class="primary" id="solo">Start solo shift</button><button id="create">Create party</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" value="${roomCode}"/><button id="join">Join party</button></div></div><div class="menu-utilities"><button id="continue" class="secondary">Continue solo</button><button id="settings" class="secondary">Settings</button><button id="delete-save" class="secondary danger">Delete solo save</button></div></section>
+        <section class="customizer-card"><div class="title-section-heading"><h2>Your bartender</h2></div><div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><div class="accessory-picker" role="group" aria-label="Cat type"><span>Cat type</span><div class="accessory-controls"><button type="button" id="role-prev" aria-label="Previous cat type">&#x276E;</button><output id="role-name" aria-live="polite">Tabby</output><button type="button" id="role-next" aria-label="Next cat type">&#x276F;</button></div></div><div class="accessory-picker" role="group" aria-label="Accessory"><span>Accessory</span><div class="accessory-controls"><button type="button" id="accessory-prev" aria-label="Previous accessory">&#x276E;</button><output id="accessory-name" aria-live="polite">Bow tie</output><button type="button" id="accessory-next" aria-label="Next accessory">&#x276F;</button></div></div></div></section>
+        <section class="title-actions" aria-label="Main menu"><div class="title-section-heading"><h2>Enter the tavern</h2></div><div class="actions"><button class="primary" id="save-menu">Create/Load Save</button><button id="create">Create party</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" aria-label="Room code" value="${roomCode}"/><button id="join">Join party</button></div></div><div class="menu-utilities"><button id="settings" class="secondary">Settings</button></div></section>
       </div>
       <section id="settings-panel" class="settings-panel hidden" aria-label="Game settings">
         <div class="settings-title"><b>Settings</b><button id="close-settings" class="secondary">Close</button></div>
@@ -100,6 +108,7 @@ app.innerHTML = `
       <p class="controls"><kbd>WASD</kbd> move · <kbd>E</kbd> interact · <kbd>Q</kbd> place / pick up drink · <span id="interaction"></span> · <span id="carry">Paws empty</span></p>
     </section>
     <section id="overlay" class="overlay hidden"></section>
+    <dialog id="save-dialog" class="save-dialog" aria-labelledby="save-title"><p class="eyebrow">LOCAL ADVENTURES</p><h2 id="save-title">Choose a save</h2><p>Your progress stays in this browser. Loaded shifts begin paused.</p><div id="save-slots" class="save-slots"></div><p id="save-error" role="status"></p><button id="close-saves" type="button">Back to title</button></dialog>
   </main>`;
 
 const menu = document.querySelector<HTMLElement>("#menu")!;
@@ -140,11 +149,6 @@ function syncSettingsForm() {
   document.querySelector<HTMLInputElement>("#setting-effects")!.value = String(settings.effectsVolume);
   document.querySelector<HTMLInputElement>("#setting-muted")!.checked = settings.muted;
 }
-function refreshSoloActions() {
-  const save = loadSoloSave();
-  document.querySelector<HTMLButtonElement>("#continue")!.disabled = !save;
-  document.querySelector<HTMLButtonElement>("#delete-save")!.disabled = !save;
-}
 applySettings();
 function renderTitlePreviews() {
   const fur = document.querySelector<HTMLInputElement>("#fur")?.value;
@@ -154,21 +158,21 @@ function renderTitlePreviews() {
     drawTitlePortrait(heroCharacter, titlePortraitImages[selectedRole], selectedRole, fur, selectedAccessory);
     heroCharacter.setAttribute("aria-label", `Pixel-art ${selectedRole} bartender wearing ${selectedAccessory}`);
   }
-  document.querySelectorAll<HTMLCanvasElement>(".role-photo").forEach((canvas) => {
-    const role = canvas.closest<HTMLButtonElement>(".role")?.dataset.role as CatRole | undefined;
-    if (role) drawTitlePortrait(canvas, titlePortraitImages[role], role, fur, selectedAccessory);
-  });
 }
 function renderRoles() {
-  document.querySelector("#roles")!.innerHTML = roles.map(({ role, perk }) => `<button class="role ${role === selectedRole ? "selected" : ""}" data-role="${role}" aria-pressed="${role === selectedRole}"><span class="role-portrait"><canvas class="role-photo" width="192" height="192" aria-hidden="true"></canvas></span><b>${role}</b><small>${perk}</small></button>`).join("");
+  document.querySelector<HTMLOutputElement>("#role-name")!.value = selectedRole;
   renderTitlePreviews();
-  document.querySelectorAll<HTMLButtonElement>(".role").forEach((button) => button.onclick = () => { selectedRole = button.dataset.role as CatRole; renderRoles(); });
 }
 function renderAccessoryChoice() {
   document.querySelector<HTMLOutputElement>("#accessory-name")!.value = selectedAccessory;
   renderTitlePreviews();
 }
 renderRoles();
+(["prev", "next"] as const).forEach((direction) => document.querySelector<HTMLButtonElement>(`#role-${direction}`)!.onclick = () => {
+  const index = roles.findIndex(({ role }) => role === selectedRole);
+  selectedRole = roles[(index + (direction === "next" ? 1 : -1) + roles.length) % roles.length].role;
+  renderRoles();
+});
 document.querySelector<HTMLInputElement>("#fur")!.addEventListener("input", renderTitlePreviews);
 document.querySelector<HTMLInputElement>("#fur")!.addEventListener("change", renderTitlePreviews);
 (["prev", "next"] as const).forEach((direction) => document.querySelector<HTMLButtonElement>(`#accessory-${direction}`)!.onclick = () => {
@@ -180,7 +184,7 @@ document.querySelector<HTMLInputElement>("#fur")!.addEventListener("change", ren
 function connect(action: "create" | "join") {
   socket.connect();
   const send = () => {
-    if (action === "create") socket.emit("create-room", profile());
+    if (action === "create") socket.emit("create-room", { ...profile(), solo: sessionMode === "single", snapshot: sessionMode === "single" ? pendingSave?.snapshot : undefined });
     else {
       const code = (document.querySelector<HTMLInputElement>("#room-input")!).value.toUpperCase().trim();
       if (code.length !== 4) return setToast("Enter the four-letter room code first.");
@@ -189,7 +193,7 @@ function connect(action: "create" | "join") {
   };
   socket.connected ? send() : socket.once("connect", send);
 }
-document.querySelector<HTMLButtonElement>("#solo")!.onclick = () => { sessionMode = "single"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create"); };
+document.querySelector<HTMLButtonElement>("#save-menu")!.onclick = openSaveMenu;
 document.querySelector<HTMLButtonElement>("#create")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create"); };
 document.querySelector<HTMLButtonElement>("#join")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("join"); };
 document.querySelector<HTMLButtonElement>("#game-menu")!.onclick = () => {
@@ -211,19 +215,37 @@ document.querySelector<HTMLButtonElement>("#reset-settings")!.onclick = () => { 
   };
   applySettings();
 }));
-document.querySelector<HTMLButtonElement>("#continue")!.onclick = () => {
-  const save = loadSoloSave(); if (!save) return;
+function startSaveSlot(index: number, save: SoloSave | null) {
+  pendingSave = save ?? undefined;
+  activeSaveSlot = index; sessionStorage.setItem("paws-pours-save-slot", String(index));
+  if (save) {
   document.querySelector<HTMLInputElement>("#name")!.value = save.profile.name;
   document.querySelector<HTMLInputElement>("#fur")!.value = save.profile.fur;
   selectedAccessory = TITLE_ACCESSORIES.includes(save.profile.accessory as TitleAccessory) ? save.profile.accessory as TitleAccessory : "Bow tie";
   renderAccessoryChoice();
-  selectedRole = save.profile.role as CatRole; renderRoles();
+  selectedRole = roles.some(({ role }) => role === save.profile.role) ? save.profile.role as CatRole : "Tabby"; renderRoles();
+  }
   sessionMode = "single"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create");
-};
-document.querySelector<HTMLButtonElement>("#delete-save")!.onclick = () => { if (window.confirm("Delete the local solo profile and progress summary?")) { clearSoloSave(); refreshSoloActions(); } };
-refreshSoloActions();
+}
+function openSaveMenu() {
+  const dialog = document.querySelector<HTMLDialogElement>("#save-dialog")!;
+  const slots = document.querySelector("#save-slots")!; slots.replaceChildren();
+  document.querySelector("#save-error")!.textContent = "";
+  loadSoloSlots().forEach((save, index) => {
+    const button = document.createElement("button"); button.className = "save-slot";
+    const title = document.createElement("strong"), description = document.createElement("span");
+    title.textContent = save ? `Slot ${index + 1} · ${save.profile.name}` : `Slot ${index + 1} · Empty`;
+    description.textContent = save ? `${save.snapshot ? `Shift ${save.summary.round} · ${save.summary.coins} coins · ${save.summary.phase}` : "Legacy profile · start a new adventure"}\n${new Date(save.savedAt).toLocaleString()}` : "＋ Create a new adventure";
+    button.append(title, description); button.onclick = () => {
+      slots.querySelectorAll("button").forEach((item) => item.disabled = true);
+      startSaveSlot(index, save);
+    }; slots.append(button);
+  });
+  dialog.showModal();
+}
+document.querySelector<HTMLButtonElement>("#close-saves")!.onclick = () => document.querySelector<HTMLDialogElement>("#save-dialog")!.close();
 
-socket.on("joined", ({ code }: { code: string }) => { roomCode = code; sessionStorage.setItem("paws-pours-room", code); menu.classList.add("hidden"); game.classList.remove("hidden"); setToast(`Joined room ${code}.`); });
+socket.on("joined", ({ code }: { code: string }) => { document.querySelector<HTMLDialogElement>("#save-dialog")!.close(); pendingSave = undefined; roomCode = code; sessionStorage.setItem("paws-pours-room", code); menu.classList.add("hidden"); game.classList.remove("hidden"); setToast(`Joined room ${code}.`); });
 socket.on("state", (next: GameState) => {
   const authoritativePlayer = next.players[token];
   if (authoritativePlayer) {
@@ -249,10 +271,21 @@ socket.on("state", (next: GameState) => {
   state = next; renderUi();
   if (sessionMode === "single") {
     const player = next.players[token];
-    if (player) saveSoloSave({ version: 1, profile: profile(), savedAt: Date.now(), summary: { coins: next.coins, reputation: next.reputation, round: next.round, phase: next.phase } });
+    if (player && activeSaveSlot >= 0 && (Date.now() - lastSaveAt > 1000 || next.pausedAt !== null || next.phase !== "shift")) persistSoloSave();
   }
 });
-socket.on("error-message", (message: string) => setToast(message));
+socket.on("error-message", (message: string) => {
+  setToast(message); document.querySelector("#save-error")!.textContent = message;
+  document.querySelectorAll<HTMLButtonElement>(".save-slot").forEach((button) => button.disabled = false);
+});
+function persistSoloSave() {
+  if (!state || sessionMode !== "single" || activeSaveSlot < 0 || !state.players[token]) return;
+  lastSaveAt = Date.now();
+  const success = saveSoloSlot(activeSaveSlot, { version: 1, profile: profile(), savedAt: lastSaveAt,
+    summary: { coins: state.coins, reputation: state.reputation, round: state.round, phase: state.phase }, snapshot: captureSoloSnapshot(state, token) });
+  if (!success && !saveStorageFailed) { saveStorageFailed = true; setToast("Local storage is unavailable or full. This run cannot be saved."); }
+}
+window.addEventListener("pagehide", persistSoloSave);
 socket.on("connect", () => { if (roomCode && state) socket.emit("join-room", { ...profile(), code: roomCode }); });
 socket.on("disconnect", () => setToast("Reconnecting to the tavern…"));
 
@@ -500,7 +533,7 @@ function drawRecipeBookPage(recipe: Recipe, page: number) {
   bookContext.font = "600 14px 'DM Mono', monospace";
   const actionSummary = recipe.preparation.actions.map((action) => action.kind === "rhythm"
     ? action.style === "chop" ? "chop" : "paw mix" : action.tool).join(" · ");
-  bookContext.fillText(`Add in order · ${actionSummary} · serve`, 84, 287, 358);
+  bookContext.fillText(`Any ingredient order · ${actionSummary} · serve`, 84, 287, 358);
   bookContext.fillText("Illustrated ingredient notes", 84, 315);
   bookContext.fillStyle = "rgba(92, 54, 53, .28)";
   bookContext.fillRect(84, 347, 300, 4);
@@ -519,16 +552,15 @@ function drawRecipeBookPage(recipe: Recipe, page: number) {
   bookContext.fillText("INGREDIENTS", 548, 379);
   recipe.ingredients.forEach((ingredient, index) => {
     const x = 598 + index * 145;
-    const frame = INGREDIENT_FRAMES[ingredient];
     bookContext.fillStyle = "rgba(255, 248, 223, .5)";
     bookContext.beginPath(); bookContext.arc(x, 456, 57, 0, Math.PI * 2); bookContext.fill();
     bookContext.fillStyle = "#543247";
     bookContext.font = "700 18px 'DM Mono', monospace";
-    bookContext.fillText(String(index + 1), x - 5, 529);
-    if (!frame || !ingredientsSpritesheet.complete || !ingredientsSpritesheet.naturalWidth) return;
-    const scale = Math.min(96 / frame.width, 104 / frame.height);
-    const imageWidth = frame.width * scale; const imageHeight = frame.height * scale;
-    bookContext.drawImage(ingredientsSpritesheet, frame.x, frame.y, frame.width, frame.height, x - imageWidth / 2, 454 - imageHeight / 2, imageWidth, imageHeight);
+    drawIngredientIcon(bookContext, ingredientsSpritesheet, ingredient, x, 454, 96);
+    if (ingredient === "chopped-tuna") {
+      drawChopBadge(bookContext, x + 38, 491, 34);
+      bookContext.font = "600 12px monospace"; bookContext.fillText("CHOP FIRST", x - 35, 531);
+    }
   });
 }
 function drawHazard() {
@@ -557,11 +589,11 @@ function renderBoard() {
     const titleCanvas = document.querySelector<HTMLCanvasElement>("#title-decor")!;
     const art = titleCanvas.getContext("2d")!;
     art.clearRect(0, 0, 1000, 350); art.imageSmoothingEnabled = false;
-    ornament(art, 0, 140, 282, 130, 110);
-    ornament(art, 5, 340, 302, 106, 85);
-    ornament(art, 4, 505, 297, 57, 82);
-    ornament(art, 2, 935, 82, 92, 102);
-    for (const [x, y] of [[390, 245], [555, 230], [665, 82], [938, 214], [44, 72]]) {
+    art.fillStyle = "#bfa1b5"; art.fillRect(40, 305, 590, 3);
+    art.fillStyle = "#54415f"; art.fillRect(40, 308, 590, 5);
+    ornament(art, 0, 107, 268, 83, 78);
+    ornament(art, 4, 574, 279, 33, 53);
+    for (const [x, y] of [[334, 271], [351, 271], [368, 271]]) {
       art.fillStyle = "#dfcaaa"; art.fillRect(x - 2, y - 6, 4, 12); art.fillRect(x - 6, y - 2, 12, 4);
     }
   }
@@ -578,6 +610,7 @@ function renderBoard() {
     ...Object.values(state.players).map((player) => ({ depth: player.y, draw: () => drawPlayer(player) }))
   ].sort((left, right) => left.depth - right.depth);
   objects.forEach((object) => object.draw());
+  drawBarGate(context, Object.values(state.players), state.pausedAt !== null);
   drawHazard();
   if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(300, 678, 488, 26); drawText(`⚠ ${state.hazard.message}`, 544, 695, "bold 12px system-ui", "white"); }
 }

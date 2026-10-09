@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Mixing animation QA</title><style>body{background:#21172c;color:#fce8c4;font:16px monospace}#picker{position:fixed;z-index:100;top:0;left:0;padding:8px;background:#342342}button,select{padding:8px} .mixing-workspace{top:50px!important} </style></head><body><div id="picker"><label>Animation <select id="animation"><option value="catnip">Shaker</option><option value="moonmilk">Spoon / bowl</option><option value="tuna">Pourer</option><option value="kelp-swirl">Alternating paws / bowl</option><option value="lunar-fizz">Chopping</option></select></label></div><main id="mount"></main><script type="module">
+import { MixingWorkspace } from '/client/mixing-workspace.ts';
+import { initialState, createMixingSession, recipeById, PLAYER_SPAWNS } from '/shared/game.ts';
+import '/client/style.css';
+const state = initialState('QA','qa',1); state.phase='shift';
+state.players.qa={id:'qa',name:'QA',role:'Tabby',fur:'#e5a265',accessory:'Bow tie',...PLAYER_SPAWNS[0],direction:'down',moving:false,moveSequence:0,carrying:[],connected:true,score:0};
+const workspace=new MixingWorkspace(document.querySelector('#mount'),{addIngredient(){},startTool(){},finishTool(){},pause(){},cancel(){},rhythmHit(){state.mixing.qa.rhythmHits=(state.mixing.qa.rhythmHits+1)%4;state.mixing.qa.rhythmLastHitAt=Date.now();workspace.render(state,'qa');}});
+function select(){const id=document.querySelector('#animation').value;state.players.qa.carrying=[...recipeById(id).ingredients];state.mixing.qa=createMixingSession('qa',id);state.mixing.qa.stepIndex=3;state.mixing.qa.usedIngredients=[...state.players.qa.carrying];workspace.render(state,'qa');}
+document.querySelector('#animation').onchange=select;select();
+</script></body></html>

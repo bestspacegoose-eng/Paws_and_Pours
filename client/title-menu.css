@@ -1,0 +1,25 @@
+/* Quiet title hierarchy, with the existing portrait geometry left untouched. */
+.title-heading{top:49px;max-width:72%}
+.title-heading h1{font-size:clamp(54px,7.7vw,102px);letter-spacing:-.055em}
+.title-overline{font-size:10px;letter-spacing:.2em;color:#e2c9db}
+.title-tagline{border:0;box-shadow:none;background:none;padding:0;font-weight:500;color:#ebdcca}
+.title-scene::after{display:none}
+.title-console{grid-template-columns:minmax(0,1.3fr) minmax(300px,1fr);gap:24px;padding:22px}
+.title-menu .customizer-card,.title-menu .title-actions{min-height:0;border:0;background:none;box-shadow:none;padding:4px}
+.title-menu .title-section-heading h2{font-size:20px;color:#dac2df;margin-bottom:9px}
+.title-menu .setup-grid{grid-template-columns:minmax(0,1fr) minmax(95px,.65fr);gap:12px;margin:0}
+.title-menu .setup-grid .accessory-picker{min-width:0}
+.title-menu .accessory-controls{grid-template-columns:32px minmax(0,1fr) 32px}
+.title-menu .accessory-controls output{font-size:12px;white-space:normal}
+.title-menu .menu-utilities{display:flex;justify-content:flex-end}
+.title-menu .menu-utilities button{padding:6px 20px}
+.save-dialog{width:min(800px,calc(100% - 32px));max-height:90dvh;overflow:auto;padding:28px;background:#30223e;border:3px solid #c5a2cd;border-radius:9px;color:#fff0d1;box-shadow:0 8px 0 #1b1327}
+.save-dialog::backdrop{background:#100b1edb;backdrop-filter:blur(5px)}
+.save-dialog h2{font:700 42px Fraunces,Georgia,serif;margin:6px 0 12px}
+.save-dialog p{color:#d6c2d9;line-height:1.5}
+.save-slots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:24px 0}
+.save-slot{display:flex;flex-direction:column;justify-content:center;gap:18px;min-height:175px;padding:18px 12px;border:2px solid #b197bf;border-radius:5px;background:#4d395e;color:#f6e5cc;text-align:center}
+.save-slot strong{font-size:16px}.save-slot span{font-size:12px;line-height:1.6;white-space:pre-line;color:#dccbe5}
+.save-dialog button:focus-visible{outline:3px solid #ffe1a0;outline-offset:3px}
+@media(max-width:850px){.title-console{grid-template-columns:1fr;gap:18px}.title-heading{max-width:70%;top:42px}.title-heading h1{font-size:clamp(45px,8vw,72px)}}
+@media(max-width:620px){.title-heading{top:24px;max-width:92%}.title-heading h1{font-size:clamp(34px,8.5vw,52px)}.title-tagline{font-size:10px;max-width:65%;line-height:1.5}.title-console{padding:16px}.title-menu .setup-grid{grid-template-columns:minmax(0,1fr) minmax(90px,.65fr)}.save-slots{grid-template-columns:1fr}.save-slot{min-height:105px}.save-dialog h2{font-size:32px}}

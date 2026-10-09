@@ -1,7 +1,7 @@
 export type Theme = "Cozy Village Pub" | "Haunted Moonlit Inn" | "Pirate Cat Tavern";
 export type CatRole = "Tabby" | "Siamese" | "Maine Coon" | "Black Cat" | "Calico";
 export type FacingDirection = "down" | "left" | "right" | "up";
-export type StationKind = "pantry" | "mix" | "serve" | "seat" | "mop" | "trash" | "counter";
+export type StationKind = "pantry" | "mix" | "chop" | "serve" | "seat" | "mop" | "trash" | "counter";
 export type Phase = "lobby" | "shift" | "upgrades" | "complete";
 export type CounterVariant = "standard" | "end-cap" | "corner" | "ingredient" | "mixing" | "decorative" | "damaged";
 export type MixingTool = "shaker" | "spoon" | "pourer";
@@ -11,7 +11,7 @@ export interface Vec { x: number; y: number }
 export interface GridCell { gridX: number; gridY: number }
 export interface PreparedDrink { recipeId: string; quality: number }
 export interface Station extends Vec, GridCell {
-  id: string; kind: StationKind; label: string; counterVariant: CounterVariant; ingredient?: string; drink?: PreparedDrink
+  id: string; kind: StationKind; label: string; counterVariant: CounterVariant; ingredient?: string; drink?: PreparedDrink; preparedIngredient?: string
 }
 export interface TimedToolAction {
   kind: "timed-tool"; tool: MixingTool; targetMs: number; toleranceMs: number
@@ -79,7 +79,7 @@ export const RECIPES: Recipe[] = [
     preparation: { actions: [{ kind: "timed-tool", tool: "spoon", targetMs: 2_200, toleranceMs: 550 }] }
   },
   {
-    id: "tuna", name: "Tuna Tonic", ingredients: ["tuna", "tonic", "kelp"],
+    id: "tuna", name: "Tuna Tonic", ingredients: ["chopped-tuna", "tonic", "kelp"],
     color: "#7bd8d1", glass: "goblet", tier: 0,
     preparation: { actions: [{ kind: "timed-tool", tool: "pourer", targetMs: 1_500, toleranceMs: 450 }] }
   },
@@ -107,7 +107,7 @@ export const RECIPES: Recipe[] = [
     ] }
   },
   {
-    id: "seafoam-shake", name: "Seafoam Shake", ingredients: ["tuna", "kelp", "cream"],
+    id: "seafoam-shake", name: "Seafoam Shake", ingredients: ["chopped-tuna", "kelp", "cream"],
     color: "#86c9be", glass: "mug", tier: 2,
     preparation: { actions: [
       { kind: "rhythm", style: "chop", ingredient: "kelp", hits: 3, intervalMs: 560, toleranceMs: 210 },
@@ -167,6 +167,7 @@ export function makeTavern(seed: number, round = 1): Tavern {
     ...ingredientTable,
     stationAt({ gridX: 3, gridY: 3 }, { id: "mix", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
     stationAt({ gridX: 4, gridY: 5 }, { id: "mix-east", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
+    stationAt({ gridX: 3, gridY: 5 }, { id: "chop", kind: "chop", label: "Chop tuna", counterVariant: "ingredient" }),
     stationAt({ gridX: 1, gridY: 10 }, { id: "mop", kind: "mop", label: "Clean", counterVariant: "damaged" }),
     stationAt({ gridX: 3, gridY: 10 }, { id: "trash", kind: "trash", label: "Discard", counterVariant: "damaged" })
   ];
@@ -290,6 +291,33 @@ export function expectedMixingStep(session: MixingSession): MixingStep | undefin
   return mixingStepsForRecipe(recipeById(session.recipeId))[session.stepIndex];
 }
 
+export function addMixingIngredient(session: MixingSession, carried: string[], ingredient: string): boolean {
+  const recipe = recipeById(session.recipeId);
+  if (expectedMixingStep(session)?.kind !== "ingredient") return false;
+  const used = session.usedIngredients.filter((item) => item === ingredient).length;
+  if (used >= recipe.ingredients.filter((item) => item === ingredient).length ||
+      used >= carried.filter((item) => item === ingredient).length) return false;
+  session.usedIngredients.push(ingredient);
+  session.stepIndex += 1;
+  session.qualityPoints += 1;
+  return true;
+}
+
+export function chopTuna(player: Player, station: Station): "chopped" | "picked-up" | "full" | "needs-tuna" {
+  if (station.kind !== "chop") return "needs-tuna";
+  if (station.preparedIngredient) {
+    if (player.drink || player.carrying.length >= 3 || player.carrying.includes("chopped-tuna")) return "full";
+    player.carrying.push(station.preparedIngredient);
+    delete station.preparedIngredient;
+    return "picked-up";
+  }
+  const index = player.carrying.indexOf("tuna");
+  if (index < 0) return "needs-tuna";
+  player.carrying.splice(index, 1);
+  station.preparedIngredient = "chopped-tuna";
+  return "chopped";
+}
+
 export function toolTimingQuality(elapsedMs: number, action: TimedToolAction): number {
   const distance = Math.abs(elapsedMs - action.targetMs);
   return Math.max(0, Math.min(1, 1 - distance / (action.toleranceMs * 2)));
@@ -323,7 +351,7 @@ export function createMixingSession(playerId: string, recipeId: string, now = Da
     playerId, recipeId, stepIndex: 0, mistakes: 0, startedAt: now,
     deadlineAt: now + MIXING_DURATION_MS, qualityPoints: 0, usedIngredients: [],
     rhythmHits: 0, rhythmQualityPoints: 0,
-    feedback: "Choose the first recipe ingredient."
+    feedback: "Add your ingredients in any order."
   };
 }
 

@@ -1,12 +1,14 @@
 import { recipeById, type Order } from "../shared/game";
 import { drawRecipeDrink, onDrinkArtReady } from "./drink-art";
 import { drawIngredientIcon } from "./tavern-renderer";
+import { drawChopBadge, onPreparationArtReady } from "./preparation-art";
 
 export class OrderHud {
   private signature = "";
   constructor(private readonly root: HTMLElement, private readonly ingredients: HTMLImageElement) {
     ingredients.addEventListener("load", () => { this.signature = ""; });
     onDrinkArtReady(() => { this.signature = ""; });
+    onPreparationArtReady(() => { this.signature = ""; });
   }
   render(orders: Order[]) {
     const signature = orders.map((order) => `${order.id}:${order.recipeId}`).join("|");
@@ -26,6 +28,7 @@ export class OrderHud {
           const x = 84 + index * 47;
           context.fillStyle = "#f1dfbf"; context.fillRect(x - 19, 5, 38, 39);
           drawIngredientIcon(context, this.ingredients, ingredient, x, 24, 31);
+          if (ingredient === "chopped-tuna") drawChopBadge(context, x + 12, 39, 16);
         });
         const progress = document.createElement("progress"); progress.max = order.maxPatience;
         progress.setAttribute("aria-label", `${recipe.name} remaining patience`);
