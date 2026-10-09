@@ -1,6 +1,20 @@
 import type { Recipe } from "../shared/game";
+import drinksUrl from "./assets/tilemap/drinks-complete-atlas.png";
+import { DRINK_SPRITES } from "./drink-sprites";
+
+const drinks = new Image();
+drinks.src = drinksUrl;
+export function onDrinkArtReady(listener: () => void) { drinks.addEventListener("load", listener); }
 
 export function drawRecipeDrink(context: CanvasRenderingContext2D, recipe: Recipe, x: number, y: number, size: number) {
+  const frame = DRINK_SPRITES[recipe.id];
+  if (frame && drinks.complete && drinks.naturalWidth) {
+    const scale = Math.min(size / frame.width, size / frame.height);
+    const width = Math.round(frame.width * scale), height = Math.round(frame.height * scale);
+    context.save(); context.imageSmoothingEnabled = false;
+    context.drawImage(drinks, frame.x, frame.y, frame.width, frame.height, Math.round(x - width / 2), Math.round(y - height / 2), width, height);
+    context.restore(); return;
+  }
   context.save();
   context.translate(Math.round(x - size / 2), Math.round(y - size / 2));
   context.scale(size / 64, size / 64);

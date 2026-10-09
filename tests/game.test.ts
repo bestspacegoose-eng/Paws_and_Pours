@@ -8,7 +8,13 @@ import {
   toolTimingAccepted, toolTimingQuality, RECIPES
 } from "../shared/game.js";
 import { PLAYER_SPAWNS, nearbyStation, transferCounterDrink, type Player } from "../shared/game.js";
-import { boardPoint, TAVERN_VIEW } from "../client/tavern-renderer.js";
+import { boardPoint, TAVERN_VIEW } from "../client/tavern-projection.js";
+import { DRINK_SPRITES } from "../client/drink-sprites.js";
+
+test("every recipe has its own illustrated drink frame", () => {
+  assert.deepEqual(Object.keys(DRINK_SPRITES).sort(), RECIPES.map((recipe) => recipe.id).sort());
+  assert.equal(new Set(Object.values(DRINK_SPRITES).map((frame) => `${frame.x}:${frame.y}`)).size, RECIPES.length);
+});
 import { handMixFrame } from "../client/mixing-animation.js";
 
 test("a recipe is identified irrespective of ingredient pickup order", () => {
@@ -33,7 +39,7 @@ test("a tavern seed produces a stable, readable layout", () => {
   const first = makeTavern(123456, 2);
   const second = makeTavern(123456, 2);
   assert.deepEqual(first, second);
-  assert.ok(first.stations.length > 50);
+  assert.ok(first.stations.length > 40);
   assert.deepEqual(first.stations.slice(0, 9).map((station) => station.ingredient), [
     "catnip", "lime", "fizz", "moonmilk", "cream", "stardust", "tuna", "tonic", "kelp"
   ]);
@@ -46,8 +52,8 @@ test("authored pantry wings spread recipes across the floor and leave four safe 
     assert.deepEqual({ gridX: station.gridX, gridY: station.gridY }, PANTRY_FLOOR_PLAN[station.ingredient!]);
   }
   for (const recipe of RECIPES) {
-    const xs = recipe.ingredients.map((ingredient) => tavern.stations.find((station) => station.ingredient === ingredient)!.x);
-    assert.ok(Math.max(...xs) - Math.min(...xs) >= 200, `${recipe.name} should require a cross-room route`);
+    const locations = recipe.ingredients.map((ingredient) => tavern.stations.find((station) => station.ingredient === ingredient)!);
+    assert.ok(locations.some((a) => locations.some((b) => Math.hypot(a.x - b.x, a.y - b.y) >= 200)), `${recipe.name} should require a cross-kitchen route`);
   }
   for (const spawn of PLAYER_SPAWNS) assert.equal(pointCollidesWithCounters(tavern, spawn), false);
 });
@@ -94,6 +100,32 @@ test("every generated counter owns one unique square grid cell", () => {
     const a = boardPoint(bounds.left, bounds.top), b = boardPoint(bounds.right, bounds.bottom);
     assert.equal(b.x - a.x, GRID_CELL_SIZE);
     assert.ok(Math.abs(b.y - a.y - GRID_CELL_SIZE * TAVERN_VIEW.depth) < .001);
+  }
+});
+
+test("dining destinations have solid seats and a wide open kitchen passage", () => {
+  const tavern = makeTavern(913);
+  const tables = tavern.stations.filter((station) => station.kind === "serve");
+  assert.equal(tables.length, 4);
+  for (const table of tables) {
+    assert.ok(table.gridX > 8);
+    const seat = tavern.stations.find((station) => station.id === `${table.id}-seat`)!;
+    assert.equal(seat.kind, "seat");
+    assert.equal(pointCollidesWithCounters(tavern, seat), true);
+    assert.equal(pointCollidesWithCounters(tavern, table), true);
+  }
+  for (const row of [6, 7, 8]) {
+    const start = gridCellCenter(7, row), end = gridCellCenter(10, row);
+    const moved = moveWithCounterCollisions(tavern, start, end);
+    assert.ok(Math.hypot(moved.x - end.x, moved.y - end.y) < .01);
+  }
+});
+
+test("subpixel movement keeps an ingredient station selected at a counter junction", () => {
+  const tavern = makeTavern(1);
+  const point = gridCellCenter(7, 3);
+  for (const offset of [-.001, 0, .001]) {
+    assert.equal(nearbyStation(tavern, { x: point.x + offset, y: point.y + offset })?.id, "ingredient-lime");
   }
 });
 

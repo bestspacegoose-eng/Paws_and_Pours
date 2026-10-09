@@ -38,20 +38,22 @@ npm test
 - Shared 2–4 player WebSocket session, with reconnecting players retaining their cat identity in the room.
 - Server-authoritative movement, ingredients, prepared drinks, customer queues, shift clock, coins, reputation, health, hazards, and upgrades.
 - Seven recipes made from the nine existing pantry ingredients. Lunar Fizz, Kelp Swirl, Star Spritz, and Seafoam Shake add new preparation sequences.
-- The shift loop: ingredient counters → first-person mixing workspace → service bell → timed customer rewards → upgrade → a second seeded tavern.
+- The shift loop: kitchen ingredients → first-person mixing workspace → carry the drink through the bar opening → serve the matching numbered dining table → rewards → upgrades.
 - Data-driven mixing sequences with ordered ingredients, server-timed tools, rhythmic chopping, alternating-paw hand mixing, mistakes, cancellation, timeout failure, and drink-quality rewards.
 - Later orders introduce harder recipes and shorter patience windows. Every expired or unserved order costs a shared heart and reputation; a Nine Lives keepsake can restore one heart.
 - Square one-cell counter primitives with shared client/server collision and seven visual variants per tavern theme.
 - Three-minute shifts and a server-wide pause: any player can pause or resume; clocks, orders, movement, and mixing deadlines freeze together.
-- Deterministic tavern themes from a server seed, with an authored two-wing pantry floor plan and open routes to mixing and service.
+- Seeded tavern themes on a 16 × 11 elevated floor plan, with connected perimeter counters, two preparation islands, and generous aisles.
+- Finished drinks can be placed on counters for teammates, preserving their recipe and preparation quality. Orders and ingredient illustrations stay in a dedicated top strip.
 - Title menu with solo/create/join flow, locally persisted display/audio preferences, and solo-only profile/progress summary.
-- Trapezoid floor collision bounds, world-space hazard effects, finished-drink sprites, and discard support for ingredients or completed drinks.
+- Grid-aligned rectangular floor and counter collision, world-space hazards, seven illustrated drinks, and discard support for ingredients or completed drinks.
 - Responsive desktop/smaller-screen interface with no art-asset download required.
 
 ## Controls
 
 - `WASD` or arrow keys: move your cat.
 - `E`: interact at a station.
+- `Q`: place or pick up a finished drink at a preparation, ingredient, or mixing counter. At ordinary counters, `E` also transfers drinks. Occupied hands or surfaces never overwrite a drink.
 - `Escape` or **Menu · Pause**: pause the room for everyone. The pause menu contains the illustrated recipe book and local display/audio settings.
 - Pick up three ingredients, open the matching recipe at the mixer, then add them in recipe order. Hold timed tools near their target duration; for chopping and hand mixing, tap in rhythm with the highlighted beat (alternating left and right paws for hand mixing).
 - The mixing workspace is private to the active player; the shared online shift continues for everyone else unless anyone pauses the room. An active tool hold or beat sequence restarts after resuming without a mistake.

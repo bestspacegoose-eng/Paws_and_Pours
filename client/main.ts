@@ -11,12 +11,13 @@ import calicoPortraitUrl from "./assets/characters/calico.png";
 import scrapBinUrl from "./assets/props/scrap-bin.png";
 import catBartenderSpritesheetUrl from "./assets/tilemap/cat-bartender-spritesheet.png";
 import ingredientsSpritesheetUrl from "./assets/tilemap/ingredients-spritesheet.png";
-import finishedDrinksUrl from "./assets/tilemap/finished-drinks-spritesheet.png";
 import { MixingWorkspace } from "./mixing-workspace";
-import { drawRecipeDrink } from "./drink-art";
-import { atlasFrame, FINISHED_DRINK_FRAME_INDEX, INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
-import { boardPoint, drawTavernFloor, drawTavernCounter, drawIngredientIcon, TAVERN_VIEW } from "./tavern-renderer";
+import { drawRecipeDrink, onDrinkArtReady } from "./drink-art";
+import { INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
+import { boardPoint, drawTavernFloor, drawTavernCounter, drawIngredientIcon, ornament, TAVERN_VIEW } from "./tavern-renderer";
 import { OrderHud } from "./order-hud";
+import { PLAYER_ANCHORS, transformAnchors } from "./character-anchors";
+import { drawCatAccessory } from "./accessory-art";
 import { clearSoloSave, defaultSettings, loadSettings, loadSoloSave, saveSettings, saveSoloSave, type DisplayAudioSettings } from "./preferences";
 import { drawTitlePortrait, TITLE_ACCESSORIES, type TitleAccessory } from "./title-portrait";
 import "./style.css";
@@ -56,12 +57,11 @@ const titlePortraitImages = Object.fromEntries(Object.entries(catPortraits).map(
 const scrapBin = new Image(); scrapBin.src = scrapBinUrl;
 const catBartenderSpritesheet = new Image(); catBartenderSpritesheet.src = catBartenderSpritesheetUrl;
 const ingredientsSpritesheet = new Image(); ingredientsSpritesheet.src = ingredientsSpritesheetUrl;
-const finishedDrinksSpritesheet = new Image(); finishedDrinksSpritesheet.src = finishedDrinksUrl;
 const refreshOpenRecipeBook = () => {
   if (recipeBookOpen) drawRecipeBookPage(RECIPES[recipeBookPage], recipeBookPage);
 };
 ingredientsSpritesheet.addEventListener("load", refreshOpenRecipeBook);
-finishedDrinksSpritesheet.addEventListener("load", refreshOpenRecipeBook);
+onDrinkArtReady(refreshOpenRecipeBook);
 
 const roles: { role: CatRole; perk: string }[] = [
   { role: "Tabby", perk: "Balanced" }, { role: "Siamese", perk: "Quick paws" },
@@ -75,6 +75,7 @@ app.innerHTML = `
     <header class="topbar"><a class="brand" href="/"><span>🐾</span> Paws <i>&</i> Pours</a><span class="tag">Co-op roguelike bartending</span></header>
     <section id="menu" class="menu card title-menu">
       <div class="title-scene">
+        <canvas id="title-decor" width="1000" height="350" aria-hidden="true"></canvas>
         <div class="title-heading"><p class="title-overline">✦ A CO-OP FANTASY TAVERN ✦</p><h1>PAWS <span>&amp;</span> POURS</h1><p class="title-tagline">Shake, serve, survive the night.</p></div>
         <div class="title-hero"><canvas id="hero-character" width="192" height="192" role="img" aria-label="Pixel-art Tabby bartender"></canvas><span class="title-hero-plaque">YOUR BARTENDER</span></div>
       </div>
@@ -428,62 +429,24 @@ function tintedCharacter(fur: string) {
   layer.globalCompositeOperation = "source-over"; layer.globalAlpha = .35; layer.drawImage(catBartenderSpritesheet, 0, 0);
   layer.globalAlpha = 1; characterTintCache.set(fur, result); return result;
 }
-function drawAccessory(accessory: string, point: Point, direction: Player["direction"], spriteHeight: number) {
-  const top = Math.round(point.y + 19 - spriteHeight);
-  const neck = Math.round(top + spriteHeight * .63);
-  const forehead = Math.round(top + spriteHeight * .39);
-  const side = direction === "left" ? -4 : direction === "right" ? 4 : 0;
-  context.save(); context.imageSmoothingEnabled = false;
-  if (accessory === "Bow tie") {
-    if (direction !== "up") {
-      const x = Math.round(point.x + side);
-      context.fillStyle = "#2c1b35"; context.fillRect(x - 7, neck - 4, 14, 8);
-      context.fillStyle = "#a84276"; context.fillRect(x - 6, neck - 3, 5, 6); context.fillRect(x + 1, neck - 3, 5, 6);
-      context.fillStyle = "#e8789a"; context.fillRect(x - 5, neck - 2, 3, 3); context.fillRect(x + 2, neck - 2, 3, 3);
-      context.fillStyle = "#f2c979"; context.fillRect(x - 1, neck - 3, 2, 6);
-    }
-  } else if (accessory === "Wizard hat") {
-    const x = Math.round(point.x + side);
-    context.fillStyle = "#251630"; context.fillRect(x - 15, top + 2, 30, 5);
-    context.fillRect(x - 10, top - 3, 20, 6); context.fillRect(x - 6, top - 10, 12, 8);
-    context.fillRect(x - 3, top - 16, 7, 7);
-    context.fillStyle = "#66528d"; context.fillRect(x - 8, top - 1, 16, 4); context.fillRect(x - 5, top - 8, 10, 6);
-    context.fillStyle = "#e9bd72"; context.fillRect(x - 7, top + 2, 14, 2);
-  } else if (accessory === "Pirate patch") {
-    if (direction !== "up") {
-      const eyeX = Math.round(point.x + (direction === "left" ? -7 : 7));
-      context.strokeStyle = "#2d2138"; context.lineWidth = 2;
-      context.beginPath(); context.moveTo(point.x - 12, forehead - 4); context.lineTo(point.x + 12, forehead + 3); context.stroke();
-      context.fillStyle = "#2d2138"; context.fillRect(eyeX - 4, forehead - 3, 8, 7);
-      context.fillStyle = "#caa6ed"; context.fillRect(eyeX - 1, forehead - 2, 2, 2);
-    }
-  } else if (accessory === "Flower crown") {
-    context.fillStyle = "#65a862"; context.fillRect(point.x - 13, top + 3, 26, 3);
-    [[-9, "#f09ab8"], [0, "#ffd36b"], [9, "#b99be5"]].forEach(([offset, color]) => {
-      context.fillStyle = color as string; context.fillRect(point.x + Number(offset) - 2, top, 5, 5);
-      context.fillStyle = "#fff4c9"; context.fillRect(point.x + Number(offset), top + 1, 1, 1);
-    });
-  }
-  context.restore();
-}
 function drawPlayer(player: Player) {
   const foot = boardPoint(player.x, player.y);
   const point = { x: Math.round(foot.x), y: Math.round(foot.y - 19) };
   context.strokeStyle = player.id === token ? "#ffd26d" : "#fff3d2"; context.lineWidth = 2;
   context.beginPath(); context.ellipse(point.x, point.y + 17, 23, 7, 0, 0, Math.PI * 2); context.stroke();
   context.fillStyle = "rgba(25,15,30,.36)"; context.beginPath(); context.ellipse(point.x, point.y + 16, 20, 7, 0, 0, Math.PI * 2); context.fill();
-  let spriteHeight = 65;
+  const direction = player.direction ?? "down";
   if (catBartenderSpritesheet.complete && catBartenderSpritesheet.naturalWidth) {
-    const direction = player.direction ?? "down";
     const frameIndex = player.moving ? Math.floor(performance.now() / 135) % 4 : 0;
     const frame = PLAYER_FRAMES[direction][frameIndex]; const scale = 72 / 298;
+    const anchors = PLAYER_ANCHORS[direction][frameIndex];
     const width = frame.width * scale; const height = frame.height * scale;
-    spriteHeight = height;
-    context.drawImage(tintedCharacter(player.fur), frame.x, frame.y, frame.width, frame.height, point.x - width / 2, point.y + 19 - height, width, height);
+    const left = Math.round(foot.x - (anchors.feetX - frame.x) * scale);
+    const top = Math.round(foot.y - height);
+    context.drawImage(tintedCharacter(player.fur), frame.x, frame.y, frame.width, frame.height, left, top, width, height);
+    drawCatAccessory(context, player.accessory, transformAnchors(anchors, left - frame.x * scale, top - frame.y * scale, scale), direction);
   }
   else { context.fillStyle = player.fur; context.fillRect(point.x - 17, point.y - 40, 34, 52); }
-  const direction = player.direction ?? "down";
-  drawAccessory(player.accessory, point, direction, spriteHeight);
   drawText(player.name, point.x, point.y + 36, "bold 10px system-ui", "#fff7e9");
   if (!player.connected) drawText("reconnecting…", point.x, point.y + 48, "9px system-ui", "#f07777");
   if (player.drink) {
@@ -550,11 +513,7 @@ function drawRecipeBookPage(recipe: Recipe, page: number) {
   bookContext.beginPath(); bookContext.arc(736, 222, 126, 0, Math.PI * 2); bookContext.fill();
   bookContext.fillStyle = "rgba(255, 248, 223, .6)";
   bookContext.beginPath(); bookContext.arc(736, 222, 112, 0, Math.PI * 2); bookContext.fill();
-  const drinkFrameIndex = FINISHED_DRINK_FRAME_INDEX[recipe.id]?.complete;
-  if (drinkFrameIndex !== undefined && finishedDrinksSpritesheet.complete && finishedDrinksSpritesheet.naturalWidth) {
-    const frame = atlasFrame(finishedDrinksSpritesheet, 3, 2, drinkFrameIndex);
-    bookContext.drawImage(finishedDrinksSpritesheet, frame.x, frame.y, frame.width, frame.height, 621, 107, 230, 230);
-  } else drawRecipeDrink(bookContext, recipe, 736, 222, 205);
+  drawRecipeDrink(bookContext, recipe, 736, 222, 230);
   bookContext.fillStyle = "#543247";
   bookContext.font = "700 17px 'DM Mono', monospace";
   bookContext.fillText("INGREDIENTS", 548, 379);
@@ -594,6 +553,18 @@ function drawHazard() {
 }
 function renderBoard() {
   requestAnimationFrame(renderBoard); movePlayer(); context.imageSmoothingEnabled = false;
+  if (!state || state.phase === "lobby") {
+    const titleCanvas = document.querySelector<HTMLCanvasElement>("#title-decor")!;
+    const art = titleCanvas.getContext("2d")!;
+    art.clearRect(0, 0, 1000, 350); art.imageSmoothingEnabled = false;
+    ornament(art, 0, 140, 282, 130, 110);
+    ornament(art, 5, 340, 302, 106, 85);
+    ornament(art, 4, 505, 297, 57, 82);
+    ornament(art, 2, 935, 82, 92, 102);
+    for (const [x, y] of [[390, 245], [555, 230], [665, 82], [938, 214], [44, 72]]) {
+      art.fillStyle = "#dfcaaa"; art.fillRect(x - 2, y - 6, 4, 12); art.fillRect(x - 6, y - 2, 12, 4);
+    }
+  }
   if (!state) return;
   drawTavernFloor(context, state.tavern);
   const player = localPlayer();
@@ -603,11 +574,11 @@ function renderBoard() {
       ? "E · Set down drink" : `E · ${nearby.label}` : "Approach a counter";
   const objects = [
     ...state.tavern.stations.map((station) => ({ depth: stationBounds(station).bottom, draw: () =>
-      drawTavernCounter(context, state!.tavern, station, ingredientsSpritesheet, scrapBin, station === nearby) })),
+      drawTavernCounter(context, state!.tavern, station, ingredientsSpritesheet, scrapBin, station === nearby, state!.orders, catBartenderSpritesheet) })),
     ...Object.values(state.players).map((player) => ({ depth: player.y, draw: () => drawPlayer(player) }))
   ].sort((left, right) => left.depth - right.depth);
   objects.forEach((object) => object.draw());
   drawHazard();
-  if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(300, 638, 488, 26); drawText(`⚠ ${state.hazard.message}`, 544, 655, "bold 12px system-ui", "white"); }
+  if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(300, 678, 488, 26); drawText(`⚠ ${state.hazard.message}`, 544, 695, "bold 12px system-ui", "white"); }
 }
 renderBoard();

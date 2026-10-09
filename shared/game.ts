@@ -1,7 +1,7 @@
 export type Theme = "Cozy Village Pub" | "Haunted Moonlit Inn" | "Pirate Cat Tavern";
 export type CatRole = "Tabby" | "Siamese" | "Maine Coon" | "Black Cat" | "Calico";
 export type FacingDirection = "down" | "left" | "right" | "up";
-export type StationKind = "pantry" | "mix" | "serve" | "mop" | "trash" | "counter";
+export type StationKind = "pantry" | "mix" | "serve" | "seat" | "mop" | "trash" | "counter";
 export type Phase = "lobby" | "shift" | "upgrades" | "complete";
 export type CounterVariant = "standard" | "end-cap" | "corner" | "ingredient" | "mixing" | "decorative" | "damaged";
 export type MixingTool = "shaker" | "spoon" | "pourer";
@@ -31,7 +31,7 @@ export interface MixingSession {
   usedIngredients: string[]; toolStartedAt?: number; rhythmHits: number;
   rhythmLastHitAt?: number; rhythmQualityPoints: number; feedback: string
 }
-export interface Order { id: string; recipeId: string; customer: string; patience: number; maxPatience: number }
+export interface Order { id: string; recipeId: string; customer: string; patience: number; maxPatience: number; tableId?: string }
 export interface Hazard extends Vec { id: string; kind: HazardKind; message: string }
 export interface Player {
   id: string; name: string; role: CatRole; fur: string; accessory: string;
@@ -56,15 +56,15 @@ export const GRID_ROWS = 11;
 export const PLAYER_COLLISION_RADIUS = 10;
 export const BOARD_BOUNDS = { minX: 10, maxX: GRID_COLUMNS * GRID_CELL_SIZE - 10,
   minY: 10, maxY: GRID_ROWS * GRID_CELL_SIZE - 10 } as const;
-export const PLAYER_SPAWNS = [gridCellCenter(7, 8), gridCellCenter(8, 8), gridCellCenter(9, 8), gridCellCenter(4, 8)];
+export const PLAYER_SPAWNS = [gridCellCenter(3, 8), gridCellCenter(4, 8), gridCellCenter(5, 8), gridCellCenter(6, 8)];
 export const INTERACTION_REACH = 74;
 export const MIXING_DURATION_MS = 45_000;
 export const MIXING_MAX_MISTAKES = 3;
 export const PANTRY_FLOOR_PLAN: Record<string, GridCell> = {
   catnip: { gridX: 1, gridY: 0 }, stardust: { gridX: 3, gridY: 0 },
-  kelp: { gridX: 7, gridY: 0 }, moonmilk: { gridX: 11, gridY: 0 }, lime: { gridX: 14, gridY: 0 },
+  kelp: { gridX: 5, gridY: 0 }, moonmilk: { gridX: 7, gridY: 0 }, lime: { gridX: 8, gridY: 3 },
   tuna: { gridX: 0, gridY: 3 }, fizz: { gridX: 0, gridY: 7 },
-  tonic: { gridX: 15, gridY: 7 }, cream: { gridX: 15, gridY: 3 }
+  tonic: { gridX: 8, gridY: 9 }, cream: { gridX: 8, gridY: 5 }
 };
 
 export const RECIPES: Recipe[] = [
@@ -165,17 +165,22 @@ export function makeTavern(seed: number, round = 1): Tavern {
   });
   const stations: Station[] = [
     ...ingredientTable,
-    stationAt({ gridX: 5, gridY: 3 }, { id: "mix", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
-    stationAt({ gridX: 10, gridY: 3 }, { id: "mix-east", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
-    stationAt({ gridX: 12, gridY: 10 }, { id: "serve", kind: "serve", label: "Serve", counterVariant: "decorative" }),
+    stationAt({ gridX: 3, gridY: 3 }, { id: "mix", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
+    stationAt({ gridX: 4, gridY: 5 }, { id: "mix-east", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
     stationAt({ gridX: 1, gridY: 10 }, { id: "mop", kind: "mop", label: "Clean", counterVariant: "damaged" }),
     stationAt({ gridX: 3, gridY: 10 }, { id: "trash", kind: "trash", label: "Discard", counterVariant: "damaged" })
   ];
+  // A seat and its table are solid cells; the surrounding dining aisles remain open.
+  [[11, 2], [14, 2], [11, 7], [14, 7]].forEach(([gridX, gridY], index) => {
+    const id = `table-${index + 1}`;
+    stations.push(stationAt({ gridX, gridY }, { id, kind: "serve", label: `Table ${index + 1}`, counterVariant: "decorative" }));
+    stations.push(stationAt({ gridX, gridY: gridY - 1 }, { id: `${id}-seat`, kind: "seat", label: index < 2 ? "Booth" : "Chair", counterVariant: "decorative" }));
+  });
   const occupied = new Set(stations.map((station) => `${station.gridX}:${station.gridY}`));
   for (let y = 0; y < GRID_ROWS; y++) for (let x = 0; x < GRID_COLUMNS; x++) {
-    if ((x === 0 || x === 15) && (y === 0 || y === 10)) continue;
-    const perimeter = y === 0 || y === 10 || x === 0 || x === 15;
-    const island = y >= 3 && y <= 6 && (x === 5 || x === 6 || x === 10 || x === 11);
+    if (x === 0 && (y === 0 || y === 10)) continue;
+    const perimeter = x <= 8 && (y === 0 || y === 10 || x === 0 || (x === 8 && (y <= 5 || y >= 9)));
+    const island = y >= 3 && y <= 5 && (x === 3 || x === 4);
     if ((!perimeter && !island) || occupied.has(`${x}:${y}`)) continue;
     stations.push(stationAt({ gridX: x, gridY: y }, {
       id: `counter-${x}-${y}`, kind: "counter", label: "Counter", counterVariant: "standard"
@@ -206,7 +211,13 @@ export function floorBoundsAtY(_y: number) {
 
 export function nearbyStation(tavern: Tavern, player: Vec): Station | undefined {
   return tavern.stations.filter((station) => Math.hypot(station.x - player.x, station.y - player.y) < INTERACTION_REACH)
-    .sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))
+    .sort((a, b) => {
+      const delta = Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y);
+      // Movement produces fractional coordinates. A subpixel tie should not
+      // flicker from an ingredient station to the adjacent empty countertop.
+      if (Math.abs(delta) > .5) return delta;
+      return Number(a.kind === "counter") - Number(b.kind === "counter") || a.id.localeCompare(b.id);
+    })
     .find((station) => {
       // A surface behind another counter cannot be reached through its neighbor.
       for (let t = .1; t < 1; t += .1) {

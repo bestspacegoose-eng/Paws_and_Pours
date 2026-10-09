@@ -13,6 +13,8 @@ The shared test suite validates:
 
 - recipe matching independent of pickup order;
 - deterministic tavern generation;
+- complete illustration coverage for all seven drinks and stable ingredient selection at counter junctions;
+- shared counter transfers that preserve drink quality and reject occupied hands/surfaces;
 - authored pantry wings that spread every recipe across the floor, safe spawns, and reachable interaction points;
 - unique in-bounds counter cells;
 - exact square counter footprints;
@@ -63,6 +65,8 @@ Expected output includes `"ok": true`, the completed recipe, awarded coins, and 
 13. Check the shift starts at 3:00. Pause from either client (including the mixer header), verify both see the same pause menu and no time or patience passes. Open Settings and the illustrated Recipe Book, then resume from the other client.
 14. During Kelp Swirl or Seafoam Shake, verify the mixing bowl, liquid, and paws sway continuously and react more strongly to each hit. Turn on Reduced motion and verify that movement stops while timing controls remain usable.
 15. Start shifts in all three tavern themes. Verify the rear edge of each themed floor is visible, upper counters rest on floor tiles instead of the wall, and the pantry wings, central aisle, mixer, and service bell remain readable at both desktop and narrow widths. Walk between the left and right ingredients of each recipe without entering a hidden blocked area.
+16. Finish mixing, approach an empty work surface and press Q. Verify both clients see the drink on the counter. Have the other player pick it up with E, set it down again, and serve it. Test occupied hands, an already occupied surface, and the shared pause.
+17. With Vite running, open `/scripts/art-preview.html`. Inspect all 20 portrait/accessory combinations, all 64 direction/frame/accessory combinations, and seven drink illustrations. Hats and crowns follow the head; patches cover the selected eye; bow ties follow the neck and hide on back-facing frames.
 
 ## Failure and recovery cases
 

@@ -12,12 +12,12 @@ export const PLAYER_FRAMES: Record<FacingDirection, FrameRect[]> = {
     { x: 730, y: 314, width: 203, height: 269 }, { x: 1026, y: 314, width: 208, height: 269 }
   ],
   right: [
-    { x: 123, y: 598, width: 197, height: 297 }, { x: 398, y: 597, width: 213, height: 298 },
-    { x: 688, y: 597, width: 211, height: 298 }, { x: 984, y: 597, width: 200, height: 298 }
+    { x: 123, y: 597, width: 198, height: 269 }, { x: 397, y: 597, width: 214, height: 270 },
+    { x: 688, y: 596, width: 211, height: 270 }, { x: 984, y: 596, width: 200, height: 267 }
   ],
   up: [
-    { x: 128, y: 895, width: 204, height: 270 }, { x: 398, y: 895, width: 211, height: 267 },
-    { x: 696, y: 895, width: 203, height: 265 }, { x: 991, y: 895, width: 198, height: 270 }
+    { x: 128, y: 881, width: 204, height: 284 }, { x: 397, y: 882, width: 212, height: 281 },
+    { x: 696, y: 882, width: 203, height: 279 }, { x: 991, y: 882, width: 198, height: 283 }
   ]
 };
 

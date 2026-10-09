@@ -6,12 +6,11 @@ import workspaceUrl from "./assets/tilemap/mixing-workspace.png";
 import ingredientsUrl from "./assets/tilemap/ingredients-spritesheet.png";
 import toolsUrl from "./assets/tilemap/mixing-tools-spritesheet.png";
 import effectsUrl from "./assets/tilemap/mixing-effects-spritesheet.png";
-import finishedDrinksUrl from "./assets/tilemap/finished-drinks-spritesheet.png";
 import {
-  atlasFrame, FINISHED_DRINK_FRAME_INDEX, GLASS_FRAME_INDEX, INGREDIENT_FRAMES, MIXING_EFFECT_FRAME_INDEX,
+  atlasFrame, GLASS_FRAME_INDEX, INGREDIENT_FRAMES, MIXING_EFFECT_FRAME_INDEX,
   MIXING_TOOL_FRAME_INDEX, type FrameRect
 } from "./sprite-frames";
-import { drawRecipeDrink } from "./drink-art";
+import { drawRecipeDrink, onDrinkArtReady } from "./drink-art";
 import { handMixFrame } from "./mixing-animation";
 import "./mixing-workspace.css";
 
@@ -49,7 +48,6 @@ export class MixingWorkspace {
   private readonly ingredientsImage: HTMLImageElement;
   private readonly toolsImage: HTMLImageElement;
   private readonly effectsImage: HTMLImageElement;
-  private readonly finishedDrinksImage: HTMLImageElement;
   private session?: MixingSession;
   private recipe?: Recipe;
   private playerIngredients: string[] = [];
@@ -121,7 +119,7 @@ export class MixingWorkspace {
     this.ingredientsImage = image(ingredientsUrl, redraw);
     this.toolsImage = image(toolsUrl, redraw);
     this.effectsImage = image(effectsUrl, redraw);
-    this.finishedDrinksImage = image(finishedDrinksUrl, redraw);
+    onDrinkArtReady(redraw);
     window.addEventListener("pointerup", () => this.finishTool());
   }
 
@@ -526,15 +524,7 @@ export class MixingWorkspace {
   }
 
   private drawFinishedDrink(recipeId: string, x: number, y: number) {
-    const frameIndex = FINISHED_DRINK_FRAME_INDEX[recipeId]?.complete;
-    if (frameIndex === undefined || !this.finishedDrinksImage.complete || !this.finishedDrinksImage.naturalWidth) {
-      drawRecipeDrink(this.context, recipeById(recipeId), x, y, 150);
-      return;
-    }
-    const frame = atlasFrame(this.finishedDrinksImage, 3, 2, frameIndex);
-    this.context.save(); this.context.beginPath(); this.context.ellipse(x, y, 58, 66, 0, 0, Math.PI * 2); this.context.clip();
-    this.context.drawImage(this.finishedDrinksImage, frame.x, frame.y, frame.width, frame.height, x - 77, y - 77, 154, 154);
-    this.context.restore();
+    drawRecipeDrink(this.context, recipeById(recipeId), x, y, 150);
   }
 
   private drawFrameContained(image: HTMLImageElement, frame: FrameRect, x: number, y: number, width: number, height: number, alpha = 1) {

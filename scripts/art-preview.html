@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Paws & Pours art alignment check</title>
+<style>body{margin:24px;background:#241b31;color:#ffe9bf;font:15px monospace}canvas{display:block;image-rendering:pixelated;max-width:100%;height:auto;margin:16px 0}h1,h2{font-size:20px}</style>
+<h1>Portraits: every role × every accessory</h1><canvas id="portraits" width="1000" height="832"></canvas>
+<h2>Walking frames: front / left / right / back, four frames each</h2><canvas id="frames" width="1024" height="768"></canvas>
+<h2>All seven drinks</h2><canvas id="drinks" width="1050" height="180"></canvas>
+<script type="module">
+import { drawTitlePortrait, TITLE_ACCESSORIES } from '/client/title-portrait.ts';
+import { PLAYER_FRAMES } from '/client/sprite-frames.ts';
+import { PLAYER_ANCHORS, transformAnchors } from '/client/character-anchors.ts';
+import { drawCatAccessory } from '/client/accessory-art.ts';
+import { drawRecipeDrink, onDrinkArtReady } from '/client/drink-art.ts';
+import { RECIPES } from '/shared/game.ts';
+const roles=['Tabby','Siamese','Maine Coon','Black Cat','Calico'];
+const slugs=['tabby','siamese','maine-coon','black-cat','calico'];
+const images=await Promise.all(slugs.map(slug=>new Promise(resolve=>{const image=new Image();image.onload=()=>resolve(image);image.src=`/client/assets/characters/${slug}.png`;})));
+const c=document.querySelector('#portraits').getContext('2d');c.imageSmoothingEnabled=false;
+TITLE_ACCESSORIES.forEach((accessory,row)=>roles.forEach((role,col)=>{
+  const image=document.createElement('canvas');drawTitlePortrait(image,images[col],role,'#e5a265',accessory);
+  c.fillStyle='#362740';c.fillRect(col*200,row*208,192,192);c.strokeStyle='#cbab6a';c.strokeRect(col*200+3,row*208+3,186,186);
+  c.drawImage(image,col*200,row*208);c.fillStyle='#ffedc8';c.font='10px monospace';c.fillText(`${role} · ${accessory}`,col*200+3,row*208+204);
+}));
+const sheet=new Image();sheet.src='/client/assets/tilemap/cat-bartender-spritesheet.png';await sheet.decode();
+const f=document.querySelector('#frames').getContext('2d');f.imageSmoothingEnabled=false;
+TITLE_ACCESSORIES.forEach((accessory,row)=>['down','left','right','up'].forEach((direction,group)=>{
+ PLAYER_FRAMES[direction].forEach((frame,index)=>{
+  const column=group*4+index, cellWidth=64, center=column*cellWidth+32, bottom=row*192+152, scale=72/298;
+  const a=PLAYER_ANCHORS[direction][index],left=center-(a.feetX-frame.x)*scale,top=bottom-frame.height*scale;
+  f.fillStyle='#362740';f.fillRect(column*cellWidth,row*192,63,182);
+  f.drawImage(sheet,frame.x,frame.y,frame.width,frame.height,left,top,frame.width*scale,frame.height*scale);
+  drawCatAccessory(f,accessory,transformAnchors(a,left-frame.x*scale,top-frame.y*scale,scale),direction);
+  f.fillStyle='#ffedc8';f.font='8px monospace';f.fillText(`${direction} ${index}`,column*cellWidth+3,row*192+174);
+ });
+}));
+const d=document.querySelector('#drinks').getContext('2d');
+function drinks(){d.clearRect(0,0,1050,180);RECIPES.forEach((recipe,index)=>{drawRecipeDrink(d,recipe,index*150+75,80,135);d.fillStyle='#ffedc8';d.font='11px monospace';d.textAlign='center';d.fillText(recipe.name,index*150+75,165);});}
+onDrinkArtReady(drinks);drinks();
+</script></html>

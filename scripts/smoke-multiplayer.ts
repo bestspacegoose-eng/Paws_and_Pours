@@ -168,7 +168,7 @@ async function main() {
     assert.ok((hostState!.players[hostToken].drinkQuality ?? 0) > 0.9, "on-target timing should create a high-quality drink");
 
     smokeStage = "shared counter handoff";
-    const counter = hostState!.tavern.stations.find((station) => station.id === "counter-6-3")!;
+    const counter = hostState!.tavern.stations.find((station) => station.id === "counter-4-3")!;
     const quality = hostState!.players[hostToken].drinkQuality;
     await approachStation(counter);
     host.emit("counter-drink");
@@ -186,7 +186,13 @@ async function main() {
     assert.equal(hostState!.players[hostToken].drinkQuality, quality);
 
     smokeStage = "serve drink";
-    const service = hostState!.tavern.stations.find((station) => station.kind === "serve")!;
+    const targetOrder = hostState!.orders.find((order) => order.recipeId === recipe.id)!;
+    const wrongTable = hostState!.tavern.stations.find((station) => station.kind === "serve" && station.id !== targetOrder.tableId)!;
+    await approachStation(wrongTable);
+    host.emit("interact");
+    await waitForState(host, () => hostState, (state) => state.message.includes("This table did not order"));
+    assert.equal(hostState!.players[hostToken].drink, recipe.id);
+    const service = hostState!.tavern.stations.find((station) => station.id === targetOrder.tableId)!;
     await approachStation(service);
     const coinsBefore = hostState!.coins;
     host.emit("interact");
@@ -208,6 +214,8 @@ async function main() {
       recipe: recipe.name,
       coinsAwarded: hostState!.coins - coinsBefore,
       twoClientMixingObserved: true,
+      wrongTableRejectedWithoutLosingDrink: true,
+      tableSpecificDeliveryVerified: true,
       secondClientMovedDuringMixing: true,
       advancedRhythmActionsCompleted: true,
       sharedPauseVerified: true,

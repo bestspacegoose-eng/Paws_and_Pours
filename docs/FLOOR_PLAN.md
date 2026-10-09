@@ -1,27 +1,26 @@
 # Tavern floor plan
 
-The three tavern maps now share one readable work triangle, so players can learn the room while each theme keeps its own floor material and lighting. Counter art remains a separate one-cell gameplay object; the new backgrounds contain only floor runners and a central motif.
-
-## Authored grid
-
-`·` is walkable space. The grid is 12 columns wide; row 0 belongs to the rear-wall margin. West and east pantry wings sit over the long inlaid floor runners. The middle remains an aisle leading to the mixing medallion. The service bell and utility stations occupy the lower perimeter.
+The room uses a 16 × 11 square grid in an elevated top-down projection. Each world cell is 58 × 58 units; the camera compresses vertical screen distance uniformly. Counter drawing and collision both use `stationBounds`, including connected runs and island corners.
 
 ```text
-       0  1  2  3  4  5  6  7  8  9 10 11
-row 0  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·
-row 1  ·  C  S  ·  ·  K  ·  ·  ·  M  L  ·
-row 2  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·
-row 3  ·  T  F  ·  ·  ·  X  ·  ·  O  R  ·
-row 4  B  ·  ·  ·  Q  ·  ·  ·  V  ·  ·  ·
+        0 1 2 3 4 5 6 7 8 9 A B C D E F
+row 0   · C # S # K # M # · · · · · · ·
+row 1   # · · · · · · · # · · b · · b ·
+row 2   # · · · · · · · # · · 1 · · 2 ·
+row 3   T · · X # · · · L · · · · · · ·
+row 4   # · · # # · · · # · · · · · · ·
+row 5   # · · # X · · · R · · · · · · ·
+row 6   # · · · · · · · · · · c · · c ·
+row 7   F · · · · · · · · · · 3 · · 4 ·
+row 8   # · · · · · · · · · · · · · · ·
+row 9   # · · · · · · · O · · · · · · ·
+row A   · B # Q # # # # # · · · · · · ·
 ```
 
-Ingredient keys: C catnip, R cream, K kelp, M moonmilk, L lime, T tuna, F fizz, O tonic, S stardust. X is the mixer, V the service bell, B the mop bucket, and Q the scrap bin.
+C catnip, S stardust, K kelp, M moonmilk, L lime, T tuna, F fizz, R cream, O tonic. X mixing workspace, B cleaning sink, Q scrap bin. b upholstered booth, c dining chair, 1–4 serving tables. # is a usable preparation counter. Dots and rugs are clear floor.
 
-This puts common recipes across both wings, increasing travel without creating a maze. The two pantry pairs in each wing form purposeful supply islands rather than one long wall of counters. A free central lane, open row 2, and bottom circuit provide alternate routes and multiplayer passing room. All four spawn positions start on the clear southern circuit.
+The left kitchen has a compact preparation island and distributed ingredients. A three-cell opening in the dividing bar leads into the right dining room. All four players spawn in the lower kitchen. Players must carry drinks to the matching numbered table and press E. Server-owned orders reserve unique tables; wrong-table delivery retains the drink. Guests appear at their seats while orders are active.
 
-## Visual and collision rules
+Finished drinks can be placed on any preparation, ingredient, or mixing surface with Q. E also handles ordinary-counter handoffs and retrieves a drink occupying a work surface. Ownership changes on the server; quality travels with the drink. Occupied hands and occupied counters reject an overwrite. A new round starts with clean counters and clear spawns.
 
-- Cozy uses an amber inlaid rug, Haunted a moonlit medallion, and Pirate a compass rose. Each retains its original wall and floor perspective.
-- Each counter remains exactly one `58 × 58` world-space cell. Floor art is decorative and never adds hidden collision.
-- The playfield is visually lowered a little in its full-screen canvas so the rear floor edge is not crowded by the HUD.
-- Every generated station must have a reachable interaction point from the spawn; tests validate this over multiple deterministic seeds and rounds.
+The room uses muted lavender, rose, sage and cream code-native surfaces instead of high-frequency wood textures. Proportionally contained pixel decorations are described in [COZY_DINING_ART.md](COZY_DINING_ART.md). Ornaments never introduce hidden collision. Orders and illustrated ingredients occupy the top strip.
