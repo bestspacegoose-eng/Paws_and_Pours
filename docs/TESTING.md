@@ -56,10 +56,10 @@ Expected output includes `"ok": true`, the completed recipe, awarded coins, and 
 4. Walk to the Shaker & Brewer and press `E`.
 5. Verify only the host transitions to the first-person workspace. The guest must remain in the tavern, show the host as “mixing a drink,” and continue moving/interacting.
 6. Select a wrong ingredient once. Verify the mistake counter and feedback update without the client deciding the result locally.
-7. Select the required ingredients in recipe order.
+7. Select the required ingredients in any order. Verify reversed order succeeds; duplicate or unavailable ingredients are rejected. Tuna recipes require the chopped-tuna pickup from the kitchen board.
 8. Press and hold the highlighted tool. Verify the loading bar fills live, the green band marks the forgiving sweet-spot, and the fine marker shows the exact target before releasing near it.
 9. Verify the workspace shows its success transition, closes, and the HUD says the host is carrying the completed drink.
-10. Walk to the Service Bell and serve the matching order. Verify coins/reputation update on both clients and drink quality affects the tip.
+10. Walk through the swinging bar door to the matching numbered dining table and serve. Verify coins/reputation update on both clients and drink quality affects the tip. A wrong table must retain the drink.
 11. Open Lunar Fizz, Kelp Swirl, or Seafoam Shake. Verify the chopping or paw-mixing control and beat bar appear, accepted taps advance the visible counter, and early/late or wrong-paw taps count as mistakes.
 12. Let an order expire, then leave an order unserved when a shift ends. Verify each costs one shared heart and reputation; the run ends at zero hearts. On the next shift, verify the order pool and patience become harder.
 13. Check the shift starts at 3:00. Pause from either client (including the mixer header), verify both see the same pause menu and no time or patience passes. Open Settings and the illustrated Recipe Book, then resume from the other client.

@@ -559,6 +559,7 @@ function drawRecipeBookPage(recipe: Recipe, page: number) {
     drawIngredientIcon(bookContext, ingredientsSpritesheet, ingredient, x, 454, 96);
     if (ingredient === "chopped-tuna") {
       drawChopBadge(bookContext, x + 38, 491, 34);
+      bookContext.fillStyle = "#543247";
       bookContext.font = "600 12px monospace"; bookContext.fillText("CHOP FIRST", x - 35, 531);
     }
   });
