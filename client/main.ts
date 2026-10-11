@@ -25,6 +25,7 @@ import "./style.css";
 import "./title-menu.css";
 import "./menu-flow.css";
 import { drawChopBadge, onPreparationArtReady } from "./preparation-art";
+import { AudioDirector } from "./audio";
 
 // Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
 // same public origin for both the page and WebSocket connection.
@@ -131,13 +132,23 @@ const canvas = document.querySelector<HTMLCanvasElement>("#board")!;
 const context = canvas.getContext("2d")!;
 canvas.width = TAVERN_VIEW.width; canvas.height = TAVERN_VIEW.height;
 const orderHud = new OrderHud(document.querySelector<HTMLElement>("#order-hud")!, ingredientsSpritesheet);
+const audio = new AudioDirector(settings);
 const mixingWorkspace = new MixingWorkspace(game, {
-  addIngredient: (ingredient) => socket.emit("mix-ingredient", ingredient),
-  startTool: (tool) => socket.emit("mix-tool-start", tool),
-  finishTool: (tool) => socket.emit("mix-tool-finish", tool),
-  rhythmHit: (style, hand) => socket.emit("mix-rhythm-hit", { style, hand }),
-  pause: () => socket.emit("set-pause", true),
-  cancel: () => socket.emit("cancel-mixing")
+  addIngredient: (ingredient) => { audio.playIngredient(); socket.emit("mix-ingredient", ingredient); },
+  startTool: (tool) => { audio.startTool(tool); socket.emit("mix-tool-start", tool); },
+  finishTool: (tool) => { audio.stopTool(); socket.emit("mix-tool-finish", tool); },
+  rhythmHit: (style, hand) => { audio.playRhythm(style, hand); socket.emit("mix-rhythm-hit", { style, hand }); },
+  pause: () => { audio.stopTool(); socket.emit("set-pause", true); },
+  cancel: () => { audio.stopTool(); socket.emit("cancel-mixing"); }
+});
+
+const unlockAudio = () => { void audio.unlock(); };
+window.addEventListener("pointerdown", unlockAudio, { capture: true });
+window.addEventListener("keydown", unlockAudio, { capture: true });
+document.addEventListener("visibilitychange", () => audio.setPageHidden(document.hidden));
+document.addEventListener("click", (event) => {
+  const button = event.target instanceof Element && event.target.closest<HTMLButtonElement>("button");
+  if (button && !button.disabled && !button.closest(".mixing-actions")) audio.playUiClick();
 });
 
 function profile() {
@@ -154,6 +165,7 @@ function applySettings() {
   brightnessShade.style.background = settings.brightness > 100 ? "white" : "black";
   brightnessShade.style.mixBlendMode = settings.brightness > 100 ? "screen" : "normal";
   brightnessShade.style.opacity = String(Math.abs(settings.brightness - 100) / 100);
+  audio.setSettings(settings);
   saveSettings(settings);
 }
 function syncSettingsForm() {
@@ -189,12 +201,14 @@ function setConnectionPending(pending: boolean) {
 function showIntro() {
   menuStep = "intro"; pendingSave = undefined;
   selection.classList.add("hidden"); menu.classList.remove("hidden"); game.classList.add("hidden"); overlay.classList.add("hidden");
+  audio.syncMenu();
   document.querySelector<HTMLButtonElement>(sessionMode === "single" ? "#solo" : "#create")!.focus();
 }
 function showSelection() {
   const entering = menuStep !== "selection";
   menuStep = "selection";
   menu.classList.add("hidden"); selection.classList.remove("hidden"); game.classList.add("hidden"); overlay.classList.add("hidden");
+  audio.syncMenu();
   renderSelection();
   if (entering) document.querySelector<HTMLInputElement>("#name")!.focus();
 }
@@ -370,6 +384,7 @@ socket.on("left-lobby", () => {
   document.querySelector<HTMLInputElement>("#room-input")!.value = ""; showIntro();
 });
 socket.on("state", (next: GameState) => {
+  const previousState = state;
   const authoritativePlayer = next.players[token];
   if (authoritativePlayer) {
     if (next.pausedAt !== null) {
@@ -392,6 +407,7 @@ socket.on("state", (next: GameState) => {
     }
   }
   state = next;
+  audio.syncState(previousState, next, token);
   if (next.phase === "lobby") { showSelection(); }
   else { menuStep = "game"; menu.classList.add("hidden"); selection.classList.add("hidden"); game.classList.remove("hidden"); }
   renderUi();
