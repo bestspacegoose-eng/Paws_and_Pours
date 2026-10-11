@@ -37,6 +37,7 @@ export interface Player {
   id: string; name: string; role: CatRole; fur: string; accessory: string;
   x: number; y: number; direction: FacingDirection; moving: boolean; moveSequence: number;
   carrying: string[]; drink?: string; drinkQuality?: number; connected: boolean; score: number
+  ready?: boolean;
 }
 export interface Tavern { seed: number; theme: Theme; stations: Station[]; decoration: string[] }
 export interface Upgrade { id: string; title: string; body: string }

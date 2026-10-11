@@ -196,7 +196,37 @@ io.on("connection", (socket) => {
   socket.on("start-shift", () => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.hostId !== player.id || state.phase !== "lobby") return;
+    const crew = Object.values(state.players);
+    if (crew.length < 2 || crew.some((cat) => !cat.connected || !cat.ready))
+      return socket.emit("error-message", "At least two bartenders must be connected and ready to start.");
     startShift(state); broadcast(state);
+  });
+
+  socket.on("lobby-profile", (payload: { name?: string; role?: CatRole; fur?: string; accessory?: string }) => {
+    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    if (!state || !player || state.phase !== "lobby" || !payload) return;
+    if (typeof payload.name === "string") player.name = payload.name.trim().slice(0, 16) || "Mittens";
+    if (["Tabby", "Siamese", "Maine Coon", "Black Cat", "Calico"].includes(payload.role ?? "")) player.role = payload.role!;
+    if (typeof payload.fur === "string" && /^#[0-9a-f]{6}$/i.test(payload.fur)) player.fur = payload.fur;
+    if (["Bow tie", "Wizard hat", "Pirate patch", "Flower crown"].includes(payload.accessory ?? "")) player.accessory = payload.accessory!;
+    player.ready = false; broadcast(state);
+  });
+
+  socket.on("lobby-ready", (ready: boolean) => {
+    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    if (!state || !player || state.phase !== "lobby" || typeof ready !== "boolean") return;
+    player.ready = ready; broadcast(state);
+  });
+
+  socket.on("leave-lobby", () => {
+    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    if (!state || !player || state.phase !== "lobby") return;
+    delete state.players[player.id]; socket.leave(state.code); socket.data.code = undefined; socket.data.token = undefined;
+    if (state.hostId === player.id) state.hostId = Object.values(state.players).find((cat) => cat.connected)?.id ?? Object.keys(state.players)[0] ?? "";
+    if (!Object.keys(state.players).length) {
+      rooms.delete(state.code); seeds.delete(state.code); orderCounters.delete(state.code); hazardCounters.delete(state.code);
+    } else broadcast(state);
+    socket.emit("left-lobby");
   });
 
   socket.on("set-pause", (paused: boolean) => {
@@ -416,7 +446,7 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player) return;
-    player.connected = false; player.moving = false;
+    player.connected = false; player.moving = false; player.ready = false;
     setMessage(state, `${player.name} disconnected. Their cat will wait for a reconnection.`);
     broadcast(state);
   });
@@ -431,6 +461,7 @@ function joinRoom(socketId: string, state: GameState, payload: { token: string; 
     direction: "down", moving: false, moveSequence: 0, carrying: [], connected: true, score: 0
   } as Player;
   Object.assign(state.players[payload.token], { name: payload.name.slice(0, 16) || "Mittens", role: payload.role, fur: payload.fur, accessory: payload.accessory, connected: true });
+  if (state.phase === "lobby") state.players[payload.token].ready = false;
   socket.data.code = state.code; socket.data.token = payload.token; socket.join(state.code);
   if (!isHost) setMessage(state, existing ? `${payload.name} rejoined the tavern.` : `${payload.name} padded into the tavern.`);
   if (notify) { socket.emit("joined", { code: state.code, token: payload.token }); broadcast(state); }

@@ -45,7 +45,8 @@ npm test
 - Three-minute shifts and a server-wide pause: any player can pause or resume; clocks, orders, movement, and mixing deadlines freeze together.
 - Seeded tavern themes on a 16 × 11 elevated floor plan, with connected perimeter counters, two preparation islands, and generous aisles.
 - Finished drinks can be placed on counters for teammates, preserving their recipe and preparation quality. Orders and ingredient illustrations stay in a dedicated top strip.
-- Simplified title menu with cat/accessory arrow selectors and a centered portrait; Create/Load Save opens three local slots. Saves restore the shift paused, including orders, hands, counter items, and preparation progress. Legacy profiles remain available but cannot reconstruct previously unsaved runs.
+- Two-step menu: the exterior tavern title screen contains solo/multiplayer controls, local saves, and audio/display/brightness settings. The interior bartender screen shows one customizable cat in solo or four live player seats in multiplayer. Local saves are disabled in multiplayer; at least two connected, ready players are required before the host starts. Editing a multiplayer cat returns that player to Choosing.
+- Load / create local save opens three device-local slots, followed by bartender selection. Saves restore the shift paused, including orders, hands, counter items, and preparation progress. Legacy profiles remain available but cannot reconstruct previously unsaved runs.
 - Grid-aligned rectangular floor and counter collision, world-space hazards, seven illustrated drinks, and discard support for ingredients or completed drinks.
 - Responsive desktop/smaller-screen interface with no art-asset download required.
 

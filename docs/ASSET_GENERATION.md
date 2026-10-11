@@ -51,7 +51,25 @@ Preserve the Cozy atlas layout and proportions, but restyle it from the existing
 
 Preserve the Cozy atlas layout and proportions, but restyle it from the existing Pirate counter/background using teal-stained ship timber, dark brown supports, weathered brass/iron, rope details, a shaker/anchor mixing emblem, ship bell, and split-plank utility block.
 
-## Validation
+## Two-step menu scenes (October 10, 2026)
+
+- `client/assets/menus/intro-tavern.png`: the supplied exterior/title image,
+  used unchanged as the first-screen background (1672 × 941 RGB).
+- `client/assets/menus/bartender-tavern.png`: image-to-image edit of the
+  supplied bartender-selection reference using the built-in image-generation
+  tool. Its painted UI was removed so the real HTML player cards, ready states,
+  controls, and names remain interactive (1672 × 941 RGB).
+- Generated source: `/Users/jodiec/.codex/generated_images/01a108c7-911a-72c2-be76-36a7db41cadb/exec-03743ce6-bd0b-4c0e-8102-1a922783cef3.png`.
+- Background edit prompt: “Edit this supplied Paws and Pours bartender selection
+  screen into a clean reusable browser-game BACKGROUND. Preserve the entire
+  warm pixel-art tavern interior, shelves, plants, wooden architecture, lighting,
+  windows with cherry blossoms outside, floor, color palette and perspective.
+  Remove ALL text, logo, characters, player-card frames, buttons, status ribbons,
+  and bottom selection tray. Inpaint their areas as a believable continuous
+  tavern interior with simple dark wood/plum surfaces and a readable open central
+  area for HTML UI. No text, no UI, no characters, no logos. Landscape composition.”
+
+## Mixing asset validation
 
 - `mixing-workspace.png`: 1619 × 971 RGB PNG.
 - Tool and effect atlases: 1536 × 1024 RGBA PNGs.

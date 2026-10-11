@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { initialState, PLAYER_SPAWNS, createMixingSession, type Player } from "../shared/game.js";
 import { captureSoloSnapshot, restoreSoloSnapshot } from "../shared/solo-save.js";
-import { loadSoloSlots, saveSoloSlot } from "../client/preferences.js";
+import { loadSettings, saveSettings, defaultSettings, loadSoloSlots, saveSoloSlot } from "../client/preferences.js";
 
 const player: Player = { id: "original", name: "Mittens", role: "Tabby", fur: "#e5a265", accessory: "Bow tie",
   ...PLAYER_SPAWNS[0], direction: "down", moving: false, moveSequence: 0, carrying: ["catnip", "lime", "fizz"], connected: true, score: 9 };
@@ -56,6 +56,29 @@ test("local slots preserve independent saves and migrate legacy profiles without
     assert.equal(saveSoloSlot(99, save), false);
     storage.set("paws-pours-solo-slots-v2", "not json");
     assert.equal(loadSoloSlots()[0]?.profile.name, "Mittens");
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+  }
+});
+
+test("brightness persists, clamps safely, and defaults for older settings", () => {
+  const storage = new Map<string, string>();
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) } });
+  try {
+    assert.equal(loadSettings().brightness, 100);
+    storage.set("paws-pours-settings-v1", JSON.stringify({ masterVolume: 42 }));
+    assert.equal(loadSettings().brightness, 100, "existing audio/display preferences remain compatible");
+    assert.equal(loadSettings().masterVolume, 42);
+    saveSettings({ ...defaultSettings, brightness: 115 });
+    assert.equal(loadSettings().brightness, 115);
+    storage.set("paws-pours-settings-v1", JSON.stringify({ brightness: 999 }));
+    assert.equal(loadSettings().brightness, 150);
+    storage.set("paws-pours-settings-v1", JSON.stringify({ brightness: -9 }));
+    assert.equal(loadSettings().brightness, 50);
+    storage.set("paws-pours-settings-v1", JSON.stringify({ brightness: "invalid" }));
+    assert.equal(loadSettings().brightness, 100);
   } finally {
     if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor);
     else Reflect.deleteProperty(globalThis, "localStorage");

@@ -14,7 +14,7 @@ import ingredientsSpritesheetUrl from "./assets/tilemap/ingredients-spritesheet.
 import { MixingWorkspace } from "./mixing-workspace";
 import { drawRecipeDrink, onDrinkArtReady } from "./drink-art";
 import { INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
-import { boardPoint, drawTavernFloor, drawTavernCounter, drawIngredientIcon, drawBarGate, ornament, TAVERN_VIEW } from "./tavern-renderer";
+import { boardPoint, drawTavernFloor, drawTavernCounter, drawIngredientIcon, drawBarGate, TAVERN_VIEW } from "./tavern-renderer";
 import { OrderHud } from "./order-hud";
 import { PLAYER_ANCHORS, transformAnchors } from "./character-anchors";
 import { drawCatAccessory } from "./accessory-art";
@@ -23,6 +23,7 @@ import { captureSoloSnapshot } from "../shared/solo-save";
 import { drawTitlePortrait, TITLE_ACCESSORIES, type TitleAccessory } from "./title-portrait";
 import "./style.css";
 import "./title-menu.css";
+import "./menu-flow.css";
 import { drawChopBadge, onPreparationArtReady } from "./preparation-art";
 
 // Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
@@ -37,7 +38,7 @@ let state: GameState | null = null;
 let roomCode = sessionStorage.getItem("paws-pours-room") ?? "";
 let selectedRole: CatRole = "Tabby";
 let selectedAccessory: TitleAccessory = "Bow tie";
-let sessionMode: "single" | "multiplayer" = sessionStorage.getItem("paws-pours-mode") === "single" ? "single" : "multiplayer";
+let sessionMode: "single" | "multiplayer" = sessionStorage.getItem("paws-pours-mode") === "multiplayer" ? "multiplayer" : "single";
 let settings: DisplayAudioSettings = loadSettings();
 let move = { x: 0, y: 0 };
 let lastMove = 0;
@@ -52,6 +53,9 @@ let activeSaveSlot = Number(sessionStorage.getItem("paws-pours-save-slot") ?? -1
 let pendingSave: SoloSave | undefined;
 let lastSaveAt = 0;
 let saveStorageFailed = false;
+let menuStep: "intro" | "selection" | "game" = "intro";
+let connectionPending = false;
+let sendPendingConnection: (() => void) | undefined;
 
 const catPortraits: Record<CatRole, string> = {
   "Tabby": tabbyPortraitUrl, "Siamese": siamesePortraitUrl, "Maine Coon": maineCoonPortraitUrl,
@@ -81,25 +85,32 @@ const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <main class="shell">
     <header class="topbar"><a class="brand" href="/"><span>🐾</span> Paws <i>&</i> Pours</a><span class="tag">Co-op roguelike bartending</span></header>
-    <section id="menu" class="menu card title-menu">
+    <section id="menu" class="menu card title-menu intro-menu" aria-label="Paws and Pours title menu">
       <div class="title-scene">
-        <canvas id="title-decor" width="1000" height="350" aria-hidden="true"></canvas>
-        <div class="title-heading"><p class="title-overline">✦ A CO-OP FANTASY TAVERN ✦</p><h1>PAWS <span>&amp;</span> POURS</h1><p class="title-tagline">Shake, serve, survive the night.</p></div>
-        <div class="title-hero"><canvas id="hero-character" width="192" height="192" role="img" aria-label="Pixel-art Tabby bartender"></canvas><span class="title-hero-plaque">YOUR BARTENDER</span></div>
+        <h1 class="visually-hidden">Paws and Pours</h1>
       </div>
       <div class="title-console">
-        <section class="customizer-card"><div class="title-section-heading"><h2>Your bartender</h2></div><div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><div class="accessory-picker" role="group" aria-label="Cat type"><span>Cat type</span><div class="accessory-controls"><button type="button" id="role-prev" aria-label="Previous cat type">&#x276E;</button><output id="role-name" aria-live="polite">Tabby</output><button type="button" id="role-next" aria-label="Next cat type">&#x276F;</button></div></div><div class="accessory-picker" role="group" aria-label="Accessory"><span>Accessory</span><div class="accessory-controls"><button type="button" id="accessory-prev" aria-label="Previous accessory">&#x276E;</button><output id="accessory-name" aria-live="polite">Bow tie</output><button type="button" id="accessory-next" aria-label="Next accessory">&#x276F;</button></div></div></div></section>
-        <section class="title-actions" aria-label="Main menu"><div class="title-section-heading"><h2>Enter the tavern</h2></div><div class="actions"><button class="primary" id="save-menu">Create/Load Save</button><button id="create">Create party</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" aria-label="Room code" value="${roomCode}"/><button id="join">Join party</button></div></div><div class="menu-utilities"><button id="settings" class="secondary">Settings</button></div></section>
+        <section class="title-actions" aria-label="Main menu"><div class="title-section-heading"><h2>Enter the tavern</h2></div><div class="mode-switch" role="group" aria-label="Game mode"><button id="mode-solo" aria-pressed="true">Solo</button><button id="mode-party" aria-pressed="false">Multiplayer</button></div><div class="actions"><button class="primary" id="solo">Start solo game</button><button id="save-menu">Load / create local save</button><button id="create">Create game</button><div class="join"><input id="room-input" maxlength="4" placeholder="ROOM CODE" aria-label="Room code" value="${roomCode}"/><button id="join">Join game</button></div></div><div class="menu-utilities"><button id="settings" class="secondary">Settings · audio & display</button></div><p id="save-mode-note" class="menu-note">Three local save slots for solo adventures.</p><p id="menu-status" role="status" aria-live="polite"></p></section>
       </div>
       <section id="settings-panel" class="settings-panel hidden" aria-label="Game settings">
         <div class="settings-title"><b>Settings</b><button id="close-settings" class="secondary">Close</button></div>
         <label>Display scale<select id="setting-scale"><option value="1">100%</option><option value="0.85">85%</option><option value="1.15">115%</option></select></label>
+        <label>Brightness<input id="setting-brightness" type="range" min="50" max="150" step="5" /><output id="brightness-value">100%</output></label>
         <label class="toggle"><input id="setting-pixel" type="checkbox" /> Pixel-perfect rendering</label><label class="toggle"><input id="setting-motion" type="checkbox" /> Reduced motion</label>
         <button id="fullscreen" class="secondary">Toggle fullscreen</button>
         <label>Master volume<input id="setting-master" type="range" min="0" max="100" /></label><label>Music volume<input id="setting-music" type="range" min="0" max="100" /></label><label>Effects volume<input id="setting-effects" type="range" min="0" max="100" /></label><label class="toggle"><input id="setting-muted" type="checkbox" /> Mute audio</label>
         <button id="reset-settings" class="secondary">Reset settings</button>
       </section>
       <p class="fineprint">Solo saves stay on this device. Parties use shared server state only · Press <kbd>E</kbd> near a station to interact</p>
+    </section>
+    <section id="bartender-selection" class="title-menu bartender-selection hidden" aria-labelledby="bartender-heading">
+      <header class="selection-heading"><p>Paws <span>&amp;</span> Pours</p><h1 id="bartender-heading">Choose your bartender</h1><p id="selection-mode"></p><p id="selection-status" role="status" aria-live="polite"></p></header>
+      <div id="player-slots" class="player-slots"></div>
+      <div class="selection-tools">
+        <section class="customizer-card"><div class="title-section-heading"><h2>Your bartender</h2></div><div class="setup-grid"><label>Cat name<input id="name" maxlength="16" value="Mittens" /></label><label>Fur color<input id="fur" type="color" value="#e5a265" /></label><div class="accessory-picker" role="group" aria-label="Cat type"><span>Cat type</span><div class="accessory-controls"><button type="button" id="role-prev" aria-label="Previous cat type">&#x276E;</button><output id="role-name" aria-live="polite">Tabby</output><button type="button" id="role-next" aria-label="Next cat type">&#x276F;</button></div></div><div class="accessory-picker" role="group" aria-label="Accessory"><span>Accessory</span><div class="accessory-controls"><button type="button" id="accessory-prev" aria-label="Previous accessory">&#x276E;</button><output id="accessory-name" aria-live="polite">Bow tie</output><button type="button" id="accessory-next" aria-label="Next accessory">&#x276F;</button></div></div></div></section>
+        <div id="cat-presets" class="cat-presets" role="group" aria-label="Bartender cat presets"></div>
+      </div>
+      <footer class="selection-footer"><button id="selection-back">← Back</button><button id="ready-player" class="hidden">Ready</button><p id="crew-status" aria-live="polite"></p><button id="selection-start" class="primary">Start shift →</button></footer>
     </section>
     <section id="game" class="game hidden">
       <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span class="heart-status" id="heart-status" aria-label="3 team hearts"><span id="heart-icons" aria-hidden="true">♥♥♥</span><b id="health">3</b></span><span class="timer" id="timer">3:00</span></div><button class="leave" id="game-menu" type="button">Menu · Pause</button></div>
@@ -110,8 +121,10 @@ app.innerHTML = `
     <section id="overlay" class="overlay hidden"></section>
     <dialog id="save-dialog" class="save-dialog" aria-labelledby="save-title"><p class="eyebrow">LOCAL ADVENTURES</p><h2 id="save-title">Choose a save</h2><p>Your progress stays in this browser. Loaded shifts begin paused.</p><div id="save-slots" class="save-slots"></div><p id="save-error" role="status"></p><button id="close-saves" type="button">Back to title</button></dialog>
   </main>`;
+const brightnessShade = document.createElement("div"); brightnessShade.id = "brightness-shade"; brightnessShade.setAttribute("aria-hidden", "true"); document.body.append(brightnessShade);
 
 const menu = document.querySelector<HTMLElement>("#menu")!;
+const selection = document.querySelector<HTMLElement>("#bartender-selection")!;
 const game = document.querySelector<HTMLElement>("#game")!;
 const overlay = document.querySelector<HTMLElement>("#overlay")!;
 const canvas = document.querySelector<HTMLCanvasElement>("#board")!;
@@ -138,43 +151,130 @@ function applySettings() {
   document.documentElement.style.setProperty("--game-scale", String(settings.scale));
   document.body.dataset.pixelPerfect = String(settings.pixelPerfect);
   document.body.dataset.reducedMotion = String(settings.reducedMotion);
+  brightnessShade.style.background = settings.brightness > 100 ? "white" : "black";
+  brightnessShade.style.mixBlendMode = settings.brightness > 100 ? "screen" : "normal";
+  brightnessShade.style.opacity = String(Math.abs(settings.brightness - 100) / 100);
   saveSettings(settings);
 }
 function syncSettingsForm() {
   document.querySelector<HTMLSelectElement>("#setting-scale")!.value = String(settings.scale);
   document.querySelector<HTMLInputElement>("#setting-pixel")!.checked = settings.pixelPerfect;
   document.querySelector<HTMLInputElement>("#setting-motion")!.checked = settings.reducedMotion;
+  document.querySelector<HTMLInputElement>("#setting-brightness")!.value = String(settings.brightness);
+  document.querySelector("#brightness-value")!.textContent = `${settings.brightness}%`;
   document.querySelector<HTMLInputElement>("#setting-master")!.value = String(settings.masterVolume);
   document.querySelector<HTMLInputElement>("#setting-music")!.value = String(settings.musicVolume);
   document.querySelector<HTMLInputElement>("#setting-effects")!.value = String(settings.effectsVolume);
   document.querySelector<HTMLInputElement>("#setting-muted")!.checked = settings.muted;
 }
 applySettings();
+function setMenuMode(mode: "single" | "multiplayer") {
+  sessionMode = mode; sessionStorage.setItem("paws-pours-mode", mode);
+  document.querySelector<HTMLButtonElement>("#save-menu")!.disabled = mode === "multiplayer";
+  document.querySelector<HTMLButtonElement>("#solo")!.disabled = mode === "multiplayer";
+  document.querySelector<HTMLButtonElement>("#create")!.disabled = mode === "single";
+  document.querySelector<HTMLInputElement>("#room-input")!.disabled = mode === "single";
+  document.querySelector<HTMLButtonElement>("#join")!.disabled = mode === "single";
+  document.querySelector("#mode-solo")!.setAttribute("aria-pressed", String(mode === "single"));
+  document.querySelector("#mode-party")!.setAttribute("aria-pressed", String(mode === "multiplayer"));
+  document.querySelector("#save-mode-note")!.textContent = mode === "single" ? "Three local save slots for solo adventures." : "Local saves are unavailable in multiplayer. Create a room or enter your friend's code.";
+}
+function setConnectionPending(pending: boolean) {
+  connectionPending = pending;
+  setMenuMode(sessionMode);
+  for (const id of ["mode-solo", "mode-party", "selection-back"]) document.querySelector<HTMLButtonElement>(`#${id}`)!.disabled = pending;
+  if (pending) for (const id of ["solo", "save-menu", "create", "join", "selection-start"]) document.querySelector<HTMLButtonElement>(`#${id}`)!.disabled = true;
+  else if (menuStep === "selection") renderSelection();
+}
+function showIntro() {
+  menuStep = "intro"; pendingSave = undefined;
+  selection.classList.add("hidden"); menu.classList.remove("hidden"); game.classList.add("hidden"); overlay.classList.add("hidden");
+  document.querySelector<HTMLButtonElement>(sessionMode === "single" ? "#solo" : "#create")!.focus();
+}
+function showSelection() {
+  const entering = menuStep !== "selection";
+  menuStep = "selection";
+  menu.classList.add("hidden"); selection.classList.remove("hidden"); game.classList.add("hidden"); overlay.classList.add("hidden");
+  renderSelection();
+  if (entering) document.querySelector<HTMLInputElement>("#name")!.focus();
+}
+function syncLobbyProfile() {
+  if (menuStep === "selection" && state?.phase === "lobby") socket.emit("lobby-profile", profile());
+  document.querySelectorAll<HTMLElement>("[data-cat-preset]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.catPreset === selectedRole)));
+}
+function renderSelection() {
+  const multiplayer = sessionMode === "multiplayer";
+  const crew = state?.phase === "lobby" ? Object.values(state.players) : [];
+  selection.classList.toggle("solo-selection", !multiplayer);
+  document.querySelector("#selection-mode")!.textContent = multiplayer ? `MULTIPLAYER · ROOM ${state?.code ?? roomCode}` : pendingSave ? `SOLO · SAVE ${activeSaveSlot + 1} · Shift ${pendingSave.summary.round}` : activeSaveSlot >= 0 ? `SOLO · NEW SAVE ${activeSaveSlot + 1}` : "SOLO · QUICK SHIFT";
+  const slots = document.querySelector<HTMLElement>("#player-slots")!;
+  slots.replaceChildren();
+  Array.from({ length: multiplayer ? 4 : 1 }, (_, index) => {
+    const player = multiplayer ? crew[index] : undefined;
+    const local = !multiplayer || player?.id === token;
+    const card = document.createElement("article"); card.className = `player-slot${local ? " local-slot" : ""}${!player && multiplayer ? " empty-slot" : ""}`;
+    card.innerHTML = `<h2>PLAYER ${index + 1}</h2><div class="slot-art"></div><strong class="slot-name"></strong><p class="slot-role"></p><p class="slot-state"></p>`;
+    card.querySelector(".slot-name")!.textContent = local ? profile().name : player?.name ?? "Open seat";
+    card.querySelector(".slot-role")!.textContent = local ? selectedRole : player?.role ?? "Share your room code";
+    card.querySelector(".slot-state")!.textContent = !multiplayer ? "Your solo bartender" : player ? !player.connected ? "Reconnecting…" : player.ready ? "Ready ✓" : "Choosing" : "Waiting for a friend";
+    card.classList.toggle("ready", Boolean(player?.ready));
+    if (local || player) {
+      const portrait = document.createElement("canvas"); portrait.className = "slot-portrait"; portrait.width = 192; portrait.height = 192; portrait.setAttribute("role", "img");
+      portrait.dataset.player = player?.id ?? token; card.querySelector(".slot-art")!.append(portrait);
+    } else card.querySelector(".slot-art")!.textContent = "+";
+    slots.append(card);
+  });
+  const readyButton = document.querySelector<HTMLButtonElement>("#ready-player")!;
+  readyButton.classList.toggle("hidden", !multiplayer); readyButton.textContent = localPlayer()?.ready ? "Change selection" : "Ready";
+  const startButton = document.querySelector<HTMLButtonElement>("#selection-start")!;
+  const isHost = state?.hostId === token;
+  startButton.textContent = !multiplayer ? pendingSave?.snapshot ? "Load shift →" : "Start solo shift →" : isHost ? "Start shift →" : "Waiting for host";
+  startButton.disabled = connectionPending || (multiplayer && (!isHost || crew.length < 2 || crew.some((cat) => !cat.connected || !cat.ready)));
+  document.querySelector("#crew-status")!.textContent = !multiplayer ? "Choose your cat, then enter the tavern." : crew.length < 2 ? "Share your room code · waiting for players" : `${crew.filter((cat) => cat.connected && cat.ready).length}/${crew.length} bartenders ready`;
+  renderTitlePreviews();
+}
 function renderTitlePreviews() {
   const fur = document.querySelector<HTMLInputElement>("#fur")?.value;
   if (!fur) return;
-  const heroCharacter = document.querySelector<HTMLCanvasElement>("#hero-character");
-  if (heroCharacter) {
-    drawTitlePortrait(heroCharacter, titlePortraitImages[selectedRole], selectedRole, fur, selectedAccessory);
-    heroCharacter.setAttribute("aria-label", `Pixel-art ${selectedRole} bartender wearing ${selectedAccessory}`);
-  }
+  selection.querySelectorAll<HTMLCanvasElement>(".slot-portrait").forEach((portrait) => {
+    const player = state?.phase === "lobby" && portrait.dataset.player !== token ? state.players[portrait.dataset.player ?? ""] : undefined;
+    const role = player?.role ?? selectedRole;
+    const accessory = TITLE_ACCESSORIES.includes(player?.accessory as TitleAccessory) ? player!.accessory as TitleAccessory : selectedAccessory;
+    drawTitlePortrait(portrait, titlePortraitImages[role], role, player?.fur ?? fur, accessory);
+    portrait.setAttribute("aria-label", `${role} bartender wearing ${accessory}`);
+  });
 }
 function renderRoles() {
   document.querySelector<HTMLOutputElement>("#role-name")!.value = selectedRole;
   renderTitlePreviews();
+  syncLobbyProfile();
 }
 function renderAccessoryChoice() {
   document.querySelector<HTMLOutputElement>("#accessory-name")!.value = selectedAccessory;
   renderTitlePreviews();
+  syncLobbyProfile();
 }
 renderRoles();
+const presets = document.querySelector("#cat-presets")!;
+roles.forEach(({ role, perk }) => {
+  const button = document.createElement("button"); button.type = "button"; button.dataset.catPreset = role;
+  button.setAttribute("aria-pressed", String(role === selectedRole));
+  const image = document.createElement("img"); image.src = catPortraits[role]; image.alt = "";
+  const name = document.createElement("b"); name.textContent = role;
+  const bonus = document.createElement("small"); bonus.textContent = perk;
+  button.append(image, name, bonus);
+  button.onclick = () => { selectedRole = role; renderRoles(); renderSelection(); };
+  presets.append(button);
+});
 (["prev", "next"] as const).forEach((direction) => document.querySelector<HTMLButtonElement>(`#role-${direction}`)!.onclick = () => {
   const index = roles.findIndex(({ role }) => role === selectedRole);
   selectedRole = roles[(index + (direction === "next" ? 1 : -1) + roles.length) % roles.length].role;
   renderRoles();
+  renderSelection();
 });
-document.querySelector<HTMLInputElement>("#fur")!.addEventListener("input", renderTitlePreviews);
+document.querySelector<HTMLInputElement>("#fur")!.addEventListener("input", () => { renderTitlePreviews(); syncLobbyProfile(); });
 document.querySelector<HTMLInputElement>("#fur")!.addEventListener("change", renderTitlePreviews);
+document.querySelector<HTMLInputElement>("#name")!.addEventListener("input", () => { syncLobbyProfile(); renderSelection(); });
 (["prev", "next"] as const).forEach((direction) => document.querySelector<HTMLButtonElement>(`#accessory-${direction}`)!.onclick = () => {
   const offset = direction === "next" ? 1 : -1;
   selectedAccessory = TITLE_ACCESSORIES[(TITLE_ACCESSORIES.indexOf(selectedAccessory) + offset + TITLE_ACCESSORIES.length) % TITLE_ACCESSORIES.length];
@@ -182,38 +282,55 @@ document.querySelector<HTMLInputElement>("#fur")!.addEventListener("change", ren
 });
 
 function connect(action: "create" | "join") {
-  socket.connect();
-  const send = () => {
-    if (action === "create") socket.emit("create-room", { ...profile(), solo: sessionMode === "single", snapshot: sessionMode === "single" ? pendingSave?.snapshot : undefined });
-    else {
-      const code = (document.querySelector<HTMLInputElement>("#room-input")!).value.toUpperCase().trim();
-      if (code.length !== 4) return setToast("Enter the four-letter room code first.");
-      socket.emit("join-room", { ...profile(), code });
-    }
+  if (connectionPending) return;
+  const code = document.querySelector<HTMLInputElement>("#room-input")!.value.toUpperCase().trim();
+  if (action === "join" && !/^[A-Z0-9]{4}$/.test(code)) return setToast("Enter the four-character room code first.");
+  const payload = { ...profile(), solo: sessionMode === "single", snapshot: sessionMode === "single" ? pendingSave?.snapshot : undefined };
+  setConnectionPending(true);
+  setToast(action === "join" ? "Joining the tavern…" : "Opening the tavern…");
+  sendPendingConnection = () => {
+    sendPendingConnection = undefined;
+    socket.emit(action === "create" ? "create-room" : "join-room", action === "create" ? payload : { ...payload, code });
   };
-  socket.connected ? send() : socket.once("connect", send);
+  if (socket.connected) sendPendingConnection();
+  else socket.connect();
 }
 document.querySelector<HTMLButtonElement>("#save-menu")!.onclick = openSaveMenu;
-document.querySelector<HTMLButtonElement>("#create")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create"); };
-document.querySelector<HTMLButtonElement>("#join")!.onclick = () => { sessionMode = "multiplayer"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("join"); };
+document.querySelector<HTMLButtonElement>("#solo")!.onclick = () => { setMenuMode("single"); pendingSave = undefined; activeSaveSlot = -1; sessionStorage.removeItem("paws-pours-save-slot"); showSelection(); };
+document.querySelector<HTMLButtonElement>("#mode-solo")!.onclick = () => setMenuMode("single");
+document.querySelector<HTMLButtonElement>("#mode-party")!.onclick = () => setMenuMode("multiplayer");
+document.querySelector<HTMLButtonElement>("#create")!.onclick = () => { setMenuMode("multiplayer"); connect("create"); };
+document.querySelector<HTMLButtonElement>("#join")!.onclick = () => { setMenuMode("multiplayer"); connect("join"); };
+document.querySelector<HTMLButtonElement>("#selection-back")!.onclick = () => {
+  if (state?.phase === "lobby") socket.emit("leave-lobby");
+  else showIntro();
+};
+document.querySelector<HTMLButtonElement>("#ready-player")!.onclick = () => socket.emit("lobby-ready", !localPlayer()?.ready);
+document.querySelector<HTMLButtonElement>("#selection-start")!.onclick = () => {
+  if (sessionMode === "single") connect("create");
+  else socket.emit("start-shift");
+};
+setMenuMode(sessionMode);
 document.querySelector<HTMLButtonElement>("#game-menu")!.onclick = () => {
   if (state?.phase === "shift" && state.pausedAt === null) socket.emit("set-pause", true);
 };
-document.querySelector<HTMLButtonElement>("#settings")!.onclick = () => { syncSettingsForm(); document.querySelector("#settings-panel")!.classList.remove("hidden"); };
+document.querySelector<HTMLButtonElement>("#settings")!.onclick = () => { syncSettingsForm(); const panel = document.querySelector<HTMLElement>("#settings-panel")!; panel.classList.remove("hidden"); panel.scrollIntoView({ block: "center", behavior: settings.reducedMotion ? "instant" : "smooth" }); document.querySelector<HTMLSelectElement>("#setting-scale")!.focus({ preventScroll: true }); };
 document.querySelector<HTMLButtonElement>("#close-settings")!.onclick = () => document.querySelector("#settings-panel")!.classList.add("hidden");
 document.querySelector<HTMLButtonElement>("#fullscreen")!.onclick = () => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.(); };
 document.querySelector<HTMLButtonElement>("#reset-settings")!.onclick = () => { settings = { ...defaultSettings }; applySettings(); syncSettingsForm(); };
-(["scale", "pixel", "motion", "master", "music", "effects", "muted"] as const).forEach((key) => document.querySelector(`#setting-${key}`)!.addEventListener("input", () => {
+(["scale", "pixel", "motion", "brightness", "master", "music", "effects", "muted"] as const).forEach((key) => document.querySelector(`#setting-${key}`)!.addEventListener("input", () => {
   settings = {
     scale: Number(document.querySelector<HTMLSelectElement>("#setting-scale")!.value) as DisplayAudioSettings["scale"],
     pixelPerfect: document.querySelector<HTMLInputElement>("#setting-pixel")!.checked,
     reducedMotion: document.querySelector<HTMLInputElement>("#setting-motion")!.checked,
+    brightness: Number(document.querySelector<HTMLInputElement>("#setting-brightness")!.value),
     masterVolume: Number(document.querySelector<HTMLInputElement>("#setting-master")!.value),
     musicVolume: Number(document.querySelector<HTMLInputElement>("#setting-music")!.value),
     effectsVolume: Number(document.querySelector<HTMLInputElement>("#setting-effects")!.value),
     muted: document.querySelector<HTMLInputElement>("#setting-muted")!.checked
   };
   applySettings();
+  document.querySelector("#brightness-value")!.textContent = `${settings.brightness}%`;
 }));
 function startSaveSlot(index: number, save: SoloSave | null) {
   pendingSave = save ?? undefined;
@@ -225,9 +342,11 @@ function startSaveSlot(index: number, save: SoloSave | null) {
   renderAccessoryChoice();
   selectedRole = roles.some(({ role }) => role === save.profile.role) ? save.profile.role as CatRole : "Tabby"; renderRoles();
   }
-  sessionMode = "single"; sessionStorage.setItem("paws-pours-mode", sessionMode); connect("create");
+  setMenuMode("single");
+  document.querySelector<HTMLDialogElement>("#save-dialog")!.close(); showSelection();
 }
 function openSaveMenu() {
+  if (sessionMode !== "single") return;
   const dialog = document.querySelector<HTMLDialogElement>("#save-dialog")!;
   const slots = document.querySelector("#save-slots")!; slots.replaceChildren();
   document.querySelector("#save-error")!.textContent = "";
@@ -245,7 +364,11 @@ function openSaveMenu() {
 }
 document.querySelector<HTMLButtonElement>("#close-saves")!.onclick = () => document.querySelector<HTMLDialogElement>("#save-dialog")!.close();
 
-socket.on("joined", ({ code }: { code: string }) => { document.querySelector<HTMLDialogElement>("#save-dialog")!.close(); pendingSave = undefined; roomCode = code; sessionStorage.setItem("paws-pours-room", code); menu.classList.add("hidden"); game.classList.remove("hidden"); setToast(`Joined room ${code}.`); });
+socket.on("joined", ({ code }: { code: string }) => { setConnectionPending(false); document.querySelector<HTMLDialogElement>("#save-dialog")!.close(); pendingSave = undefined; roomCode = code; sessionStorage.setItem("paws-pours-room", code); setToast(`Joined room ${code}.`); });
+socket.on("left-lobby", () => {
+  state = null; roomCode = ""; sessionStorage.removeItem("paws-pours-room");
+  document.querySelector<HTMLInputElement>("#room-input")!.value = ""; showIntro();
+});
 socket.on("state", (next: GameState) => {
   const authoritativePlayer = next.players[token];
   if (authoritativePlayer) {
@@ -268,13 +391,17 @@ socket.on("state", (next: GameState) => {
       }
     }
   }
-  state = next; renderUi();
+  state = next;
+  if (next.phase === "lobby") { showSelection(); }
+  else { menuStep = "game"; menu.classList.add("hidden"); selection.classList.add("hidden"); game.classList.remove("hidden"); }
+  renderUi();
   if (sessionMode === "single") {
     const player = next.players[token];
     if (player && activeSaveSlot >= 0 && (Date.now() - lastSaveAt > 1000 || next.pausedAt !== null || next.phase !== "shift")) persistSoloSave();
   }
 });
 socket.on("error-message", (message: string) => {
+  setConnectionPending(false);
   setToast(message); document.querySelector("#save-error")!.textContent = message;
   document.querySelectorAll<HTMLButtonElement>(".save-slot").forEach((button) => button.disabled = false);
 });
@@ -286,10 +413,15 @@ function persistSoloSave() {
   if (!success && !saveStorageFailed) { saveStorageFailed = true; setToast("Local storage is unavailable or full. This run cannot be saved."); }
 }
 window.addEventListener("pagehide", persistSoloSave);
-socket.on("connect", () => { if (roomCode && state) socket.emit("join-room", { ...profile(), code: roomCode }); });
+socket.on("connect", () => { if (sendPendingConnection) sendPendingConnection(); else if (roomCode && state) socket.emit("join-room", { ...profile(), code: roomCode }); });
+socket.on("connect_error", () => { sendPendingConnection = undefined; setConnectionPending(false); setToast("The tavern server is unavailable. Please try again shortly."); });
 socket.on("disconnect", () => setToast("Reconnecting to the tavern…"));
 
-function setToast(message: string) { const element = document.querySelector("#toast")!; element.textContent = message; element.classList.add("show"); window.setTimeout(() => element.classList.remove("show"), 2800); }
+function setToast(message: string) {
+  const status = document.querySelector(menuStep === "selection" ? "#selection-status" : "#menu-status")!;
+  status.textContent = message;
+  const element = document.querySelector("#toast")!; element.textContent = message; element.classList.add("show"); window.setTimeout(() => element.classList.remove("show"), 2800);
+}
 function localPlayer() { return state?.players[token]; }
 function time(seconds: number) { return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; }
 function renderUi() {
@@ -333,12 +465,13 @@ function renderOverlay() {
     if (pausePanel === "settings") {
       overlay.innerHTML = `<div class="modal card pause-menu"><p class="eyebrow">SHIFT PAUSED FOR EVERYONE</p><h2>Settings</h2><div class="pause-settings settings-panel">
         <label>Display scale<select id="pause-scale"><option value="1">100%</option><option value="0.85">85%</option><option value="1.15">115%</option></select></label>
+        <label>Brightness<input id="pause-brightness" type="range" min="50" max="150" step="5" /></label>
         <label class="toggle"><input id="pause-pixel" type="checkbox" /> Pixel-perfect rendering</label><label class="toggle"><input id="pause-motion" type="checkbox" /> Reduced motion</label>
         <button id="pause-fullscreen" class="secondary" type="button">Toggle fullscreen</button>
         <label>Master volume<input id="pause-master" type="range" min="0" max="100" /></label><label>Music volume<input id="pause-music" type="range" min="0" max="100" /></label><label>Effects volume<input id="pause-effects" type="range" min="0" max="100" /></label><label class="toggle"><input id="pause-muted" type="checkbox" /> Mute audio</label>
         <button id="pause-reset" class="secondary" type="button">Reset settings</button></div><button class="recipe-book-close" id="pause-back" type="button">← Pause menu</button></div>`;
       syncPauseSettingsForm();
-      for (const key of ["scale", "pixel", "motion", "master", "music", "effects", "muted"]) document.querySelector(`#pause-${key}`)!.addEventListener("input", readPauseSettingsForm);
+      for (const key of ["scale", "pixel", "motion", "brightness", "master", "music", "effects", "muted"]) document.querySelector(`#pause-${key}`)!.addEventListener("input", readPauseSettingsForm);
       document.querySelector<HTMLButtonElement>("#pause-fullscreen")!.onclick = () => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.(); };
       document.querySelector<HTMLButtonElement>("#pause-reset")!.onclick = () => { settings = { ...defaultSettings }; applySettings(); syncPauseSettingsForm(); syncSettingsForm(); };
       document.querySelector<HTMLButtonElement>("#pause-back")!.onclick = () => { pausePanel = "main"; renderOverlay(); };
@@ -351,10 +484,7 @@ function renderOverlay() {
       document.querySelector<HTMLButtonElement>("#leave-game")!.onclick = () => { sessionStorage.removeItem("paws-pours-room"); location.reload(); };
     }
   } else if (state.phase === "lobby") {
-    overlay.classList.remove("hidden");
-    const isHost = state.hostId === token;
-    overlay.innerHTML = `<div class="modal card"><p class="eyebrow">ROOM ${state.code}</p><h2>Gather your crew</h2><p>Share this code with up to three friends. Everyone appears in this lobby instantly.</p><div class="big-code">${state.code}</div><p>${Object.keys(state.players).length}/4 cat bartenders in the tavern.</p>${isHost ? `<button class="primary" id="start">Start shift</button>` : `<p class="waiting">Waiting for the host to ring the bell…</p>`}</div>`;
-    document.querySelector<HTMLButtonElement>("#start")?.addEventListener("click", () => socket.emit("start-shift"));
+    overlay.classList.add("hidden");
   } else if (state.phase === "upgrades") {
     overlay.classList.remove("hidden"); const host = state.hostId === token;
     overlay.innerHTML = `<div class="modal card"><p class="eyebrow">SHIFT ${state.round} COMPLETE</p><h2>Choose a keepsake</h2><p>The host's choice carries the crew to a new seeded tavern.</p><div class="upgrade-grid">${state.upgrades.map((upgrade) => `<button class="upgrade" data-upgrade="${upgrade.id}" ${host ? "" : "disabled"}><b>${upgrade.title}</b><small>${upgrade.body}</small></button>`).join("")}</div>${host ? "" : "<p class=waiting>The host is choosing…</p>"}</div>`;
@@ -372,7 +502,7 @@ function syncPauseSettingsForm() {
   document.querySelector<HTMLSelectElement>("#pause-scale")!.value = String(settings.scale);
   for (const [key, value] of [["pixel", settings.pixelPerfect], ["motion", settings.reducedMotion], ["muted", settings.muted]] as const)
     document.querySelector<HTMLInputElement>(`#pause-${key}`)!.checked = value;
-  for (const [key, value] of [["master", settings.masterVolume], ["music", settings.musicVolume], ["effects", settings.effectsVolume]] as const)
+  for (const [key, value] of [["brightness", settings.brightness], ["master", settings.masterVolume], ["music", settings.musicVolume], ["effects", settings.effectsVolume]] as const)
     document.querySelector<HTMLInputElement>(`#pause-${key}`)!.value = String(value);
 }
 
@@ -381,6 +511,7 @@ function readPauseSettingsForm() {
     scale: Number(document.querySelector<HTMLSelectElement>("#pause-scale")!.value) as DisplayAudioSettings["scale"],
     pixelPerfect: document.querySelector<HTMLInputElement>("#pause-pixel")!.checked,
     reducedMotion: document.querySelector<HTMLInputElement>("#pause-motion")!.checked,
+    brightness: Number(document.querySelector<HTMLInputElement>("#pause-brightness")!.value),
     masterVolume: Number(document.querySelector<HTMLInputElement>("#pause-master")!.value),
     musicVolume: Number(document.querySelector<HTMLInputElement>("#pause-music")!.value),
     effectsVolume: Number(document.querySelector<HTMLInputElement>("#pause-effects")!.value),
@@ -586,19 +717,7 @@ function drawHazard() {
 }
 function renderBoard() {
   requestAnimationFrame(renderBoard); movePlayer(); context.imageSmoothingEnabled = false;
-  if (!state || state.phase === "lobby") {
-    const titleCanvas = document.querySelector<HTMLCanvasElement>("#title-decor")!;
-    const art = titleCanvas.getContext("2d")!;
-    art.clearRect(0, 0, 1000, 350); art.imageSmoothingEnabled = false;
-    art.fillStyle = "#bfa1b5"; art.fillRect(40, 305, 590, 3);
-    art.fillStyle = "#54415f"; art.fillRect(40, 308, 590, 5);
-    ornament(art, 0, 107, 268, 83, 78);
-    ornament(art, 4, 574, 279, 33, 53);
-    for (const [x, y] of [[334, 271], [351, 271], [368, 271]]) {
-      art.fillStyle = "#dfcaaa"; art.fillRect(x - 2, y - 6, 4, 12); art.fillRect(x - 6, y - 2, 12, 4);
-    }
-  }
-  if (!state) return;
+  if (!state || state.phase === "lobby") return;
   drawTavernFloor(context, state.tavern);
   const player = localPlayer();
   const nearby = player && nearbyStation(state.tavern, player);

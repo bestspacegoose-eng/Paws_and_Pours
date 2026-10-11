@@ -4,6 +4,7 @@ export interface DisplayAudioSettings {
   scale: 1 | 0.85 | 1.15;
   pixelPerfect: boolean;
   reducedMotion: boolean;
+  brightness: number;
   masterVolume: number;
   musicVolume: number;
   effectsVolume: number;
@@ -45,7 +46,7 @@ export function saveSoloSlot(index: number, save: SoloSave): boolean {
 }
 
 export const defaultSettings: DisplayAudioSettings = {
-  scale: 1, pixelPerfect: true, reducedMotion: false,
+  scale: 1, pixelPerfect: true, reducedMotion: false, brightness: 100,
   masterVolume: 80, musicVolume: 65, effectsVolume: 80, muted: false
 };
 
@@ -59,6 +60,7 @@ export function loadSettings(): DisplayAudioSettings {
   return {
     scale: saved.scale === .85 || saved.scale === 1.15 ? saved.scale : 1,
     pixelPerfect: saved.pixelPerfect !== false, reducedMotion: Boolean(saved.reducedMotion),
+    brightness: Number.isFinite(saved.brightness) ? Math.max(50, Math.min(150, saved.brightness!)) : 100,
     masterVolume: Math.max(0, Math.min(100, Number(saved.masterVolume ?? defaultSettings.masterVolume))),
     musicVolume: Math.max(0, Math.min(100, Number(saved.musicVolume ?? defaultSettings.musicVolume))),
     effectsVolume: Math.max(0, Math.min(100, Number(saved.effectsVolume ?? defaultSettings.effectsVolume))),

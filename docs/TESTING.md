@@ -44,14 +44,14 @@ In another terminal:
 npm run test:multiplayer
 ```
 
-The script creates a host and guest against the actual Socket.IO server. It verifies a guest-triggered pause freezes both clients' shift clock, order patience, and movement, then resumes and gathers and serves the first live order. It also prepares Seafoam Shake to verify rhythmic chopping and alternating-paw hand mixing are evaluated on the server and synchronized to the guest.
+The script creates a host and guest against the actual Socket.IO server. It verifies the lobby refuses an unready start, synchronizes cat customization, resets ready state on profile changes, and starts only after both cats are ready. It then verifies a guest-triggered pause freezes both clients' shift clock, order patience, and movement, resumes and gathers and serves the first live order. It also prepares Seafoam Shake to verify rhythmic chopping and alternating-paw hand mixing are evaluated on the server and synchronized to the guest.
 
 Expected output includes `"ok": true`, the completed recipe, awarded coins, and two multiplayer assertions.
 
 ## Manual two-browser flow
 
 1. Start the game with `npm run dev` and open `http://localhost:5173` in two separate browser tabs or windows.
-2. Create a room in the first client, join its code from the second, then start the shift.
+2. Select Multiplayer on the exterior title screen. Create a room in the first client and join its four-character code from the second. Verify the interior selection screen shows four seats, the two cats synchronize name/type/fur/accessory changes, and local save controls are disabled in Multiplayer. Ready both cats, then have the host start the shift. Editing a ready cat must return it to Choosing.
 3. Walk the host to the three counters named by one recipe. Verify the cat stops at each visible square edge and never overlaps the block.
 4. Walk to the Shaker & Brewer and press `E`.
 5. Verify only the host transitions to the first-person workspace. The guest must remain in the tavern, show the host as “mixing a drink,” and continue moving/interacting.
@@ -69,6 +69,9 @@ Expected output includes `"ok": true`, the completed recipe, awarded coins, and 
 17. With Vite running, open `/scripts/art-preview.html`. Inspect all 20 portrait/accessory combinations, all 64 direction/frame/accessory combinations, and seven drink illustrations. Hats and crowns follow the head; patches cover the selected eye; bow ties follow the neck and hide on back-facing frames.
 
 ## Failure and recovery cases
+
+- **Solo menus and saves:** Solo opens one bartender card. Load / create local save opens three slots before selection; an empty slot starts a saved run, and an occupied slot loads the existing snapshot paused after selection. Back must return to the title without starting a game or overwriting the save. Verify brightness, display scale, and audio preferences persist after reload.
+- **Lobby exit:** Back removes your seat and returns to the title. When the host leaves, the remaining connected cat becomes host. Check waiting/start controls after that handoff.
 
 - **Cancel:** open a valid recipe, click Cancel, and verify the player returns to the tavern with all ingredients.
 - **Three mistakes:** submit the wrong action three times and verify the workspace fails, closes, and consumes the ingredients.

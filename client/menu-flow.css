@@ -1,0 +1,70 @@
+/* Separate title and selection screens use the supplied scene compositions. */
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+#brightness-shade{position:fixed;inset:0;z-index:2147483647;pointer-events:none;opacity:0}
+body:has(.intro-menu:not(.hidden)),body:has(.bartender-selection:not(.hidden)){background:#241b30}
+.shell:has(.intro-menu){width:100%;padding:0;margin:0}
+.shell .intro-menu{position:relative;width:100%;max-width:none;min-height:100dvh;padding:0;border:0;border-radius:0;background:#493747 url('./assets/menus/intro-tavern.png') center top / 100% auto no-repeat;box-shadow:none;overflow:auto;isolation:isolate}
+.intro-menu .title-scene{position:absolute;inset:0;min-height:0;background:none;border:0;box-shadow:none;pointer-events:none}
+.intro-menu .title-scene::before,.intro-menu .title-scene::after{display:none}
+.intro-menu .title-console{position:relative;display:block;width:min(360px,calc(100% - 32px));margin-left:auto;margin-right:10%;padding:0;padding-top:clamp(235px,34vh,330px);padding-bottom:22px;background:none;box-shadow:none}
+.shell .intro-menu .title-actions{border:2px solid #bf8d91;border-radius:6px;padding:18px;background:rgba(43,27,43,.9);box-shadow:4px 5px 0 #251525, inset 0 0 0 3px #553443;color:#ffecd1;text-align:center}
+.intro-menu .title-section-heading{justify-content:center}
+.intro-menu .title-section-heading h2{font-size:26px;color:#ffdfb4}
+.intro-menu .mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.intro-menu .mode-switch button{padding:8px;border:2px solid #80607d;border-radius:4px;background:#49344e;color:#ead8cf;font-size:13px}
+.intro-menu .mode-switch button[aria-pressed=true]{background:#cf9295;color:#382131;border-color:#ffddb3}
+.shell .intro-menu .title-actions .actions{display:grid;grid-template-columns:1fr;gap:10px}
+.shell .intro-menu .actions>button,.shell .intro-menu .join button{min-height:42px;font-size:14px;background:#c994a4;color:#38213b;border:2px solid #e2afaf;box-shadow:0 3px 0 #4c2b43}
+.shell .intro-menu .actions>.primary{background:#efc58c;border-color:#ffe4b9}
+.intro-menu .actions>button:disabled,.intro-menu .join button:disabled{opacity:.38;box-shadow:none}
+.shell .intro-menu .join{display:grid;grid-template-columns:minmax(0,1fr) 110px}
+.shell .intro-menu .join input{height:42px;font-size:12px;min-width:0;background:#302334}
+.shell .intro-menu .menu-utilities{display:grid;grid-template-columns:1fr}
+.shell .intro-menu .menu-utilities button{font-size:13px;padding:9px;background:#736283;color:#fff0d6;border-color:#b59cae}
+.menu-note{font-size:11px;color:#d9c3c7;line-height:1.5;margin-bottom:0}
+#menu-status,#selection-status{font-size:12px;color:#ffe1a9;min-height:1em;margin:8px 0 0}
+.shell .intro-menu .fineprint{position:relative;width:min(680px,calc(100% - 32px));margin:0 5% 15px auto;border:0;border-radius:4px;background:rgba(36,24,39,.8);text-align:center;color:#e3cdd7}
+.shell .intro-menu .settings-panel{position:relative;z-index:3;width:min(680px,calc(100% - 32px));margin:0 5% 20px auto;background:#302238;border:2px solid #b797ae;box-shadow:3px 4px 0 #211323;color:#fff0d3}
+.intro-menu .settings-panel input[type=range]{accent-color:#e4b282;padding:0;max-width:100%}
+.intro-menu .settings-panel output{font-size:11px;color:#efc58c}
+.shell .bartender-selection{position:relative;min-height:100dvh;max-width:none;width:100%;padding:18px clamp(16px,5vw,80px) 24px;border:0;border-radius:0;background:linear-gradient(#26152f55,#26152f88),url('./assets/menus/bartender-tavern.png') center / cover no-repeat;box-shadow:none;overflow:auto;color:#fff0d0}
+.selection-heading{text-align:center;text-shadow:3px 3px #2b182b}
+.selection-heading>p:first-child{font:700 clamp(28px,4vw,48px) Fraunces,Georgia,serif;margin:0 0 6px;color:#ffe2b3}
+.selection-heading h1{font:700 clamp(24px,3.6vw,42px) Fraunces,Georgia,serif;margin:5px 0;color:#fff1d0}
+.selection-heading #selection-mode{margin:8px 0 0;font:500 12px 'DM Mono',monospace;letter-spacing:.08em;color:#e7c0ca}
+.player-slots{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;max-width:1100px;margin:12px auto 16px}
+.player-slot{position:relative;min-width:0;padding:10px;border:4px solid #90604e;outline:2px solid #382239;border-radius:3px;background:linear-gradient(145deg,#3e2944ed,#302033ed);box-shadow:inset 0 0 0 2px #b58060,4px 5px 0 #2d1b2b;text-align:center}
+.player-slot.local-slot{border-color:#ffe1a3;box-shadow:inset 0 0 0 2px #a4765b,0 0 14px #ffd79170}
+.player-slot h2{margin:0;padding:7px;background:#ca929d;border:2px solid #5d3945;color:#342132;font:800 13px 'DM Mono',monospace}
+.player-slot:nth-child(2) h2{background:#aeb297}.player-slot:nth-child(3) h2{background:#b486b3}.player-slot:nth-child(4) h2{background:#d39a7a}
+.slot-art{height:clamp(140px,23vh,230px);display:grid;place-items:center;color:#a17d95;font:700 70px Fraunces,serif}
+.slot-art .slot-portrait{width:clamp(140px,23vh,192px);height:clamp(140px,23vh,192px);max-width:100%;object-fit:contain;background:none;image-rendering:pixelated}
+.slot-name{display:block;overflow-wrap:anywhere;color:#ffe4b7;font-size:14px}
+.slot-role{margin:4px 0 9px;color:#eacadb;font-size:12px}
+.slot-state{padding:7px 2px;margin:0;background:#76536a;color:#ffe9d0;font:800 11px 'DM Mono',monospace;border:2px solid #b08278}
+.player-slot.ready .slot-state{background:#b0b28c;color:#2c3131}
+.empty-slot{opacity:.75}.empty-slot .slot-state{background:#514054}
+.solo-selection .player-slots{grid-template-columns:minmax(200px,330px);justify-content:center}
+.selection-tools{display:grid;grid-template-columns:minmax(250px,390px) minmax(0,1fr);gap:18px;width:min(1100px,100%);margin:0 auto}
+.shell .bartender-selection .customizer-card{min-height:0;padding:13px;background:#352539eb;border:3px solid #8e5f52;box-shadow:inset 0 0 0 1px #bc8970;border-radius:4px}
+.bartender-selection .title-section-heading h2{font-size:18px}
+.shell .bartender-selection .setup-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin:0}
+.shell .bartender-selection .setup-grid label:first-child{grid-column:auto}
+.shell .bartender-selection .accessory-picker{font-size:11px}
+.shell .bartender-selection .accessory-controls{grid-template-columns:28px minmax(0,1fr) 28px}
+.shell .bartender-selection .accessory-controls output{font-size:11px}
+.cat-presets{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;align-items:stretch;padding:10px;background:#3e2839eb;border:3px solid #8e5f52;box-shadow:inset 0 0 0 1px #bc8970;border-radius:4px}
+.cat-presets button{min-width:0;padding:5px 2px;border:2px solid #7f5861;border-radius:3px;background:#322036;color:#eed5cc;display:grid;grid-template-rows:minmax(70px,100px) auto auto;justify-items:center;align-content:center}
+.cat-presets button[aria-pressed=true]{border-color:#ffe1a3;background:#62434e;box-shadow:0 0 0 1px #d8b480}
+.cat-presets img{width:100%;height:100px;object-fit:contain;image-rendering:pixelated}
+.cat-presets b{font-size:11px;line-height:1.2}.cat-presets small{font-size:9px;color:#c6a5b6;margin-top:4px}
+.selection-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:22px auto 0;max-width:1100px}
+.selection-footer button{padding:12px 20px;border:3px solid #b89097;border-radius:4px;background:#76546a;color:#ffe7c6;box-shadow:3px 4px #291b2a;white-space:nowrap}
+.selection-footer .primary{background:#efc58c;color:#412438;border-color:#ffe2ad}
+.selection-footer p{margin:0;flex:1;text-align:center;font-size:12px;color:#e1b8c3}
+.selection-footer button:disabled{background:#5a4d5e;color:#bda0ad;box-shadow:none}
+.bartender-selection .slot-art{overflow:hidden}
+.title-menu button:focus-visible,.title-menu input:focus-visible,.title-menu select:focus-visible{outline:3px solid #fff0a5;outline-offset:3px}
+@media(max-width:850px){.intro-menu .title-console{margin-right:5%}.selection-tools{grid-template-columns:1fr}.player-slots{gap:8px}.player-slot{padding:6px}.player-slot h2{font-size:10px}.slot-name{font-size:12px}.slot-state{font-size:9px}.cat-presets{max-width:680px;width:100%;margin:auto}.selection-footer button{padding:10px;font-size:12px}}
+@media(max-width:540px){.slot-art .slot-portrait{width:145px;height:145px}}
+@media(max-width:540px){.intro-menu .title-console{padding-top:55vw;margin:0 auto}.shell .intro-menu .fineprint,.shell .intro-menu .settings-panel{margin-left:auto;margin-right:auto}.shell .bartender-selection{padding:15px 12px 22px}.player-slots{grid-template-columns:repeat(2,minmax(0,1fr))}.slot-art{height:145px}.selection-heading>p:first-child{font-size:30px}.selection-heading h1{font-size:27px}.selection-footer{flex-wrap:wrap;justify-content:center}.selection-footer p{flex-basis:100%;order:3}.cat-presets{gap:4px;padding:6px}.cat-presets img{height:70px}.cat-presets button{grid-template-rows:70px auto}.cat-presets small{display:none}.cat-presets b{font-size:9px}}
