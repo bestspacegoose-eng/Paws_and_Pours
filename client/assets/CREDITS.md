@@ -29,3 +29,9 @@ Sound effects are used under the [Pixabay Content License](https://pixabay.com/s
 - [Fire Sounds](https://pixabay.com/sound-effects/film-special-effects-fire-sounds-405444/) by DRAGON-STUDIO.
 - [coin](https://pixabay.com/sound-effects/film-special-effects-coin-257878/) by chieuk.
 - [UI Trash](https://pixabay.com/sound-effects/film-special-effects-ui-trash-518621/) by LitUpSubway.
+
+## Depth tile sheets
+
+`tilemap/floors-depth-v1.png`, `tilemap/walls-depth-v1.png`, and `tilemap/counters-depth-v1.png` were supplied by the project owner from the ChatGPT depth-art generation on October 11, 2026. The original 1254 × 1254 PNGs are preserved; the renderer crops them directly. See `docs/DEPTH_TILES.md` for integration details.
+
+`tilemap/dining-furniture-v2.png` is an original transparent table, chair, booth, and simple rug atlas created with the built-in image generation tool on October 11, 2026. Its final palette follows the original dusty rose, lavender, and cream game colors. Generation and palette-edit prompts are preserved in `docs/DINING_TILE_PROMPTS.txt`.

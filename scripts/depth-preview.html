@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Paws & Pours depth tiles</title>
+<style>body{margin:16px;background:#201828;color:#ead6bd;font:14px system-ui}canvas{display:block;max-width:100%;height:auto;image-rendering:pixelated}select{margin-bottom:12px;padding:8px}</style>
+<label>Theme <select id="theme"><option>Cozy Village Pub</option><option>Haunted Moonlit Inn</option><option>Pirate Cat Tavern</option></select></label>
+<label><input id="customers" type="checkbox"> Show customers and orders</label>
+<canvas width="1088" height="712"></canvas>
+<script type="module">
+import { makeTavern, stationBounds, RECIPES } from '/shared/game.ts';
+import { drawTavernFloor, drawTavernCounter, drawBarGate } from '/client/tavern-renderer.ts';
+const load = async src => { const image = new Image(); image.src = src; await image.decode(); return image; };
+const [ingredients, bin, cats] = await Promise.all([
+  load('/client/assets/tilemap/ingredients-spritesheet.png'), load('/client/assets/props/scrap-bin.png'), load('/client/assets/tilemap/cat-bartender-spritesheet.png'),
+  ...['dining-furniture-v2','floors-depth-v1','walls-depth-v1','counters-depth-v1','cozy-decor-atlas','mixing-tools-spritesheet','handdrawn-surfaces'].map(name => load(`/client/assets/tilemap/${name}.png`))
+]);
+const context = document.querySelector('canvas').getContext('2d');
+function render() {
+  const tavern = makeTavern(42); tavern.theme = document.querySelector('select').value;
+  const orders = document.querySelector('#customers').checked ? RECIPES.slice(0,4).map((recipe,index) => ({
+    id: `preview-${index}`, recipeId: recipe.id, tableId: `table-${index+1}`, customer: 'Guest',
+    patience: index === 3 ? 20 : 80, maxPatience: 100
+  })) : [];
+  context.imageSmoothingEnabled = false;
+  drawTavernFloor(context, tavern);
+  tavern.stations.sort((a,b) => stationBounds(a).bottom - stationBounds(b).bottom).forEach(station =>
+    drawTavernCounter(context, tavern, station, ingredients, bin, station.id === 'mix', orders, cats));
+  drawBarGate(context, [], true);
+}
+document.querySelector('select').addEventListener('change', render);
+document.querySelector('#customers').addEventListener('change', render);
+render(); document.body.dataset.ready = 'true';
+</script></html>

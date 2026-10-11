@@ -6,6 +6,8 @@ import toolsUrl from "./assets/tilemap/mixing-tools-spritesheet.png";
 import surfacesUrl from "./assets/tilemap/handdrawn-surfaces.png";
 import { drawPreparationArt } from "./preparation-art";
 import { boardPoint, TAVERN_VIEW } from "./tavern-projection";
+import { COUNTER_RISE, drawDepthFloor, drawDepthWalls, drawDepthShadows, drawDepthCounter } from "./depth-tiles";
+import { drawDiningTile, drawDiningRug } from "./dining-art";
 export { boardPoint, TAVERN_VIEW } from "./tavern-projection";
 
 let gateAmount = 0;
@@ -70,7 +72,7 @@ export function drawTavernFloor(context: CanvasRenderingContext2D, tavern: Taver
     context.fillStyle = x < 9 ? p.floor[(x + y) % 2] : ["#c5a6ac", "#cbb0b3"][(x + y) % 2]; context.fillRect(a.x + 1, a.y + 1, cell - 2, b.y - a.y - 2);
     context.fillStyle = "#ffffff0a"; context.fillRect(a.x + 3, a.y + 3, cell - 6, 2);
     context.fillStyle = "#35263c13"; context.fillRect(a.x + 10 + (y % 2) * 9, a.y + 17, 24, 1);
-    if (surfaces.complete && surfaces.naturalWidth) {
+    if (!drawDepthFloor(context, tavern, x, y) && surfaces.complete && surfaces.naturalWidth) {
       const half = surfaces.naturalWidth / 2;
       // One painted ceramic tile per world cell; wood uses contiguous atlas sections.
       const sx = x < 9 ? half + half / 3 : (x % 3) * half / 3;
@@ -82,22 +84,23 @@ export function drawTavernFloor(context: CanvasRenderingContext2D, tavern: Taver
   // Flat, low-contrast woven rugs do not change the walkable grid.
   for (const row of [1, 6]) {
     const rug = boardPoint(10 * cell, row * cell);
-    context.fillStyle = "#978ca8"; context.fillRect(rug.x - 9, rug.y - 8, cell * 5 + 18, cell * 2 * TAVERN_VIEW.depth + 16);
-    context.strokeStyle = "#d8c8c0"; context.lineWidth = 3;
-    context.strokeRect(rug.x - 3, rug.y - 2, cell * 5 + 6, cell * 2 * TAVERN_VIEW.depth + 4);
+    drawDiningRug(context, rug.x - 8, rug.y - 10, cell * 5 + 16, cell * 2 * TAVERN_VIEW.depth + 20);
   }
   // Inlaid lanes decorate the same grid; they never add collision.
   context.strokeStyle = "#ead19b60"; context.lineWidth = 2;
   context.strokeRect(left + cell + 9, top + cell * TAVERN_VIEW.depth + 9, width - cell * 2 - 18, height - cell * 2 * TAVERN_VIEW.depth - 18);
   context.fillStyle = "#e2bf78"; context.fillRect(left - 12, top - 96, width + 24, 3);
   context.fillStyle = "#76506c"; context.fillRect(left - 12, top - 5, width + 24, 5);
-  for (const x of [left + 65, left + width / 2, left + width - 65]) ornament(context, 1, x, top - 49, 63, 89);
-  for (const x of [left + 240, left + width - 240]) ornament(context, 0, x, top - 47, 150, 88);
+  drawDepthWalls(context, tavern);
+  drawDepthShadows(context, tavern);
+  // Keep every window above the raised counter line, on a shared sill and centerline.
+  for (const fraction of [.1, .5, .9]) ornament(context, 1, left + width * fraction, top - 61, 47, 61);
+  for (const fraction of [.3, .7]) ornament(context, 0, left + width * fraction, top - 59, 122, 61);
   for (const x of [left + 140, left + width - 140]) {
-    const glow = context.createRadialGradient(x, top - 27, 2, x, top - 27, 47);
-    glow.addColorStop(0, "#ffd77b25"); glow.addColorStop(1, "#ffd77b00");
-    context.fillStyle = glow; context.fillRect(x - 47, top - 74, 94, 94);
-    ornament(context, 4, x, top - 28, 38, 51);
+    const glow = context.createRadialGradient(x, top - 48, 2, x, top - 48, 28);
+    glow.addColorStop(0, "#ffd77b1c"); glow.addColorStop(1, "#ffd77b00");
+    context.fillStyle = glow; context.fillRect(x - 28, top - 76, 56, 56);
+    ornament(context, 4, x, top - 48, 24, 32);
   }
   for (const x of [left - 42, left + width + 42]) {
     ornament(context, 2, x, top + 62, 68, 68);
@@ -119,51 +122,34 @@ export function drawIngredientIcon(context: CanvasRenderingContext2D, image: HTM
 
 function drawDiningFurniture(context: CanvasRenderingContext2D, station: Station, orders: Order[], cats: HTMLImageElement | undefined, highlighted: boolean) {
   const bounds = stationBounds(station), a = boardPoint(bounds.left, bounds.top), b = boardPoint(bounds.right, bounds.bottom);
-  const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
-  const tableId = station.id.replace("-seat", ""), order = orders.find((candidate) => candidate.tableId === tableId);
+  const x = (a.x + b.x) / 2;
+  const tableId = station.id.replace("-seat", ""), order = orders.find(candidate => candidate.tableId === tableId);
   const seat = station.kind === "seat";
-  // Every opaque furniture edge stays inside its authoritative square collision cell.
-  context.fillStyle = "#746477"; context.fillRect(a.x, a.y, 58, b.y - a.y);
-  context.fillStyle = seat ? "#b08fa9" : "#d1b6aa"; context.fillRect(a.x + 3, a.y + 3, 52, b.y - a.y - 8);
-  context.fillStyle = seat ? "#ddbac9" : "#ecd5bd"; context.fillRect(a.x + 4, a.y + 3, 50, 4);
-  if (seat) {
-    context.fillStyle = "#967a9b"; context.fillRect(a.x + 6, a.y + 11, 46, 7);
-    context.fillStyle = "#c7a4b9"; context.fillRect(a.x + 6, a.y + 21, 46, 18);
-    if (station.label === "Chair") {
-      context.fillStyle = "#a48a91";
-      context.fillRect(a.x + 3, a.y + 10, 6, b.y - a.y - 14);
-      context.fillRect(b.x - 9, a.y + 10, 6, b.y - a.y - 14);
-      context.fillRect(a.x + 12, a.y + 8, 4, 12); context.fillRect(b.x - 16, a.y + 8, 4, 12);
-    } else {
-      context.fillStyle = "#ddbac9";
-      for (const dx of [-14, 0, 14]) context.fillRect(x + dx - 1, a.y + 13, 3, 3);
-    }
-    if (order && cats?.complete && cats.naturalWidth) {
-      const frame = PLAYER_FRAMES.down[0];
-      const height = 48, width = Math.round(height * frame.width / frame.height);
-      context.drawImage(cats, frame.x, frame.y, frame.width, frame.height, x - width / 2, b.y - height - 2, width, height);
-      context.fillStyle = "#ece0c8"; context.fillRect(x - 12, a.y + 4, 24, 3);
-      context.fillStyle = "#927ba0"; context.fillRect(x - 9, a.y + 7, 18, 2);
-      context.fillStyle = "#f1e4d6"; context.fillRect(x + 22, a.y - 4, 29, 29);
-      context.fillRect(x + 18, a.y + 15, 7, 5);
-      context.strokeStyle = "#9b86a6"; context.lineWidth = 2; context.strokeRect(x + 22, a.y - 4, 29, 29);
-      drawRecipeDrink(context, recipeById(order.recipeId), x + 36, a.y + 10, 23);
-    }
-  } else {
-    context.fillStyle = "#e9dad2"; context.fillRect(x - 17, a.y + 5, 34, 27);
-    context.fillStyle = "#ac96ac"; context.fillRect(x - 15, a.y + 7, 30, 2);
-    ornament(context, 4, x + 18, y - 7, 13, 20);
-    context.fillStyle = "#b6c7af"; context.fillRect(x - 7, y - 8, 11, 11);
-    context.fillStyle = "#f5ead9"; context.fillRect(x - 7, y - 8, 11, 3);
-    context.font = "bold 8px monospace"; context.textAlign = "center"; context.fillStyle = "#493c54";
-    context.fillText(station.label.toUpperCase(), x, b.y - 4);
+  drawDiningTile(context, station, x, b.y - 2);
+  if (seat && order && cats?.complete && cats.naturalWidth) {
+    const frame = PLAYER_FRAMES.down[0];
+    const height = 43, width = Math.round(height * frame.width / frame.height);
+    context.drawImage(cats, frame.x, frame.y, frame.width, frame.height, x - width / 2, b.y - height - 1, width, height);
+    context.fillStyle = "#f1e4d6"; context.fillRect(x + 18, a.y - 2, 25, 25);
+    context.fillRect(x + 14, a.y + 14, 6, 4);
+    context.strokeStyle = "#9b86a6"; context.lineWidth = 1; context.strokeRect(x + 18, a.y - 2, 25, 25);
+    drawRecipeDrink(context, recipeById(order.recipeId), x + 30, a.y + 10, 21);
+  }
+  if (!seat) {
+    // A small table number is enough; keep the tabletop free of decorative clutter.
+    context.fillStyle = "#746477"; context.fillRect(x - 8, b.y - 15, 16, 11);
+    context.font = "bold 9px monospace"; context.textAlign = "center"; context.fillStyle = "#ecd5bd";
+    context.fillText(station.label.replace("Table ", ""), x, b.y - 6);
     if (order) {
-      context.fillStyle = "#746477"; context.fillRect(a.x + 4, b.y + 2, 50, 4);
+      context.fillStyle = "#746477"; context.fillRect(a.x + 9, b.y + 2, 40, 3);
       context.fillStyle = order.patience / order.maxPatience < .3 ? "#d98e9b" : "#b3d2b5";
-      context.fillRect(a.x + 4, b.y + 2, 50 * Math.max(0, order.patience / order.maxPatience), 4);
+      context.fillRect(a.x + 9, b.y + 2, 40 * Math.max(0, order.patience / order.maxPatience), 3);
     }
   }
-  if (highlighted) { context.strokeStyle = "#fff0c7"; context.lineWidth = 2; context.strokeRect(a.x + 1, a.y + 1, 56, b.y - a.y - 2); }
+  if (highlighted) {
+    context.strokeStyle = "#fff0c7"; context.lineWidth = 2;
+    context.strokeRect(a.x + 2, a.y + 1, b.x - a.x - 4, b.y - a.y - 2);
+  }
 }
 
 export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tavern, station: Station,
@@ -177,34 +163,38 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
   }
   const neighbor = (dx: number, dy: number) => tavern.stations.some((other) => other.gridX === station.gridX + dx && other.gridY === station.gridY + dy);
   const front = neighbor(0, 1) ? 0 : 10;
-  context.fillStyle = p.top; context.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
-  if (surfaces.complete && surfaces.naturalWidth) {
-    const half = surfaces.naturalWidth / 2, piece = half / 3;
-    const base = station.gridX === 8 || tavern.theme !== "Pirate Cat Tavern" ? 0 : half;
-    context.drawImage(surfaces, base + (station.gridX % 3) * piece, half + (station.gridY % 3) * piece, piece, piece,
-      a.x + 2, a.y + 2, 54, b.y - a.y - front - 3);
+  const hasDepthArt = drawDepthCounter(context, tavern, station);
+  if (!hasDepthArt) {
+    context.fillStyle = p.top; context.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+    if (surfaces.complete && surfaces.naturalWidth) {
+      const half = surfaces.naturalWidth / 2, piece = half / 3;
+      const base = station.gridX === 8 || tavern.theme !== "Pirate Cat Tavern" ? 0 : half;
+      context.drawImage(surfaces, base + (station.gridX % 3) * piece, half + (station.gridY % 3) * piece, piece, piece,
+        a.x + 2, a.y + 2, 54, b.y - a.y - front - 3);
+    }
+    context.fillStyle = "#ffffff12"; context.fillRect(a.x + 6, a.y + 10, 22, 2);
+    context.fillStyle = "#62546b18"; context.fillRect(a.x + 30, a.y + 25, 18, 2);
+    context.fillStyle = "#ffffff0c"; context.fillRect(a.x + 3, a.y + 3, 52, 2);
+    context.fillStyle = p.front; context.fillRect(a.x, b.y - front, 58, front);
+    if (front) {
+      context.strokeStyle = "#8e697547"; context.lineWidth = 1;
+      context.strokeRect(a.x + 5, b.y - 8, 48, 5);
+      context.fillStyle = "#c69c60"; context.fillRect(a.x, b.y - front, 58, 2);
+      context.fillRect(center.x - 5, b.y - 6, 10, 2);
+      context.fillStyle = "#1d1829"; context.fillRect(a.x, b.y - 2, 58, 2);
+    }
+    context.fillStyle = p.light;
+    if (!neighbor(0, -1)) context.fillRect(a.x, a.y, 58, 3);
+    if (!neighbor(-1, 0)) context.fillRect(a.x, a.y, 3, b.y - a.y - front);
+    if (!neighbor(1, 0)) context.fillRect(b.x - 3, a.y, 3, b.y - a.y - front);
+    context.strokeStyle = "#231c3525"; context.lineWidth = 1; context.strokeRect(a.x + .5, a.y + .5, 57, b.y - a.y - front - 1);
+    context.fillStyle = "#d6b56b";
+    if (!neighbor(-1, 0) && !neighbor(0, -1)) context.fillRect(a.x + 2, a.y + 2, 5, 5);
+    if (!neighbor(1, 0) && !neighbor(0, -1)) context.fillRect(b.x - 7, a.y + 2, 5, 5);
   }
-  context.fillStyle = "#ffffff12"; context.fillRect(a.x + 6, a.y + 10, 22, 2);
-  context.fillStyle = "#62546b18"; context.fillRect(a.x + 30, a.y + 25, 18, 2);
-  context.fillStyle = "#ffffff0c"; context.fillRect(a.x + 3, a.y + 3, 52, 2);
-  context.fillStyle = p.front; context.fillRect(a.x, b.y - front, 58, front);
-  if (front) {
-    context.strokeStyle = "#8e697547"; context.lineWidth = 1;
-    context.strokeRect(a.x + 5, b.y - 8, 48, 5);
-    context.fillStyle = "#c69c60"; context.fillRect(a.x, b.y - front, 58, 2);
-    context.fillRect(center.x - 5, b.y - 6, 10, 2);
-    context.fillStyle = "#1d1829"; context.fillRect(a.x, b.y - 2, 58, 2);
-  }
-  context.fillStyle = p.light;
-  if (!neighbor(0, -1)) context.fillRect(a.x, a.y, 58, 3);
-  if (!neighbor(-1, 0)) context.fillRect(a.x, a.y, 3, b.y - a.y - front);
-  if (!neighbor(1, 0)) context.fillRect(b.x - 3, a.y, 3, b.y - a.y - front);
-  context.strokeStyle = "#231c3525"; context.lineWidth = 1; context.strokeRect(a.x + .5, a.y + .5, 57, b.y - a.y - front - 1);
-  context.fillStyle = "#d6b56b";
-  if (!neighbor(-1, 0) && !neighbor(0, -1)) context.fillRect(a.x + 2, a.y + 2, 5, 5);
-  if (!neighbor(1, 0) && !neighbor(0, -1)) context.fillRect(b.x - 7, a.y + 2, 5, 5);
-  const x = center.x, y = center.y - 5;
-  if (station.gridX === 8) {
+  const rise = hasDepthArt ? COUNTER_RISE : 0;
+  const x = center.x, y = center.y - 5 - rise;
+  if (station.gridX === 8 && !hasDepthArt) {
     // A continuous carved bar fascia and brass foot rail face the dining room.
     context.fillStyle = "#69506e"; context.fillRect(b.x - 14, a.y, 14, b.y - a.y);
     context.fillStyle = "#ac889b"; context.fillRect(b.x - 11, a.y + 5, 6, b.y - a.y - 10);
@@ -248,6 +238,6 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
   }
   if (highlighted) {
     context.strokeStyle = "#ffe7a2"; context.lineWidth = 2;
-    context.strokeRect(a.x + 2, a.y + 2, 54, b.y - a.y - 4);
+    context.strokeRect(a.x + 2, a.y + 2 - rise, 54, b.y - a.y - 4);
   }
 }
