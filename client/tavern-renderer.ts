@@ -120,12 +120,12 @@ export function drawIngredientIcon(context: CanvasRenderingContext2D, image: HTM
   context.drawImage(image, frame.x, frame.y, frame.width, frame.height, Math.round(x - width / 2), Math.round(y - height / 2), width, height);
 }
 
-function drawDiningFurniture(context: CanvasRenderingContext2D, station: Station, orders: Order[], cats: HTMLImageElement | undefined, highlighted: boolean) {
+function drawDiningFurniture(context: CanvasRenderingContext2D, tavern: Tavern, station: Station, orders: Order[], cats: HTMLImageElement | undefined, highlighted: boolean) {
   const bounds = stationBounds(station), a = boardPoint(bounds.left, bounds.top), b = boardPoint(bounds.right, bounds.bottom);
   const x = (a.x + b.x) / 2;
   const tableId = station.id.replace("-seat", ""), order = orders.find(candidate => candidate.tableId === tableId);
   const seat = station.kind === "seat";
-  drawDiningTile(context, station, x, b.y - 2);
+  drawDiningTile(context, station, x, b.y - 2, tavern.theme);
   if (seat && order && cats?.complete && cats.naturalWidth) {
     const frame = PLAYER_FRAMES.down[0];
     const height = 43, width = Math.round(height * frame.width / frame.height);
@@ -158,7 +158,7 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
   const a = boardPoint(bounds.left, bounds.top), b = boardPoint(bounds.right, bounds.bottom);
   const center = boardPoint(station.x, station.y);
   if (station.kind === "serve" || station.kind === "seat") {
-    drawDiningFurniture(context, station, orders, cats, highlighted);
+    drawDiningFurniture(context, tavern, station, orders, cats, highlighted);
     return;
   }
   const neighbor = (dx: number, dy: number) => tavern.stations.some((other) => other.gridX === station.gridX + dx && other.gridY === station.gridY + dy);

@@ -2,11 +2,10 @@ import { GRID_CELL_SIZE, GRID_COLUMNS, stationBounds, type Station, type Tavern 
 import { boardPoint, TAVERN_VIEW } from "./tavern-projection";
 import floorUrl from "./assets/tilemap/floors-depth-v1.png";
 import wallUrl from "./assets/tilemap/walls-depth-v1.png";
-import counterUrl from "./assets/tilemap/counters-depth-v1.png";
+import { furnitureArt } from "./furniture-art";
 
 const floors = new Image(); floors.src = floorUrl;
 const walls = new Image(); walls.src = wallUrl;
-const counters = new Image(); counters.src = counterUrl;
 const ready = (image: HTMLImageElement) => image.complete && image.naturalWidth > 0;
 export const COUNTER_RISE = 22;
 
@@ -55,24 +54,32 @@ export function drawDepthShadows(context: CanvasRenderingContext2D, tavern: Tave
 }
 
 export function drawDepthCounter(context: CanvasRenderingContext2D, tavern: Tavern, station: Station) {
-  if (!ready(counters)) return false;
+  const art = furnitureArt(tavern.theme);
+  if (!art) return false;
+  const counters = art.image;
   const bounds = stationBounds(station), a = boardPoint(bounds.left, bounds.top), b = boardPoint(bounds.right, bounds.bottom);
   const neighbor = (dx: number, dy: number) => tavern.stations.some(other =>
     other.kind !== "serve" && other.kind !== "seat" && other.gridX === station.gridX + dx && other.gridY === station.gridY + dy);
-  const row = tavern.theme === "Cozy Village Pub" ? 2 : tavern.theme === "Haunted Moonlit Inn" ? 1 : 0;
-  const column = !neighbor(-1, 0) ? 0 : !neighbor(1, 0) ? 3 : 1 + station.gridX % 2;
-  const sx = [81, 366, 658, 955][column], sy = [64, 352, 647][row];
+  const column = !neighbor(-1, 0) && neighbor(1, 0) ? 1 : !neighbor(1, 0) && neighbor(-1, 0) ? 2 : 0;
+  const frame = art.layout.counters[column], topHeight = art.layout.topHeights[column];
+  const { x: sx, y: sy, width: sw, height: sh } = frame;
   const w = b.x - a.x, h = b.y - a.y;
   // Split the painted top and fascia: the surface retains the full collision footprint,
   // while the raised face ends exactly at the authoritative southern edge.
-  context.drawImage(counters, sx, sy, 232, 87, a.x, a.y - COUNTER_RISE, w, h);
+  if (neighbor(0, 1) || neighbor(0, -1)) {
+    // Use the quiet interior for north/south joins: no repeated rounded caps or
+    // front bevels inside a continuous slab, including the preparation islands.
+    context.drawImage(counters, sx + sw * .08, sy + 8, sw * .84, topHeight - 56,
+      a.x, a.y - COUNTER_RISE, w, h);
+  } else context.drawImage(counters, sx, sy, sw, topHeight, a.x, a.y - COUNTER_RISE, w, h);
   if (!neighbor(0, 1)) {
-    context.drawImage(counters, sx, sy + 95, 232, 142, a.x, b.y - COUNTER_RISE, w, COUNTER_RISE);
+    context.drawImage(counters, sx, sy + topHeight, sw, sh - topHeight, a.x, b.y - COUNTER_RISE, w, COUNTER_RISE);
+    context.fillStyle = "#e8d2b9"; context.fillRect(a.x, b.y - COUNTER_RISE, w, 2);
   }
   if (station.gridX === 8 && !neighbor(1, 0)) {
     // The long bar faces the dining room as well as the southern aisle.
-    context.drawImage(counters, sx, sy + 95, 232, 142, b.x - 10, a.y - COUNTER_RISE, 10, h + COUNTER_RISE);
-    context.fillStyle = "#e8c589"; context.fillRect(b.x - 10, a.y - COUNTER_RISE, 2, h);
+    context.drawImage(counters, sx, sy + topHeight, sw, sh - topHeight, b.x - 10, a.y - COUNTER_RISE, 10, h + COUNTER_RISE);
+    context.fillStyle = "#e8d2b9"; context.fillRect(b.x - 10, a.y - COUNTER_RISE, 2, h);
   }
   context.fillStyle = "#f3d5a775";
   if (!neighbor(0, -1)) context.fillRect(a.x, a.y - COUNTER_RISE, w, 2);

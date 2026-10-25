@@ -1,3 +1,5 @@
+import { movementTarget } from "../shared/movement";
+import { advanceWalkAnimation, type WalkAnimation } from "./walk-animation";
 import { io, type Socket } from "socket.io-client";
 import {
   moveWithCounterCollisions, nearbyStation, stationBounds, RECIPES, recipeById, type CatRole,
@@ -24,6 +26,7 @@ import { drawTitlePortrait, TITLE_ACCESSORIES, type TitleAccessory } from "./tit
 import "./style.css";
 import "./title-menu.css";
 import "./menu-flow.css";
+import "./menu-polish.css";
 import { drawChopBadge, onPreparationArtReady } from "./preparation-art";
 import { AudioDirector } from "./audio";
 
@@ -182,6 +185,7 @@ function syncSettingsForm() {
 applySettings();
 function setMenuMode(mode: "single" | "multiplayer") {
   sessionMode = mode; sessionStorage.setItem("paws-pours-mode", mode);
+  document.querySelector<HTMLElement>(".intro-menu")!.dataset.mode = mode;
   document.querySelector<HTMLButtonElement>("#save-menu")!.disabled = mode === "multiplayer";
   document.querySelector<HTMLButtonElement>("#solo")!.disabled = mode === "multiplayer";
   document.querySelector<HTMLButtonElement>("#create")!.disabled = mode === "single";
@@ -551,25 +555,23 @@ function emitMovement(player: Player, moving: boolean) {
     moving, sequence: lastSentMoveSequence
   });
 }
-function movePlayer() {
+function movePlayer(elapsedMs: number) {
   const player = localPlayer();
   if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || state.mixing[token]) return;
   if (!move.x && !move.y) {
     if (player.moving) emitMovement(player, false);
     return;
   }
-  const length = Math.hypot(move.x, move.y); const speed = player.role === "Siamese" ? 3.3 : 2.7;
   player.direction = Math.abs(move.x) > Math.abs(move.y) ? (move.x < 0 ? "left" : "right") : (move.y < 0 ? "up" : "down");
-  player.moving = true;
-  const resolved = moveWithCounterCollisions(state.tavern, player, {
-    x: player.x + move.x / length * speed,
-    y: player.y + move.y / length * speed
-  });
+  const resolved = moveWithCounterCollisions(state.tavern, player, movementTarget(player, move, player.role, elapsedMs));
+  const travelling = Math.hypot(resolved.x - player.x, resolved.y - player.y) > .001;
+  const wasMoving = player.moving;
   player.x = resolved.x;
   player.y = resolved.y;
+  player.moving = travelling;
   rememberLocalPrediction(player);
-  if (performance.now() - lastMove > 50) {
-    emitMovement(player, true);
+  if (travelling !== wasMoving || performance.now() - lastMove > 50) {
+    emitMovement(player, travelling);
     lastMove = performance.now();
   }
 }
@@ -609,6 +611,7 @@ function tintedCharacter(fur: string) {
   layer.globalCompositeOperation = "source-over"; layer.globalAlpha = .35; layer.drawImage(catBartenderSpritesheet, 0, 0);
   layer.globalAlpha = 1; characterTintCache.set(fur, result); return result;
 }
+const walkAnimations = new Map<string, WalkAnimation>();
 function drawPlayer(player: Player) {
   const foot = boardPoint(player.x, player.y);
   const point = { x: Math.round(foot.x), y: Math.round(foot.y - 19) };
@@ -617,7 +620,9 @@ function drawPlayer(player: Player) {
   context.fillStyle = "rgba(25,15,30,.36)"; context.beginPath(); context.ellipse(point.x, point.y + 16, 20, 7, 0, 0, Math.PI * 2); context.fill();
   const direction = player.direction ?? "down";
   if (catBartenderSpritesheet.complete && catBartenderSpritesheet.naturalWidth) {
-    const frameIndex = player.moving ? Math.floor(performance.now() / 135) % 4 : 0;
+    const animation = advanceWalkAnimation(walkAnimations.get(player.id), player, performance.now(), state?.pausedAt !== null);
+    walkAnimations.set(player.id, animation);
+    const frameIndex = animation.frame;
     const frame = PLAYER_FRAMES[direction][frameIndex]; const scale = 72 / 298;
     const anchors = PLAYER_ANCHORS[direction][frameIndex];
     const width = frame.width * scale; const height = frame.height * scale;
@@ -731,8 +736,10 @@ function drawHazard() {
   }
   context.restore(); drawText("MOP!", point.x, point.y + 28, "bold 7px system-ui", "#fff3cf");
 }
-function renderBoard() {
-  requestAnimationFrame(renderBoard); movePlayer(); context.imageSmoothingEnabled = false;
+let lastBoardFrame = performance.now();
+function renderBoard(now = performance.now()) {
+  const elapsedMs = now - lastBoardFrame; lastBoardFrame = now;
+  requestAnimationFrame(renderBoard); movePlayer(elapsedMs); context.imageSmoothingEnabled = false;
   if (!state || state.phase === "lobby") return;
   drawTavernFloor(context, state.tavern);
   const player = localPlayer();

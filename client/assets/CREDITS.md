@@ -35,3 +35,9 @@ Sound effects are used under the [Pixabay Content License](https://pixabay.com/s
 `tilemap/floors-depth-v1.png`, `tilemap/walls-depth-v1.png`, and `tilemap/counters-depth-v1.png` were supplied by the project owner from the ChatGPT depth-art generation on October 11, 2026. The original 1254 × 1254 PNGs are preserved; the renderer crops them directly. See `docs/DEPTH_TILES.md` for integration details.
 
 `tilemap/dining-furniture-v2.png` is an original transparent table, chair, booth, and simple rug atlas created with the built-in image generation tool on October 11, 2026. Its final palette follows the original dusty rose, lavender, and cream game colors. Generation and palette-edit prompts are preserved in `docs/DINING_TILE_PROMPTS.txt`.
+
+## Themed furniture and menu typeface
+
+`tilemap/furniture-cozy-v1.png`, `tilemap/furniture-haunted-v1.png`, and `tilemap/furniture-pirate-v1.png` are original furniture atlases created with the built-in image generation tool on October 24, 2026. Each contains straight and end counter pieces, a table, a dining chair, and a bar stool. Prompts are preserved in `docs/THEME_FURNITURE_PROMPTS.txt`.
+
+[Pixelify Sans](https://github.com/google/fonts/tree/main/ofl/pixelifysans), by the Pixelify Sans Project Authors, is bundled for menu controls under the SIL Open Font License 1.1. Its license is included at `fonts/OFL-PixelifySans.txt`.

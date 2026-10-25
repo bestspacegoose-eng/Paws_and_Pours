@@ -121,7 +121,7 @@ test("all counter interaction points are reachable through the designed floor ai
   }
 });
 
-test("every generated counter owns one unique square grid cell", () => {
+test("furniture occupies unique grid cells, with narrow seat footprints and square counters", () => {
   const tavern = makeTavern(913, 4);
   const occupied = new Set<string>();
   for (const station of tavern.stations) {
@@ -132,13 +132,13 @@ test("every generated counter owns one unique square grid cell", () => {
     occupied.add(key);
     assert.deepEqual({ x: station.x, y: station.y }, gridCellCenter(station.gridX, station.gridY));
     const bounds = stationBounds(station);
-    assert.equal(bounds.right - bounds.left, GRID_CELL_SIZE);
+    assert.equal(bounds.right - bounds.left, station.kind === "seat" ? 32 : GRID_CELL_SIZE);
     assert.equal(bounds.bottom - bounds.top, GRID_CELL_SIZE);
   }
   for (const station of tavern.stations) {
     const bounds = stationBounds(station);
     const a = boardPoint(bounds.left, bounds.top), b = boardPoint(bounds.right, bounds.bottom);
-    assert.equal(b.x - a.x, GRID_CELL_SIZE);
+    assert.equal(b.x - a.x, station.kind === "seat" ? 32 : GRID_CELL_SIZE);
     assert.ok(Math.abs(b.y - a.y - GRID_CELL_SIZE * TAVERN_VIEW.depth) < .001);
   }
 });

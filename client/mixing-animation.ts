@@ -14,8 +14,7 @@ export function toolAnimationFrame(tool: "shaker" | "spoon" | "pourer", elapsed:
   return { x: 12, y: Math.round(Math.sin(phase) * 2), angle: -.55 * Math.min(1, elapsed / 250), stream: Math.min(1, elapsed / 250) };
 }
 
-// Pixel-snapped offsets keep the existing block shading crisp while a hit
-// briefly gives the bowl and paws more energy.
+// Pixel-snapped paw impulses acknowledge each beat without moving the vessel.
 export function handMixFrame(now: number, lastHitAt?: number, reducedMotion = false): HandMixFrame {
   if (reducedMotion) return { bowlX: 0, bowlY: 0, liquidX: 0, leftPawX: 0, rightPawX: 0 };
   const hitAge = lastHitAt === undefined ? Infinity : Math.max(0, now - lastHitAt);
@@ -23,10 +22,18 @@ export function handMixFrame(now: number, lastHitAt?: number, reducedMotion = fa
   const phase = now / 115;
   const snap = (value: number) => Math.round(value / 2) * 2;
   return {
-    bowlX: snap(Math.sin(phase) * (6 + 11 * impulse)),
-    bowlY: snap(Math.cos(phase * 1.4) * (2 + 3 * impulse)),
+    bowlX: 0,
+    bowlY: 0,
     liquidX: snap(Math.sin(phase + 1.3) * (5 + 10 * impulse)),
     leftPawX: snap(Math.max(0, Math.sin(phase + .6)) * (5 + 14 * impulse)),
     rightPawX: snap(Math.max(0, -Math.sin(phase + .6)) * (5 + 14 * impulse))
   };
+}
+
+export function spoonMixFrame(elapsed: number, active = true, reducedMotion = false) {
+  if (!active || reducedMotion) return { bowlX: 0, bowlY: 0, spoonX: 12, spoonY: 0, angle: .35, rippleX: 0 };
+  const phase = elapsed / 180;
+  return { bowlX: 0, bowlY: 0, spoonX: Math.round(Math.cos(phase) * 25),
+    spoonY: Math.round(Math.sin(phase) * 6), angle: .35 + Math.sin(phase) * .22,
+    rippleX: Math.round(Math.cos(phase + 1) * 8) };
 }

@@ -10,7 +10,7 @@ import { drawTavernFloor, drawTavernCounter, drawBarGate } from '/client/tavern-
 const load = async src => { const image = new Image(); image.src = src; await image.decode(); return image; };
 const [ingredients, bin, cats] = await Promise.all([
   load('/client/assets/tilemap/ingredients-spritesheet.png'), load('/client/assets/props/scrap-bin.png'), load('/client/assets/tilemap/cat-bartender-spritesheet.png'),
-  ...['dining-furniture-v2','floors-depth-v1','walls-depth-v1','counters-depth-v1','cozy-decor-atlas','mixing-tools-spritesheet','handdrawn-surfaces'].map(name => load(`/client/assets/tilemap/${name}.png`))
+  ...['furniture-cozy-v1','furniture-haunted-v1','furniture-pirate-v1','dining-furniture-v2','floors-depth-v1','walls-depth-v1','cozy-decor-atlas','mixing-tools-spritesheet','handdrawn-surfaces'].map(name => load(`/client/assets/tilemap/${name}.png`))
 ]);
 const context = document.querySelector('canvas').getContext('2d');
 function render() {

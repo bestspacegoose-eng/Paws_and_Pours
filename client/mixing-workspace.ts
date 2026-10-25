@@ -11,6 +11,7 @@ import {
   MIXING_TOOL_FRAME_INDEX, type FrameRect
 } from "./sprite-frames";
 import { drawRecipeDrink, onDrinkArtReady } from "./drink-art";
+import { drawStirringBowl } from "./mixing-bowl";
 import { handMixFrame, toolAnimationFrame } from "./mixing-animation";
 import "./mixing-workspace.css";
 import { drawPreparationArt, onPreparationArtReady } from "./preparation-art";
@@ -440,7 +441,10 @@ export class MixingWorkspace {
     });
 
     if (expected?.kind === "timed-tool") {
-      if (this.toolHolding) {
+      if (expected.tool === "spoon") {
+        const reducedMotion = this.paused || document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        drawStirringBowl(context, this.recipe.color, performance.now() - (this.toolHoldStartedAt ?? performance.now()), this.toolHolding, reducedMotion);
+      } else if (this.toolHolding) {
         const reducedMotion = this.paused || document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const pose = toolAnimationFrame(expected.tool, performance.now() - (this.toolHoldStartedAt ?? performance.now()), reducedMotion);
         context.save();
@@ -497,17 +501,7 @@ export class MixingWorkspace {
       const lastHitAt = this.pendingRhythmHitAt ?? this.rhythmLocalHitAt;
       const reducedMotion = this.paused || document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const pose = handMixFrame(performance.now(), lastHitAt, reducedMotion);
-      context.translate(pose.bowlX, pose.bowlY);
-      context.fillStyle = "rgba(28,16,38,.35)"; context.fillRect(342 - pose.bowlX, 346 - pose.bowlY, 116, 7);
-      context.fillStyle = "#35243a";
-      context.fillRect(351, 278, 98, 7); context.fillRect(339, 285, 122, 27);
-      context.fillRect(347, 312, 106, 20); context.fillRect(359, 332, 82, 14);
-      context.fillStyle = "#b98263";
-      context.fillRect(345, 287, 110, 21); context.fillRect(353, 308, 94, 19); context.fillRect(365, 327, 70, 13);
-      context.fillStyle = "#e1ac78"; context.fillRect(350, 289, 100, 5);
-      context.fillStyle = "#4b3448"; context.fillRect(352, 294, 96, 17);
-      context.fillStyle = this.recipe?.color ?? "#a9dbc4";
-      context.fillRect(357 + pose.liquidX, 296, 86, 13); context.fillRect(364 - pose.liquidX, 309, 72, 5);
+      drawStirringBowl(context, this.recipe?.color ?? "#a9dbc4", performance.now(), true, reducedMotion);
       const left = (this.session?.rhythmHits ?? 0) % 2 === 0;
       context.fillStyle = "#f6d09c";
       context.fillRect(302 + pose.leftPawX, 290, 26, 29);
@@ -517,7 +511,7 @@ export class MixingWorkspace {
       context.fillRect(475 - pose.rightPawX, 296, 11, 10);
       context.fillStyle = "#fff0cd";
       context.fillRect((left ? 308 + pose.leftPawX : 473 - pose.rightPawX), 311, 15, 5);
-      context.fillStyle = "#fff2cf"; context.fillRect(386 + pose.liquidX, 301, 26, 3); context.fillRect(407 - pose.liquidX, 304, 3, 9);
+
     }
     context.restore();
   }

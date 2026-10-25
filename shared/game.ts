@@ -178,6 +178,12 @@ export function makeTavern(seed: number, round = 1): Tavern {
     stations.push(stationAt({ gridX, gridY }, { id, kind: "serve", label: `Table ${index + 1}`, counterVariant: "decorative" }));
     stations.push(stationAt({ gridX, gridY: gridY - 1 }, { id: `${id}-seat`, kind: "seat", label: index < 2 ? "Booth" : "Chair", counterVariant: "decorative" }));
   });
+  // Guest stools face the bar; rows 6–8 remain the wide kitchen/dining passage.
+  for (const gridY of [1, 3, 5, 9]) {
+    stations.push(stationAt({ gridX: 9, gridY }, {
+      id: `bar-stool-${gridY}`, kind: "seat", label: "Bar stool", counterVariant: "decorative"
+    }));
+  }
   const occupied = new Set(stations.map((station) => `${station.gridX}:${station.gridY}`));
   for (let y = 0; y < GRID_ROWS; y++) for (let x = 0; x < GRID_COLUMNS; x++) {
     if (x === 0 && (y === 0 || y === 10)) continue;
@@ -195,7 +201,10 @@ export function makeTavern(seed: number, round = 1): Tavern {
 
 export function stationBounds(station: Station) {
   const half = GRID_CELL_SIZE / 2;
-  return { left: station.x - half, right: station.x + half, top: station.y - half, bottom: station.y + half };
+  // Chair and stool silhouettes are narrower than a countertop. Keep their feet
+  // solid without an invisible full-cell barrier extending into the dining aisle.
+  const halfWidth = station.kind === "seat" ? 16 : half;
+  return { left: station.x - halfWidth, right: station.x + halfWidth, top: station.y - half, bottom: station.y + half };
 }
 
 export function pointCollidesWithCounters(tavern: Tavern, point: Vec, radius = PLAYER_COLLISION_RADIUS) {

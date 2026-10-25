@@ -1,0 +1,32 @@
+@font-face{font-family:'Pixelify Sans';src:url('./assets/fonts/PixelifySans.ttf') format('truetype');font-weight:400 700;font-style:normal;font-display:swap}
+:root{--font-game:'Pixelify Sans','DM Mono',monospace}
+.shell :is(.intro-menu,.bartender-selection,.save-dialog,.pause-menu,.settings-panel) button,
+.shell :is(.intro-menu,.bartender-selection,.save-dialog,.pause-menu,.settings-panel) :is(input,select,output),
+.mixing-workspace button{font-family:var(--font-game);letter-spacing:.025em}
+.shell .intro-menu .title-actions{padding:20px;background:#302238ed;border:2px solid #ad90a8;border-radius:5px;box-shadow:0 5px 0 #231829;text-shadow:none}
+.shell .intro-menu .title-section-heading h2{font:600 27px/1.2 var(--font-game);text-shadow:none;color:#f4dfc9;margin-bottom:15px}
+.shell .intro-menu .title-actions button{font:500 21px/1.15 var(--font-game);letter-spacing:.02em;text-shadow:none;border:1px solid #a18aab;border-radius:3px;background:#4d3a59;color:#f3e2cf;box-shadow:0 3px 0 #211727;min-height:46px;padding:10px 12px;transition:background .12s,color .12s}
+.shell .intro-menu .title-actions .mode-switch button{min-height:38px;font-size:18px;box-shadow:none;background:#302238;color:#cbb8cc;border-color:#77617f}
+.shell .intro-menu .title-actions .mode-switch button[aria-pressed=true]{background:#b5a0be;color:#2e2236;border-color:#d5bed9;text-decoration:none}
+.shell .intro-menu .title-actions .actions>.primary{background:#d8bdad;border-color:#eddbc2;color:#35283e}
+.shell .intro-menu .title-actions .menu-utilities button{font-size:18px;box-shadow:none;background:#3a2b43}
+.shell .intro-menu .title-actions button:not(:disabled):hover{background:#665074;color:#fff1dc;text-decoration:none}
+.shell .intro-menu .title-actions .actions>.primary:not(:disabled):hover{background:#ead3bd;color:#35283e}
+.shell .intro-menu .title-actions button:not(:disabled):active{transform:translateY(2px);box-shadow:none}
+.shell .intro-menu .title-actions button:disabled{opacity:.45;color:#cbb8cc;box-shadow:none}
+.shell .intro-menu .join{grid-template-columns:minmax(0,1fr) 115px;gap:8px}
+.shell .intro-menu .join input{height:46px;font:500 18px var(--font-game);text-shadow:none;background:#271d2f;border:1px solid #8e759a;border-radius:3px;padding:8px 10px}
+.shell .intro-menu .join button{font-size:18px}
+.shell .intro-menu .menu-note,.shell .intro-menu #menu-status{font:14px/1.4 var(--font-game);text-shadow:none;color:#d6c3d6}
+.shell .intro-menu .title-console{width:min(380px,calc(100% - 32px));padding-top:clamp(150px,26vh,260px)}
+.shell .intro-menu[data-mode=single] :is(#create,.join),
+.shell .intro-menu[data-mode=multiplayer] :is(#solo,#save-menu){display:none}
+.shell :is(.bartender-selection,.save-dialog,.pause-menu,.settings-panel) button{font-weight:500;border-radius:3px;text-shadow:none}
+.shell .selection-footer button,.shell .pause-actions button,.shell .save-dialog>button{font-size:20px;line-height:1.2}
+.shell .game:not(.hidden) .game-header button{font:500 18px/1.2 var(--font-game);border-radius:3px}
+.shell .cat-presets button{font-size:15px}
+.shell .bartender-selection .accessory-controls :is(button,output){font-family:var(--font-game);font-size:15px}
+.shell .pause-menu h2,.shell .save-dialog h2{font-family:var(--font-game);font-weight:600}
+.shell button:focus-visible{outline:3px solid #f0d8b4;outline-offset:3px}
+@media(max-width:620px){.shell .intro-menu .title-console{margin:0 auto;padding-top:24vh;padding-bottom:22px}.shell .intro-menu .title-actions{padding:15px}.shell .intro-menu .title-actions button{font-size:20px}.shell .selection-footer button{font-size:18px}}
+@media(prefers-reduced-motion:reduce){.shell .intro-menu .title-actions button{transition:none}}
