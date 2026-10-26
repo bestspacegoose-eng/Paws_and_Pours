@@ -7,10 +7,11 @@ const atlas = new Image(); atlas.src = atlasUrl;
 const rugFrame = { x: 50, y: 888, width: 358, height: 146 };
 const ready = () => atlas.complete && atlas.naturalWidth > 0;
 
-export function drawDiningTile(context: CanvasRenderingContext2D, station: Station, x: number, bottom: number, theme: Theme) {
+export function drawDiningTile(context: CanvasRenderingContext2D, station: Station, x: number, bottom: number, theme: Theme, from = 0) {
   const seat = station.kind === "seat";
   const art = furnitureArt(theme);
   if (!art) {
+    if (from) return;
     context.fillStyle = seat ? "#b08fa9" : "#d1b6aa";
     context.fillRect(x - 25, bottom - 43, 50, 40);
     context.fillStyle = seat ? "#ddbac9" : "#ecd5bd";
@@ -19,9 +20,9 @@ export function drawDiningTile(context: CanvasRenderingContext2D, station: Stati
   }
   const frame = art.layout[seat ? station.label === "Bar stool" ? "stool" : "chair" : "table"];
   const scale = Math.min(54 / frame.width, (seat ? 46 : 43) / frame.height);
-  const width = Math.round(frame.width * scale), height = Math.round(frame.height * scale);
-  context.drawImage(art.image, frame.x, frame.y, frame.width, frame.height,
-    Math.round(x - width / 2), Math.round(bottom - height), width, height);
+  const width = Math.round(frame.width * scale) * (station.widthCells ?? 1), height = Math.round(frame.height * scale);
+  context.drawImage(art.image, frame.x, frame.y + frame.height * from, frame.width, frame.height * (1 - from),
+    Math.round(x - width / 2), Math.round(bottom - height) + height * from, width, height * (1 - from));
 }
 
 export function drawDiningRug(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {

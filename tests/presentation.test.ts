@@ -10,16 +10,16 @@ test("walking covers the same distance at 30, 60, and 144Hz", () => {
   for (const fps of [30, 60, 144]) {
     let position = { x: 0, y: 0 };
     for (let frame = 0; frame < fps; frame++) position = movementTarget(position, { x: 1, y: 0 }, "Tabby", 1000 / fps);
-    assert.ok(Math.abs(position.x - 112) < .0001);
+    assert.ok(Math.abs(position.x - 224) < .0001);
     assert.equal(position.y, 0);
   }
 });
 
 test("diagonal walking is normalized, Siamese retains its bonus, and tab gaps cannot teleport", () => {
   const diagonal = movementTarget({ x: 0, y: 0 }, { x: 1, y: 1 }, "Tabby", 50);
-  assert.ok(Math.abs(Math.hypot(diagonal.x, diagonal.y) - 5.6) < .0001);
-  assert.ok(playerMoveSpeed("Siamese") > playerMoveSpeed("Tabby"));
-  assert.deepEqual(movementTarget({ x: 0, y: 0 }, { x: 1, y: 0 }, "Tabby", 5000), { x: 5.6, y: 0 });
+  assert.ok(Math.abs(Math.hypot(diagonal.x, diagonal.y) - 11.2) < .0001);
+  assert.equal(playerMoveSpeed("Siamese"), 272);
+  assert.deepEqual(movementTarget({ x: 0, y: 0 }, { x: 1, y: 0 }, "Tabby", 5000), { x: 11.2, y: 0 });
 });
 
 test("walk frames follow travelled distance and hold between remote snapshots", () => {

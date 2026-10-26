@@ -1,7 +1,7 @@
 import type { CatRole, Vec } from "./game.js";
 
 // World pixels per second, independent of the display refresh rate.
-export function playerMoveSpeed(role: CatRole) { return role === "Siamese" ? 136 : 112; }
+export function playerMoveSpeed(role: CatRole) { return role === "Siamese" ? 272 : 224; }
 
 export function movementTarget(position: Vec, input: Vec, role: CatRole, elapsedMs: number): Vec {
   const length = Math.hypot(input.x, input.y);

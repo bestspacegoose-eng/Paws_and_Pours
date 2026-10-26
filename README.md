@@ -47,12 +47,14 @@ npm test
 - Finished drinks can be placed on counters for teammates, preserving their recipe and preparation quality. Orders and ingredient illustrations stay in a dedicated top strip.
 - Two-step menu: the exterior tavern title screen contains solo/multiplayer controls, local saves, and audio/display/brightness settings. The interior bartender screen shows one customizable cat in solo or four live player seats in multiplayer. Local saves are disabled in multiplayer; at least two connected, ready players are required before the host starts. Editing a multiplayer cat returns that player to Choosing.
 - Load / create local save opens three device-local slots, followed by bartender selection. Saves restore the shift paused, including orders, hands, counter items, and preparation progress. Legacy profiles remain available but cannot reconstruct previously unsaved runs.
-- Separate Cozy, Haunted, and Pirate furniture atlases, four solid stools facing the service bar, simple lavender rugs, and grid-aligned counters with narrow chair collision bounds.
-- Slower movement measured per second, with a distance-matched walk cycle and an idle pose when blocked. Timed spoon and rhythm bowl recipes stir the spoon while the vessel stays fixed.
+- Separate Cozy, Haunted, and Pirate furniture atlases, four usable bar stools, two guest chairs per dining table, simple lavender rugs, and counters with narrow chair collision bounds. Ingredients stay in the kitchen, clear of guest service.
+- Movement at 224 world pixels per second (272 for Siamese), with a distance-matched walk cycle and an idle pose when blocked. Timed spoon and rhythm bowl recipes stir the spoon while the vessel stays fixed.
 - Bundled pixel-font menu controls with clear Solo/Multiplayer actions, world-space hazards, seven illustrated drinks, and discard support for ingredients or completed drinks.
 - Responsive desktop/smaller-screen interface with no art-asset download required.
 
 ## Controls
+
+On phones and tablets, drag the movement pad, tap **Interact** at a station, and use **Handoff** to place or pick up a finished drink. **Map** shows the full tavern; **Follow** returns to the following camera. Touch controls support portrait and landscape.
 
 - `WASD` or arrow keys: move your cat.
 - `E`: interact at a station.
@@ -91,12 +93,19 @@ For the real two-client server smoke test, start the built server in one termina
 ```bash
 npm start
 npm run test:multiplayer
+npm run test:seating
 ```
 
 The smoke test creates two Socket.IO clients and verifies the shared pause, gathering, an independently controlled player during mixing, ordered recipe actions, server-owned timing and quality, drink completion, and serving the matching live order.
+
+The seating smoke test verifies paired table guests, individual-chair delivery, bar service, wrong-guest rejection, duplicate-recipe priority, and natural arrivals at a shared table and bar. See [`docs/SEATING.md`](docs/SEATING.md) for the layout and review captures.
 
 See [`docs/FLOOR_PLAN.md`](docs/FLOOR_PLAN.md) for the tavern layout, [`docs/TESTING.md`](docs/TESTING.md) for manual browser cases, and [`docs/EXPANSION_PLAN.md`](docs/EXPANSION_PLAN.md) for the architecture, full sprite inventory, risks, larger roadmap, and future UI plan.
 
 ## Future work
 
-This vertical slice still defers persistent accounts, mid-shift snapshot restoration, controller and mobile-touch input, playable sound assets, spectator handling, rate limiting, and further preparation verbs such as heating and garnishing. The data and networking boundaries are organized to support those additions without replacing the core loop.
+This vertical slice still defers persistent accounts, controller input, spectator handling, rate limiting, and further preparation verbs such as heating and garnishing. The data and networking boundaries are organized to support those additions without replacing the core loop.
+
+See [`docs/MOBILE_AND_MIXING.md`](docs/MOBILE_AND_MIXING.md) for mobile controls, mixing alignment, chosen fur colors, and verification captures.
+
+See [`docs/MINIGAME_ART.md`](docs/MINIGAME_ART.md) for the new pixel-art preparation tools, animation layers, generation prompt, and desktop/mobile review captures.

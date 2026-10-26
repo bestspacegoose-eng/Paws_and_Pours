@@ -14,7 +14,8 @@
     "build": "vite build && tsc -p tsconfig.server.json",
     "start": "node dist-server/server/index.js",
     "test": "tsx --test tests/*.test.ts",
-    "test:multiplayer": "tsx scripts/smoke-multiplayer.ts"
+    "test:multiplayer": "tsx scripts/smoke-multiplayer.ts",
+    "test:seating": "tsx scripts/smoke-seating.ts"
   },
   "dependencies": {
     "express": "^5.1.0",

@@ -35,9 +35,13 @@ export function restoreSoloSnapshot(input: unknown, code: string, player: Player
     const assigned = new Set<string>();
     for (const order of saved.orders) {
       if (!validRecipe(order.recipeId) || !finite(order.patience, 0, 2000) || !finite(order.maxPatience, 1, 2000) ||
-          typeof order.customer !== "string" || !state.tavern.stations.some((station) => station.id === order.tableId && station.kind === "serve") || assigned.has(order.tableId!)) return;
-      assigned.add(order.tableId!);
-      state.orders.push({ id: `restored-${state.orders.length}`, tableId: order.tableId, recipeId: order.recipeId,
+          typeof order.customer !== "string" || !state.tavern.stations.some((station) => station.id === order.tableId && station.kind === "serve")) return;
+      // Old saves had one order per table and no seat ID. Assign a real free seat.
+      const seat = state.tavern.stations.find(station => station.kind === "seat" && station.tableId === order.tableId &&
+        (order.seatId === undefined || station.id === order.seatId) && !assigned.has(station.id));
+      if (!seat) return;
+      assigned.add(seat.id);
+      state.orders.push({ id: `restored-${state.orders.length}`, tableId: order.tableId, seatId: seat.id, recipeId: order.recipeId,
         customer: order.customer.slice(0, 60), patience: order.patience, maxPatience: order.maxPatience });
     }
     for (const station of state.tavern.stations) {

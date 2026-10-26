@@ -9,7 +9,7 @@ import {
   applyMissedOrderPenalty, createMixingSession, expectedMixingStep, type CatRole, type FacingDirection, type GameState,
   initialState, makeOrder, makeTavern, MIXING_MAX_MISTAKES, mixingQuality,
   moveWithCounterCollisions, mulberry32, pauseShift, recipeById, recipeForIngredients, resumeShift, seededUpgrades,
-  nearbyStation, transferCounterDrink, PLAYER_SPAWNS, addMixingIngredient, chopTuna,
+  nearbyStation, transferCounterDrink, PLAYER_SPAWNS, addMixingIngredient, chopTuna, nextCustomerSeat, servingOrderIndex,
   rhythmTimingAccepted, rhythmTimingQuality, shiftDurationForRound, toolTimingAccepted, toolTimingQuality,
   type Hazard, type MixingSession, type MixingTool, type Player, type RhythmAction, type Station
 } from "../shared/game.js";
@@ -113,13 +113,13 @@ function startShift(state: GameState) {
   spawnOrder(state);
 }
 function spawnOrder(state: GameState) {
-  const table = state.tavern.stations.find((station) => station.kind === "serve" && !state.orders.some((order) => order.tableId === station.id));
-  if (!table) return;
   const counter = (orderCounters.get(state.code) ?? 0) + 1;
+  const seat = nextCustomerSeat(state.tavern, state.orders, counter - 1);
+  if (!seat) return;
   orderCounters.set(state.code, counter);
   const elapsed = shiftDurationForRound(state.round) - state.shiftSeconds;
   state.orders.push({ ...makeOrder(`order-${counter}`, mulberry32((seeds.get(state.code) ?? 1) + counter * 31),
-    state.round, elapsed, state.orderPatienceBonus), tableId: table.id });
+    state.round, elapsed, state.orderPatienceBonus), tableId: seat.tableId, seatId: seat.id });
 }
 function loseOrders(state: GameState, count: number, reason: string) {
   if (!count) return;
@@ -299,11 +299,11 @@ io.on("connection", (socket) => {
       const result = chopTuna(player, nearby);
       setMessage(state, { chopped: "Tuna chopped! Press E to pick up the pieces.", "picked-up": "Picked up chopped tuna.", full: "Your paws are full.", "needs-tuna": "Bring raw tuna here to chop it." }[result]);
     }
-    if (nearby.kind === "serve") {
+    if (nearby.kind === "serve" || nearby.kind === "seat") {
       if (!player.drink) setMessage(state, "No drink in paw. Mix something first!");
       else {
-        const index = state.orders.findIndex((order) => order.tableId === nearby.id && order.recipeId === player.drink);
-        if (index < 0) setMessage(state, "This table did not order that drink. Check the table number on the ticket.");
+        const index = servingOrderIndex(state.tavern, state.orders, nearby, player.drink);
+        if (index < 0) setMessage(state, "This table did not order that drink. Check the table or bar number on the ticket.");
         else {
           const [order] = state.orders.splice(index, 1);
           const patienceQuality = order.patience / order.maxPatience;
@@ -316,7 +316,6 @@ io.on("connection", (socket) => {
         }
       }
     }
-    if (nearby.kind === "seat") setMessage(state, "Walk around to the front or side of the table to serve this guest.");
     if (nearby.kind === "trash") {
       if (player.drink) {
         const drink = recipeById(player.drink).name;

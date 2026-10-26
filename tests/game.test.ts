@@ -121,24 +121,27 @@ test("all counter interaction points are reachable through the designed floor ai
   }
 });
 
-test("furniture occupies unique grid cells, with narrow seat footprints and square counters", () => {
+test("furniture occupies unique footprints, with narrow seats and two-cell dining tables", () => {
   const tavern = makeTavern(913, 4);
   const occupied = new Set<string>();
   for (const station of tavern.stations) {
     assert.ok(station.gridX >= 0 && station.gridX < GRID_COLUMNS);
     assert.ok(station.gridY >= 0 && station.gridY < GRID_ROWS);
-    const key = `${station.gridX}:${station.gridY}`;
-    assert.equal(occupied.has(key), false, `duplicate station cell ${key}`);
-    occupied.add(key);
+    for (let offset = 0; offset < (station.widthCells ?? 1); offset++) {
+      const key = `${station.gridX + offset}:${station.gridY}`;
+      assert.ok(station.gridX + offset < GRID_COLUMNS);
+      assert.equal(occupied.has(key), false, `duplicate station cell ${key}`);
+      occupied.add(key);
+    }
     assert.deepEqual({ x: station.x, y: station.y }, gridCellCenter(station.gridX, station.gridY));
     const bounds = stationBounds(station);
-    assert.equal(bounds.right - bounds.left, station.kind === "seat" ? 32 : GRID_CELL_SIZE);
+    assert.equal(bounds.right - bounds.left, station.kind === "seat" ? 32 : GRID_CELL_SIZE * (station.widthCells ?? 1));
     assert.equal(bounds.bottom - bounds.top, GRID_CELL_SIZE);
   }
   for (const station of tavern.stations) {
     const bounds = stationBounds(station);
     const a = boardPoint(bounds.left, bounds.top), b = boardPoint(bounds.right, bounds.bottom);
-    assert.equal(b.x - a.x, station.kind === "seat" ? 32 : GRID_CELL_SIZE);
+    assert.equal(b.x - a.x, station.kind === "seat" ? 32 : GRID_CELL_SIZE * (station.widthCells ?? 1));
     assert.ok(Math.abs(b.y - a.y - GRID_CELL_SIZE * TAVERN_VIEW.depth) < .001);
   }
 });
@@ -146,12 +149,12 @@ test("furniture occupies unique grid cells, with narrow seat footprints and squa
 test("dining destinations have solid seats and a wide open kitchen passage", () => {
   const tavern = makeTavern(913);
   const tables = tavern.stations.filter((station) => station.kind === "serve");
-  assert.equal(tables.length, 4);
+  assert.equal(tables.length, 8);
   for (const table of tables) {
-    assert.ok(table.gridX > 8);
-    const seat = tavern.stations.find((station) => station.id === `${table.id}-seat`)!;
-    assert.equal(seat.kind, "seat");
-    assert.equal(pointCollidesWithCounters(tavern, seat), true);
+    assert.ok(table.gridX >= 8);
+    const seats = tavern.stations.filter((station) => station.kind === "seat" && station.tableId === table.id);
+    assert.equal(seats.length, table.serviceStyle === "bar" ? 1 : 2);
+    for (const seat of seats) assert.equal(pointCollidesWithCounters(tavern, seat), true);
     assert.equal(pointCollidesWithCounters(tavern, table), true);
   }
   for (const row of [6, 7, 8]) {
@@ -163,7 +166,7 @@ test("dining destinations have solid seats and a wide open kitchen passage", () 
 
 test("subpixel movement keeps an ingredient station selected at a counter junction", () => {
   const tavern = makeTavern(1);
-  const point = gridCellCenter(7, 3);
+  const point = { x: gridCellCenter(1, 1).x, y: GRID_CELL_SIZE * 2 };
   for (const offset of [-.001, 0, .001]) {
     assert.equal(nearbyStation(tavern, { x: point.x + offset, y: point.y + offset })?.id, "ingredient-lime");
   }

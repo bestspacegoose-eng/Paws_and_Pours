@@ -18,7 +18,7 @@
 .shell .intro-menu .join input{height:46px;font:500 18px var(--font-game);text-shadow:none;background:#271d2f;border:1px solid #8e759a;border-radius:3px;padding:8px 10px}
 .shell .intro-menu .join button{font-size:18px}
 .shell .intro-menu .menu-note,.shell .intro-menu #menu-status{font:14px/1.4 var(--font-game);text-shadow:none;color:#d6c3d6}
-.shell .intro-menu .title-console{width:min(380px,calc(100% - 32px));padding-top:clamp(150px,26vh,260px)}
+.shell .intro-menu .title-console{width:min(380px,calc(100% - 32px));padding-top:calc(clamp(150px,26vh,260px) + 28px)}
 .shell .intro-menu[data-mode=single] :is(#create,.join),
 .shell .intro-menu[data-mode=multiplayer] :is(#solo,#save-menu){display:none}
 .shell :is(.bartender-selection,.save-dialog,.pause-menu,.settings-panel) button{font-weight:500;border-radius:3px;text-shadow:none}
@@ -28,5 +28,5 @@
 .shell .bartender-selection .accessory-controls :is(button,output){font-family:var(--font-game);font-size:15px}
 .shell .pause-menu h2,.shell .save-dialog h2{font-family:var(--font-game);font-weight:600}
 .shell button:focus-visible{outline:3px solid #f0d8b4;outline-offset:3px}
-@media(max-width:620px){.shell .intro-menu .title-console{margin:0 auto;padding-top:24vh;padding-bottom:22px}.shell .intro-menu .title-actions{padding:15px}.shell .intro-menu .title-actions button{font-size:20px}.shell .selection-footer button{font-size:18px}}
+@media(max-width:620px){.shell .intro-menu .title-console{margin:0 auto;padding-top:calc(24vh + 20px);padding-bottom:22px}.shell .intro-menu .title-actions{padding:15px}.shell .intro-menu .title-actions button{font-size:20px}.shell .selection-footer button{font-size:18px}}
 @media(prefers-reduced-motion:reduce){.shell .intro-menu .title-actions button{transition:none}}

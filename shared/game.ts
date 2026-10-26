@@ -11,7 +11,8 @@ export interface Vec { x: number; y: number }
 export interface GridCell { gridX: number; gridY: number }
 export interface PreparedDrink { recipeId: string; quality: number }
 export interface Station extends Vec, GridCell {
-  id: string; kind: StationKind; label: string; counterVariant: CounterVariant; ingredient?: string; drink?: PreparedDrink; preparedIngredient?: string
+  id: string; kind: StationKind; label: string; counterVariant: CounterVariant; ingredient?: string; drink?: PreparedDrink; preparedIngredient?: string;
+  tableId?: string; seatNumber?: number; facing?: FacingDirection; widthCells?: number; serviceStyle?: "bar"
 }
 export interface TimedToolAction {
   kind: "timed-tool"; tool: MixingTool; targetMs: number; toleranceMs: number
@@ -31,7 +32,7 @@ export interface MixingSession {
   usedIngredients: string[]; toolStartedAt?: number; rhythmHits: number;
   rhythmLastHitAt?: number; rhythmQualityPoints: number; feedback: string
 }
-export interface Order { id: string; recipeId: string; customer: string; patience: number; maxPatience: number; tableId?: string }
+export interface Order { id: string; recipeId: string; customer: string; patience: number; maxPatience: number; tableId?: string; seatId?: string }
 export interface Hazard extends Vec { id: string; kind: HazardKind; message: string }
 export interface Player {
   id: string; name: string; role: CatRole; fur: string; accessory: string;
@@ -63,9 +64,9 @@ export const MIXING_DURATION_MS = 45_000;
 export const MIXING_MAX_MISTAKES = 3;
 export const PANTRY_FLOOR_PLAN: Record<string, GridCell> = {
   catnip: { gridX: 1, gridY: 0 }, stardust: { gridX: 3, gridY: 0 },
-  kelp: { gridX: 5, gridY: 0 }, moonmilk: { gridX: 7, gridY: 0 }, lime: { gridX: 8, gridY: 3 },
+  kelp: { gridX: 5, gridY: 0 }, moonmilk: { gridX: 6, gridY: 0 }, lime: { gridX: 0, gridY: 2 },
   tuna: { gridX: 0, gridY: 3 }, fizz: { gridX: 0, gridY: 7 },
-  tonic: { gridX: 8, gridY: 9 }, cream: { gridX: 8, gridY: 5 }
+  tonic: { gridX: 0, gridY: 8 }, cream: { gridX: 0, gridY: 5 }
 };
 
 export const RECIPES: Recipe[] = [
@@ -172,16 +173,23 @@ export function makeTavern(seed: number, round = 1): Tavern {
     stationAt({ gridX: 1, gridY: 10 }, { id: "mop", kind: "mop", label: "Clean", counterVariant: "damaged" }),
     stationAt({ gridX: 3, gridY: 10 }, { id: "trash", kind: "trash", label: "Discard", counterVariant: "damaged" })
   ];
-  // A seat and its table are solid cells; the surrounding dining aisles remain open.
+  // Each long table has two independent guest seats, both facing its surface.
   [[11, 2], [14, 2], [11, 7], [14, 7]].forEach(([gridX, gridY], index) => {
     const id = `table-${index + 1}`;
-    stations.push(stationAt({ gridX, gridY }, { id, kind: "serve", label: `Table ${index + 1}`, counterVariant: "decorative" }));
-    stations.push(stationAt({ gridX, gridY: gridY - 1 }, { id: `${id}-seat`, kind: "seat", label: index < 2 ? "Booth" : "Chair", counterVariant: "decorative" }));
+    stations.push(stationAt({ gridX, gridY }, { id, kind: "serve", label: `Table ${index + 1}`, widthCells: 2, counterVariant: "decorative" }));
+    for (let seat = 0; seat < 2; seat++) stations.push(stationAt({ gridX: gridX + seat, gridY: gridY - 1 }, {
+      id: `${id}-seat${seat ? "-2" : ""}`, kind: "seat", tableId: id, seatNumber: seat + 1, facing: "down",
+      label: `${index < 2 ? "Booth" : "Chair"} ${index + 1}${seat ? "B" : "A"}`, counterVariant: "decorative"
+    }));
   });
   // Guest stools face the bar; rows 6–8 remain the wide kitchen/dining passage.
-  for (const gridY of [1, 3, 5, 9]) {
+  for (const [index, gridY] of [1, 3, 5, 9].entries()) {
+    const tableId = `bar-${index + 1}`;
+    stations.push(stationAt({ gridX: 8, gridY }, {
+      id: tableId, kind: "serve", serviceStyle: "bar", label: `Bar ${index + 1}`, counterVariant: "standard"
+    }));
     stations.push(stationAt({ gridX: 9, gridY }, {
-      id: `bar-stool-${gridY}`, kind: "seat", label: "Bar stool", counterVariant: "decorative"
+      id: `bar-stool-${gridY}`, kind: "seat", tableId, seatNumber: 1, facing: "left", label: "Bar stool", counterVariant: "decorative"
     }));
   }
   const occupied = new Set(stations.map((station) => `${station.gridX}:${station.gridY}`));
@@ -204,7 +212,48 @@ export function stationBounds(station: Station) {
   // Chair and stool silhouettes are narrower than a countertop. Keep their feet
   // solid without an invisible full-cell barrier extending into the dining aisle.
   const halfWidth = station.kind === "seat" ? 16 : half;
-  return { left: station.x - halfWidth, right: station.x + halfWidth, top: station.y - half, bottom: station.y + half };
+  return { left: station.x - halfWidth, right: station.x + halfWidth + ((station.widthCells ?? 1) - 1) * GRID_CELL_SIZE,
+    top: station.y - half, bottom: station.y + half };
+}
+
+export function seatForOrder(tavern: Tavern, order: Order): Station | undefined {
+  return tavern.stations.find(station => station.kind === "seat" && station.tableId === order.tableId &&
+    (order.seatId ? station.id === order.seatId : station.seatNumber === 1));
+}
+
+// Interleave table pairs with the bar so both kinds of guest appear early in a shift.
+export function nextCustomerSeat(tavern: Tavern, orders: Order[], arrivalIndex = 0): Station | undefined {
+  const seats = tavern.stations.filter(station => station.kind === "seat" && station.tableId);
+  const bars = seats.filter(station => station.label === "Bar stool");
+  const tables = tavern.stations.filter(station => station.kind === "serve" && station.serviceStyle !== "bar");
+  const rotation = tables.flatMap((table, index) => {
+    const pair = seats.filter(seat => seat.tableId === table.id);
+    return [pair[0], bars[index], ...pair.slice(1)].filter((seat): seat is Station => Boolean(seat));
+  });
+  const occupied = new Set(orders.map(order => seatForOrder(tavern, order)?.id));
+  for (let offset = 0; offset < rotation.length; offset++) {
+    const seat = rotation[(arrivalIndex + offset) % rotation.length];
+    if (!occupied.has(seat.id)) return seat;
+  }
+}
+
+export function orderDestinationLabel(order: Order) {
+  if (!order.tableId) return "Guest";
+  if (order.tableId.startsWith("bar-")) return order.tableId.replace("bar-", "Bar ");
+  const table = order.tableId.replace("table-", "Table ");
+  return order.seatId ? `${table} · ${order.seatId.endsWith("-2") ? "B" : "A"}` : table;
+}
+
+export function servingOrderIndex(tavern: Tavern, orders: Order[], station: Station, recipeId: string) {
+  const tableId = station.kind === "seat" ? station.tableId : station.kind === "serve" ? station.id : undefined;
+  if (!tableId) return -1;
+  let result = -1;
+  orders.forEach((order, index) => {
+    if (order.tableId === tableId && order.recipeId === recipeId &&
+        (station.kind !== "seat" || seatForOrder(tavern, order)?.id === station.id) &&
+        (result < 0 || order.patience < orders[result].patience)) result = index;
+  });
+  return result;
 }
 
 export function pointCollidesWithCounters(tavern: Tavern, point: Vec, radius = PLAYER_COLLISION_RADIUS) {
@@ -221,18 +270,22 @@ export function floorBoundsAtY(_y: number) {
 }
 
 export function nearbyStation(tavern: Tavern, player: Vec): Station | undefined {
-  return tavern.stations.filter((station) => Math.hypot(station.x - player.x, station.y - player.y) < INTERACTION_REACH)
+  const target = (station: Station) => ({ x: Math.max(station.x,
+    Math.min(station.x + ((station.widthCells ?? 1) - 1) * GRID_CELL_SIZE, player.x)), y: station.y });
+  const distance = (station: Station) => { const point = target(station); return Math.hypot(point.x - player.x, point.y - player.y); };
+  return tavern.stations.filter((station) => distance(station) < INTERACTION_REACH)
     .sort((a, b) => {
-      const delta = Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y);
+      const delta = distance(a) - distance(b);
       // Movement produces fractional coordinates. A subpixel tie should not
       // flicker from an ingredient station to the adjacent empty countertop.
       if (Math.abs(delta) > .5) return delta;
       return Number(a.kind === "counter") - Number(b.kind === "counter") || a.id.localeCompare(b.id);
     })
     .find((station) => {
+      const point = target(station);
       // A surface behind another counter cannot be reached through its neighbor.
       for (let t = .1; t < 1; t += .1) {
-        const x = player.x + (station.x - player.x) * t, y = player.y + (station.y - player.y) * t;
+        const x = player.x + (point.x - player.x) * t, y = player.y + (point.y - player.y) * t;
         if (tavern.stations.some((other) => {
           if (other === station) return false;
           const b = stationBounds(other);

@@ -1,4 +1,4 @@
-import { recipeById, type Order } from "../shared/game";
+import { recipeById, orderDestinationLabel, type Order } from "../shared/game";
 import { drawRecipeDrink, onDrinkArtReady } from "./drink-art";
 import { drawIngredientIcon } from "./tavern-renderer";
 import { drawChopBadge, onPreparationArtReady } from "./preparation-art";
@@ -11,14 +11,14 @@ export class OrderHud {
     onPreparationArtReady(() => { this.signature = ""; });
   }
   render(orders: Order[]) {
-    const signature = orders.map((order) => `${order.id}:${order.recipeId}`).join("|");
+    const signature = orders.map((order) => `${order.id}:${order.recipeId}:${order.tableId}:${order.seatId}`).join("|");
     if (signature !== this.signature || !this.root.childElementCount) {
       this.signature = signature;
       this.root.replaceChildren();
       for (const order of orders) {
         const recipe = recipeById(order.recipeId);
         const card = document.createElement("article"); card.className = "order-ticket";
-        const title = document.createElement("strong"); title.textContent = `${order.tableId?.replace("table-", "Table ") ?? "Guest"} · ${recipe.name}`;
+        const title = document.createElement("strong"); title.textContent = `${orderDestinationLabel(order)} · ${recipe.name}`;
         card.title = order.customer;
         const art = document.createElement("canvas"); art.width = 216; art.height = 52;
         art.setAttribute("role", "img"); art.setAttribute("aria-label", `${recipe.name}: ${recipe.ingredients.join(", ")}`);

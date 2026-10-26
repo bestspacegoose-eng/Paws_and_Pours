@@ -5,7 +5,7 @@
 <label><input id="customers" type="checkbox"> Show customers and orders</label>
 <canvas width="1088" height="712"></canvas>
 <script type="module">
-import { makeTavern, stationBounds, RECIPES } from '/shared/game.ts';
+import { makeTavern, stationBounds, nextCustomerSeat, RECIPES } from '/shared/game.ts';
 import { drawTavernFloor, drawTavernCounter, drawBarGate } from '/client/tavern-renderer.ts';
 const load = async src => { const image = new Image(); image.src = src; await image.decode(); return image; };
 const [ingredients, bin, cats] = await Promise.all([
@@ -15,10 +15,12 @@ const [ingredients, bin, cats] = await Promise.all([
 const context = document.querySelector('canvas').getContext('2d');
 function render() {
   const tavern = makeTavern(42); tavern.theme = document.querySelector('select').value;
-  const orders = document.querySelector('#customers').checked ? RECIPES.slice(0,4).map((recipe,index) => ({
-    id: `preview-${index}`, recipeId: recipe.id, tableId: `table-${index+1}`, customer: 'Guest',
-    patience: index === 3 ? 20 : 80, maxPatience: 100
-  })) : [];
+  const orders = [];
+  if (document.querySelector('#customers').checked) for (let index = 0; index < 12; index++) {
+    const seat = nextCustomerSeat(tavern, orders, index);
+    orders.push({ id: `preview-${index}`, recipeId: RECIPES[index % RECIPES.length].id,
+      tableId: seat.tableId, seatId: seat.id, customer: 'Guest', patience: index === 3 ? 20 : 80, maxPatience: 100 });
+  }
   context.imageSmoothingEnabled = false;
   drawTavernFloor(context, tavern);
   tavern.stations.sort((a,b) => stationBounds(a).bottom - stationBounds(b).bottom).forEach(station =>

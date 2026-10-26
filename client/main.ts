@@ -1,3 +1,6 @@
+import { TouchControls } from "./touch-controls";
+import { mobileCamera } from "./mobile-camera";
+import { recolorFurPixels, walkingFurMask } from "./fur-color";
 import { movementTarget } from "../shared/movement";
 import { advanceWalkAnimation, type WalkAnimation } from "./walk-animation";
 import { io, type Socket } from "socket.io-client";
@@ -27,13 +30,14 @@ import "./style.css";
 import "./title-menu.css";
 import "./menu-flow.css";
 import "./menu-polish.css";
+import "./mobile.css";
 import { drawChopBadge, onPreparationArtReady } from "./preparation-art";
 import { AudioDirector } from "./audio";
 
 // Dev uses Vite on 5173 and the game server on 3001. A deployed build uses the
 // same public origin for both the page and WebSocket connection.
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ??
-  (location.hostname === "localhost" && location.port === "5173" ? "http://localhost:3001" : location.origin);
+  location.origin;
 const tokenKey = "paws-pours-player-token";
 const token = sessionStorage.getItem(tokenKey) ?? crypto.randomUUID();
 sessionStorage.setItem(tokenKey, token);
@@ -45,6 +49,8 @@ let selectedAccessory: TitleAccessory = "Bow tie";
 let sessionMode: "single" | "multiplayer" = sessionStorage.getItem("paws-pours-mode") === "multiplayer" ? "multiplayer" : "single";
 let settings: DisplayAudioSettings = loadSettings();
 let move = { x: 0, y: 0 };
+let touchMove = { x: 0, y: 0 };
+const movementInput = () => ({ x: Math.max(-1, Math.min(1, move.x + touchMove.x)), y: Math.max(-1, Math.min(1, move.y + touchMove.y)) });
 let lastMove = 0;
 let lastStateMessage = "";
 type LocalPrediction = Pick<Player, "x" | "y" | "direction" | "moving" | "moveSequence">;
@@ -132,8 +138,23 @@ const selection = document.querySelector<HTMLElement>("#bartender-selection")!;
 const game = document.querySelector<HTMLElement>("#game")!;
 const overlay = document.querySelector<HTMLElement>("#overlay")!;
 const canvas = document.querySelector<HTMLCanvasElement>("#board")!;
-const context = canvas.getContext("2d")!;
+const displayContext = canvas.getContext("2d")!;
+const worldCanvas = document.createElement("canvas"); worldCanvas.id = "tavern-world";
+worldCanvas.width = TAVERN_VIEW.width; worldCanvas.height = TAVERN_VIEW.height;
+const context = worldCanvas.getContext("2d")!;
 canvas.width = TAVERN_VIEW.width; canvas.height = TAVERN_VIEW.height;
+const touchControls = new TouchControls(game, input => { touchMove = input; },
+  () => socket.emit("interact"), () => socket.emit("counter-drink"));
+if ("ResizeObserver" in window) new ResizeObserver(entries => {
+  const height = entries[0].target.getBoundingClientRect().height;
+  if (height > 0) game.style.setProperty("--touch-controls-height", `${height}px`);
+}).observe(touchControls.root);
+let touchLayout = false;
+function syncTouchLayout() {
+  touchLayout = navigator.maxTouchPoints > 0 || matchMedia("(pointer: coarse), (max-width: 900px)").matches;
+  game.dataset.touch = String(touchLayout); touchControls.reset();
+}
+window.addEventListener("resize", syncTouchLayout); syncTouchLayout();
 const orderHud = new OrderHud(document.querySelector<HTMLElement>("#order-hud")!, ingredientsSpritesheet);
 const audio = new AudioDirector(settings);
 const mixingWorkspace = new MixingWorkspace(game, {
@@ -392,18 +413,18 @@ socket.on("state", (next: GameState) => {
   const authoritativePlayer = next.players[token];
   if (authoritativePlayer) {
     if (next.pausedAt !== null) {
-      move = { x: 0, y: 0 };
+      move = { x: 0, y: 0 }; touchControls.reset();
       localPrediction = null;
       authoritativePlayer.moving = false;
     } else if (next.mixing[token]) {
-      move = { x: 0, y: 0 };
+      move = { x: 0, y: 0 }; touchControls.reset();
       localPrediction = null;
       authoritativePlayer.moving = false;
     } else {
       const acknowledgedSequence = authoritativePlayer.moveSequence ?? 0;
       lastSentMoveSequence = Math.max(lastSentMoveSequence, acknowledgedSequence);
       if (localPrediction) {
-        const inputActive = Boolean(move.x || move.y);
+        const input = movementInput(); const inputActive = Boolean(input.x || input.y);
         const awaitingAcknowledgement = acknowledgedSequence < localPrediction.moveSequence;
         if (inputActive || localPrediction.moving || awaitingAcknowledgement) Object.assign(authoritativePlayer, localPrediction);
         else localPrediction = null;
@@ -465,6 +486,7 @@ function renderUi() {
     lastStateMessage = state.message;
     setToast(state.message);
   }
+  touchControls.setEnabled(state.phase === "shift" && state.pausedAt === null && !state.mixing[token]);
   renderOverlay();
   mixingWorkspace.render(state, token);
 }
@@ -474,7 +496,7 @@ function renderOverlay() {
   if (state.phase === "shift" && state.pausedAt !== null && recipeBookOpen) {
     overlay.classList.remove("hidden");
     const recipe = RECIPES[recipeBookPage];
-    overlay.innerHTML = `<section class="recipe-book" aria-label="Bartender's recipe book"><canvas id="recipe-book-art" class="recipe-book-art" width="1000" height="590" aria-label="Illustrated recipe page for ${recipe.name}"></canvas><div class="recipe-book-controls"><button class="recipe-book-page" id="previous-recipe" ${recipeBookPage === 0 ? "disabled" : ""}>← Previous</button><span aria-live="polite">Recipe ${recipeBookPage + 1} of ${RECIPES.length}</span><button class="recipe-book-page" id="next-recipe" ${recipeBookPage === RECIPES.length - 1 ? "disabled" : ""}>Next →</button></div><button class="recipe-book-close" id="close-book">← Pause menu</button></section>`;
+    overlay.innerHTML = `<section class="recipe-book" aria-label="Bartender's recipe book"><canvas id="recipe-book-art" class="recipe-book-art" width="1000" height="590" aria-label="Illustrated recipe page for ${recipe.name}"></canvas><div class="recipe-mobile-page"><p class="eyebrow">BARTENDER’S RECIPE BOOK</p><h2>${recipe.name}</h2><h3>Gather</h3><ul>${recipe.ingredients.map(ingredient => `<li>${ingredient.replaceAll("-", " ")}</li>`).join("")}</ul><h3>Prepare</h3><ol>${recipe.preparation.actions.map(action => `<li>${action.kind === "timed-tool" ? `Hold the ${action.tool} for ${(action.targetMs / 1000).toFixed(1)} seconds.` : `${action.style === "chop" ? "Chop" : "Alternate paws"} ${action.hits} times, ${(action.intervalMs / 1000).toFixed(2)} seconds apart.`}</li>`).join("")}</ol></div><div class="recipe-book-controls"><button class="recipe-book-page" id="previous-recipe" ${recipeBookPage === 0 ? "disabled" : ""}>← Previous</button><span aria-live="polite">Recipe ${recipeBookPage + 1} of ${RECIPES.length}</span><button class="recipe-book-page" id="next-recipe" ${recipeBookPage === RECIPES.length - 1 ? "disabled" : ""}>Next →</button></div><button class="recipe-book-close" id="close-book">← Pause menu</button></section>`;
     document.querySelector<HTMLButtonElement>("#previous-recipe")!.onclick = () => { recipeBookPage -= 1; renderOverlay(); };
     document.querySelector<HTMLButtonElement>("#next-recipe")!.onclick = () => { recipeBookPage += 1; renderOverlay(); };
     document.querySelector<HTMLButtonElement>("#close-book")!.onclick = () => { recipeBookOpen = false; renderOverlay(); };
@@ -558,12 +580,13 @@ function emitMovement(player: Player, moving: boolean) {
 function movePlayer(elapsedMs: number) {
   const player = localPlayer();
   if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || state.mixing[token]) return;
-  if (!move.x && !move.y) {
+  const input = movementInput();
+  if (!input.x && !input.y) {
     if (player.moving) emitMovement(player, false);
     return;
   }
-  player.direction = Math.abs(move.x) > Math.abs(move.y) ? (move.x < 0 ? "left" : "right") : (move.y < 0 ? "up" : "down");
-  const resolved = moveWithCounterCollisions(state.tavern, player, movementTarget(player, move, player.role, elapsedMs));
+  player.direction = Math.abs(input.x) > Math.abs(input.y) ? (input.x < 0 ? "left" : "right") : (input.y < 0 ? "up" : "down");
+  const resolved = moveWithCounterCollisions(state.tavern, player, movementTarget(player, input, player.role, elapsedMs));
   const travelling = Math.hypot(resolved.x - player.x, resolved.y - player.y) > .001;
   const wasMoving = player.moving;
   player.x = resolved.x;
@@ -592,10 +615,17 @@ window.addEventListener("keydown", (event) => {
   event.preventDefault(); move[axis] = event.key === "w" || event.key === "ArrowUp" || event.key === "a" || event.key === "ArrowLeft" ? -1 : 1;
 });
 window.addEventListener("keyup", (event) => { const axis = movementKeys[event.key]; if (axis) move[axis] = 0; });
-window.addEventListener("blur", () => { move = { x: 0, y: 0 }; });
+function stopMovementInput() {
+  move = { x: 0, y: 0 }; touchControls.reset();
+  const player = localPlayer();
+  if (player?.moving && state?.phase === "shift" && state.pausedAt === null && !state.mixing[token]) emitMovement(player, false);
+}
+window.addEventListener("blur", stopMovementInput);
+document.addEventListener("visibilitychange", () => { if (document.hidden) stopMovementInput(); });
 
 type Point = { x: number; y: number };
 const characterTintCache = new Map<string, HTMLCanvasElement>();
+let characterFurMask: Uint8Array | undefined;
 
 function drawText(text: string, x: number, y: number, font: string, color: string) {
   context.font = font; context.fillStyle = color; context.textAlign = "center"; context.fillText(text, x, y);
@@ -607,9 +637,11 @@ function tintedCharacter(fur: string) {
   result.width = catBartenderSpritesheet.naturalWidth || 1319; result.height = catBartenderSpritesheet.naturalHeight || 1193;
   const layer = result.getContext("2d")!;
   layer.imageSmoothingEnabled = false; layer.drawImage(catBartenderSpritesheet, 0, 0);
-  layer.globalCompositeOperation = "source-atop"; layer.globalAlpha = .38; layer.fillStyle = fur; layer.fillRect(0, 0, result.width, result.height);
-  layer.globalCompositeOperation = "source-over"; layer.globalAlpha = .35; layer.drawImage(catBartenderSpritesheet, 0, 0);
-  layer.globalAlpha = 1; characterTintCache.set(fur, result); return result;
+  const pixels = layer.getImageData(0, 0, result.width, result.height);
+  characterFurMask ??= walkingFurMask(pixels.width, pixels.height);
+  pixels.data.set(recolorFurPixels(pixels.data, fur, characterFurMask));
+  layer.putImageData(pixels, 0, 0);
+  characterTintCache.set(fur, result); return result;
 }
 const walkAnimations = new Map<string, WalkAnimation>();
 function drawPlayer(player: Player) {
@@ -747,6 +779,10 @@ function renderBoard(now = performance.now()) {
   document.querySelector("#interaction")!.textContent = nearby
     ? nearby.drink ? `E · Pick up ${recipeById(nearby.drink.recipeId).name}` : nearby.kind === "counter"
       ? "E · Set down drink" : `E · ${nearby.label}` : "Approach a counter";
+  if (touchLayout) {
+    touchControls.setStatus(document.querySelector("#carry")!.textContent ?? "Paws empty",
+      nearby?.kind === "seat" ? "Interact" : nearby?.drink ? "Pick up" : nearby?.label ?? "Interact");
+  }
   const objects = [
     ...state.tavern.stations.map((station) => ({ depth: stationBounds(station).bottom, draw: () =>
       drawTavernCounter(context, state!.tavern, station, ingredientsSpritesheet, scrapBin, station === nearby, state!.orders, catBartenderSpritesheet) })),
@@ -756,5 +792,23 @@ function renderBoard(now = performance.now()) {
   drawBarGate(context, Object.values(state.players), state.pausedAt !== null);
   drawHazard();
   if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(300, 678, 488, 26); drawText(`⚠ ${state.hazard.message}`, 544, 695, "bold 12px system-ui", "white"); }
+  presentBoard(player);
+}
+function presentBoard(player: Player | undefined) {
+  const rect = canvas.getBoundingClientRect();
+  const ratio = Math.min(2, window.devicePixelRatio || 1);
+  const width = touchLayout ? Math.max(1, Math.round(rect.width * ratio)) : TAVERN_VIEW.width;
+  const height = touchLayout ? Math.max(1, Math.round(rect.height * ratio)) : TAVERN_VIEW.height;
+  if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+  displayContext.imageSmoothingEnabled = false;
+  displayContext.fillStyle = "#201828"; displayContext.fillRect(0, 0, width, height);
+  if (touchLayout && player && !touchControls.overview) {
+    const view = mobileCamera(boardPoint(player.x, player.y), rect.width, rect.height);
+    displayContext.drawImage(worldCanvas, view.x, view.y, view.width, view.height, 0, 0, width, height);
+  } else {
+    const scale = Math.min(width / worldCanvas.width, height / worldCanvas.height);
+    const w = worldCanvas.width * scale, h = worldCanvas.height * scale;
+    displayContext.drawImage(worldCanvas, (width - w) / 2, (height - h) / 2, w, h);
+  }
 }
 renderBoard();

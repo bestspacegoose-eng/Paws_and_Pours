@@ -1,0 +1,13 @@
+Mode: built-in image_gen tool, transparent_background=true.
+Output: client/assets/tilemap/minigame-props-v1.png
+Original generated image: exec-7b23e8c0-69c9-4022-b01b-3474c4a27621.png
+
+Final generation prompt:
+Use case: stylized-concept
+Asset type: transparent pixel-art sprite atlas for the Paws and Pours tavern game's drink-preparation minigames.
+Create ONE cohesive atlas in a precise FOUR COLUMN by THREE ROW grid, twelve equal cells, generous transparent gutters. Landscape composition. Every object isolated, centered entirely within its own cell, no text or grid lines.
+Row 1, left to right: (1) empty round wooden mixing bowl, viewed from slightly above, wide elliptical dark interior and thick wooden foreground rim; absolutely NO spoon in bowl; (2) a separate long wooden mixing spoon, vertical, handle pointing up, oval scoop at bottom; (3) a horizontal wooden chopping board, slightly top-down, simple rounded corners, substantial neat front edge; (4) a small kitchen cleaver, horizontal pale silver blade on LEFT, short dark wooden handle pointing RIGHT, seen from front/slightly above.
+Row 2: (1) upright cocktail shaker with lid, simple lavender silver metal, a few cream highlights; (2) upright slender pouring bottle, amber liquid in pale clear glass, narrow open neck with small gold pouring tip at the TOP CENTER, no cap; (3) left cat paw reaching upward, cocoa brown fur, warm rose paw pad visible, short cream cuff at bottom; (4) matching right cat paw reaching upward, mirrored pose and same colors.
+Row 3: (1) small pile of chopped rosy tuna pieces; (2) small group of lime wedges with muted sage rind and pale cream-green flesh; (3) small pile of chopped dark sage kelp ribbons; (4) a few catnip leaves, muted sage.
+Style: clean readable hand-drawn PIXEL ART, visible crisp square pixels and stepped silhouettes, approximately 48 to 64 pixels of detail per object scaled up with nearest-neighbor aesthetic. Consistent dark plum outline, two or three restrained shading tones per material, simple clean shapes with carefully drawn silhouettes. Match a cozy fantasy tavern. Original palette: deep plum #35243a, cocoa #71504b, warm wood #b98263, honey cream #e1ac78, muted lavender #a899bd, silver cream #ece0cb, rose #c58f9b, sage #82957b. Avoid saturated new hues.
+Constraints: actual transparent background with clean alpha, no floor, no scene, no labels, no ornamental patterns, no sparkles, no floating shadows, no extra objects, no baked animation, no blur, no gradients, no glossy 3D. Bowl is empty so colored liquid and independent spoon can be animated by the game. Bottle perfectly upright so it can rotate around its spout. All twelve cells have the same perspective and pixel density.

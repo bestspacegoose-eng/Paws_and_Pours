@@ -59,7 +59,7 @@ export function drawDepthCounter(context: CanvasRenderingContext2D, tavern: Tave
   const counters = art.image;
   const bounds = stationBounds(station), a = boardPoint(bounds.left, bounds.top), b = boardPoint(bounds.right, bounds.bottom);
   const neighbor = (dx: number, dy: number) => tavern.stations.some(other =>
-    other.kind !== "serve" && other.kind !== "seat" && other.gridX === station.gridX + dx && other.gridY === station.gridY + dy);
+    (other.kind !== "serve" || other.serviceStyle === "bar") && other.kind !== "seat" && other.gridX === station.gridX + dx && other.gridY === station.gridY + dy);
   const column = !neighbor(-1, 0) && neighbor(1, 0) ? 1 : !neighbor(1, 0) && neighbor(-1, 0) ? 2 : 0;
   const frame = art.layout.counters[column], topHeight = art.layout.topHeights[column];
   const { x: sx, y: sy, width: sw, height: sh } = frame;

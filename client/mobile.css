@@ -1,0 +1,97 @@
+/* Touch controls accompany a following camera; desktop keeps the full tavern. */
+.touch-controls,.recipe-mobile-page{display:none}
+.touch-pad,.touch-actions button,.touch-map,.mixing-action{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.game[data-touch=true] .touch-controls{display:block;position:absolute;z-index:7;bottom:0;left:0;right:0;padding:6px max(12px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));background:#211829f5;border-top:1px solid #7c6489}
+.touch-readout{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px;font:15px/1.2 var(--font-game);color:#ead9cf}
+.touch-carry{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.touch-map{flex:none;min-width:64px;min-height:40px;padding:6px 12px;border:1px solid #a489b2;border-radius:4px;background:#493750;color:#f5e8d3;font:16px var(--font-game)}
+.touch-inputs{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.touch-pad{position:relative;width:104px;height:104px;border:2px solid #ac94b7;border-radius:50%;background:#382a42;box-shadow:inset 0 0 0 10px #302339;overflow:hidden}
+.touch-pad-knob{position:absolute;inset:28px;border:2px solid #d3bacd;border-radius:50%;background:#a991ae;z-index:1;pointer-events:none}
+.touch-pad-cross{position:absolute;inset:0;display:grid;place-items:center;color:#cfbacd;font-size:76px;opacity:.3;pointer-events:none}
+.touch-pad[aria-disabled=true]{opacity:.4}
+.touch-hint{display:block;text-align:center;font:12px var(--font-game);color:#c4adc9;margin-top:3px}
+.touch-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;flex:1;max-width:270px}
+.touch-actions button{min-height:74px;min-width:0;padding:8px 6px;border:2px solid #d3bacd;border-radius:5px;background:#d6bfad;color:#38243e;font:19px/1.15 var(--font-game)}
+.touch-actions .touch-handoff{background:#9f8bad;color:#fff0d8;border-color:#c4a9cb}
+.touch-actions small{display:block;font-size:11px;line-height:1.4;font-weight:400;margin-top:4px}
+.touch-actions button:active{transform:translateY(2px);filter:brightness(1.15)}
+.game[data-touch=true]:not(.hidden) .controls{display:none}
+.game[data-touch=true]:not(.hidden) .game-header{top:max(6px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right));display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;padding:7px 9px;min-height:84px;backdrop-filter:none}
+.game[data-touch=true]:not(.hidden) .game-header strong{font-size:14px}
+.game[data-touch=true]:not(.hidden) .game-header button{min-height:40px;min-width:95px;font-size:16px;padding:7px}
+.game[data-touch=true]:not(.hidden) .stats{grid-row:2;grid-column:1/-1;justify-content:space-between;font-size:13px;gap:9px}
+.game[data-touch=true]:not(.hidden) .stats .timer{padding:3px 8px}
+.game[data-touch=true]:not(.hidden) .order-hud{top:calc(max(6px,env(safe-area-inset-top)) + 90px);left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right));height:80px;gap:8px;overscroll-behavior-x:contain;touch-action:pan-x}
+.game[data-touch=true] .order-ticket{flex-basis:182px;padding:4px 6px;grid-template-rows:17px 40px 5px;gap:2px}
+.game[data-touch=true] .order-ticket canvas{width:166px;height:40px;max-height:none;background:transparent}
+.game[data-touch=true] .order-ticket strong{font-size:11px}
+.game[data-touch=true]:not(.hidden) .canvas-card{inset:calc(max(6px,env(safe-area-inset-top)) + 176px) 0 var(--touch-controls-height,176px);touch-action:none}
+.game[data-touch=true] .toast{font-size:11px;max-width:95%}
+.game[data-touch=true] .canvas-card canvas{object-fit:fill}
+
+@media(max-width:1100px),(pointer:coarse){
+  button,input,select{touch-action:manipulation}
+  .shell :is(.bartender-selection,.save-dialog,.settings-panel) button{min-height:44px}
+  .shell .bartender-selection .accessory-controls{height:46px;grid-template-columns:42px minmax(0,1fr) 42px}
+  .shell .bartender-selection .accessory-controls button{height:42px;min-height:42px}
+  .shell .bartender-selection .setup-grid input{height:44px;font-size:16px}
+  .shell .bartender-selection{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+  .shell .bartender-selection .accessory-controls output{font-size:14px}
+  .shell .overlay{overflow:auto;overscroll-behavior:contain;padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
+  .shell .overlay .modal{max-height:calc(100dvh - 24px);overflow:auto}
+  .shell .pause-actions button,.shell .recipe-book-controls button,.shell .recipe-book-close{min-height:44px;font-family:var(--font-game);font-size:17px}
+  .shell .overlay .recipe-book-art{display:none}
+  .recipe-mobile-page{display:block;text-align:left;padding:20px;border:2px solid #b99691;border-radius:5px;background:#35273e;color:#f2dfc4;max-height:calc(100dvh - 150px);overflow:auto}
+  .recipe-mobile-page h2{font:28px var(--font-game);margin:10px 0 18px}
+  .recipe-mobile-page h3{font:21px var(--font-game);margin:14px 0 6px;color:#dbc3de}
+  .recipe-mobile-page :is(li,p){font-size:16px;line-height:1.6}
+  .recipe-mobile-page :is(ul,ol){padding-left:22px;margin:6px 0}
+  .recipe-book-controls{flex-wrap:wrap;gap:8px}
+  .shell .save-dialog{padding:20px;max-height:calc(100dvh - 20px)}
+  .mixing-workspace{padding:max(6px,env(safe-area-inset-top)) max(6px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left));overscroll-behavior:contain}
+  .mixing-shell{max-height:calc(100dvh - 16px);padding:10px;overscroll-behavior:contain}
+  .mixing-header{display:block;padding-bottom:8px}
+  .mixing-header h2{font-size:24px;overflow-wrap:anywhere}
+  .mixing-header .eyebrow{display:none}
+  .mixing-metrics{justify-content:space-between;gap:5px;margin-top:8px}
+  .mixing-metrics>span{padding:7px 5px}
+  .mixing-metrics>span:nth-child(2){display:inline}
+  .mixing-metrics button{min-height:44px;padding:7px 10px;font-size:15px}
+  .mixing-stage{display:flex;flex-direction:column}
+  .mixing-status{position:relative;order:-1;left:auto;top:auto;transform:none;width:100%;border-radius:0;margin:0;padding:8px 9px}
+  .mixing-status p{font-size:13px;line-height:1.35}
+  .tool-timing-heading{font-size:10px;flex-wrap:wrap}
+  .tool-timing-track{height:14px}
+  .mixing-stage canvas{max-height:none;width:100%;height:auto;aspect-ratio:5/3;object-fit:contain}
+  .mixing-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;padding:10px 0 4px}
+  .mixing-action{min-height:52px;min-width:0;padding:10px 7px;font-size:16px}
+  .mixing-actions .tool-action{grid-column:1/-1;min-height:60px}
+  .mixing-help{display:none}
+}
+@media(max-height:520px) and (orientation:landscape){
+  .game[data-touch=true]:not(.hidden) .game-header{min-height:44px;grid-template-columns:1fr 1fr auto;gap:8px;padding:4px 8px}
+  .game[data-touch=true]:not(.hidden) .stats{grid-row:1;grid-column:2;gap:12px}
+  .game[data-touch=true]:not(.hidden) .game-header button{grid-column:3}
+  .game[data-touch=true]:not(.hidden) .order-hud{top:calc(max(6px,env(safe-area-inset-top)) + 54px);height:68px}
+  .game[data-touch=true] .order-ticket{flex-basis:174px;grid-template-rows:15px 31px 4px;gap:1px;padding:3px 5px}
+  .game[data-touch=true] .order-ticket canvas{width:160px;height:31px}
+  .game[data-touch=true]:not(.hidden) .canvas-card{inset:calc(max(6px,env(safe-area-inset-top)) + 126px) 224px 36px 116px}
+  .game[data-touch=true] .touch-controls{background:none;border:0;pointer-events:none;padding-bottom:max(6px,env(safe-area-inset-bottom))}
+  .touch-pad,.touch-actions,.touch-map{pointer-events:auto}
+  .touch-readout{position:absolute;left:auto;right:16px;bottom:94px;justify-content:center;min-height:40px;background:#211829df;border-radius:4px;padding:4px 7px}
+  .touch-carry{display:block;position:fixed;left:116px;right:224px;bottom:max(6px,env(safe-area-inset-bottom));min-height:25px;padding:4px 7px;border-radius:3px;background:#211829df;text-align:center;font-size:13px}
+  .touch-pad{width:92px;height:92px}
+  .touch-pad-knob{inset:24px}
+  .touch-actions{max-width:200px}
+  .touch-actions button{min-height:65px}
+  .touch-hint{display:none}
+  .mixing-shell{display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:8px;width:min(980px,100%)}
+  .mixing-header{grid-column:1/-1;display:flex;align-items:center;padding:0}
+  .mixing-metrics{margin:0}
+  .mixing-stage{grid-column:1;grid-row:2}
+  .mixing-stage canvas{max-height:calc(100dvh - 180px)}
+  .mixing-actions{grid-column:2;grid-row:2;align-self:start;grid-template-columns:1fr;padding:0}
+  .mixing-action{min-height:48px}
+}
+@media(max-width:370px){.touch-pad{width:92px;height:92px}.touch-pad-knob{inset:24px}.touch-actions button{font-size:17px}.touch-actions small{font-size:10px}.shell .pause-actions{grid-template-columns:1fr}}

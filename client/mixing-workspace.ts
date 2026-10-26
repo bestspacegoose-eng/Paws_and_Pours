@@ -7,14 +7,15 @@ import ingredientsUrl from "./assets/tilemap/ingredients-spritesheet.png";
 import toolsUrl from "./assets/tilemap/mixing-tools-spritesheet.png";
 import effectsUrl from "./assets/tilemap/mixing-effects-spritesheet.png";
 import {
-  atlasFrame, GLASS_FRAME_INDEX, INGREDIENT_FRAMES, MIXING_EFFECT_FRAME_INDEX,
-  MIXING_TOOL_FRAME_INDEX, type FrameRect
+  atlasFrame, INGREDIENT_FRAMES, MIXING_EFFECT_FRAME_INDEX, type FrameRect
 } from "./sprite-frames";
 import { drawRecipeDrink, onDrinkArtReady } from "./drink-art";
+import { glassLayout, pouringLayout } from "./mixing-layout";
 import { drawStirringBowl } from "./mixing-bowl";
 import { handMixFrame, toolAnimationFrame } from "./mixing-animation";
+import { drawMinigameBand, drawMinigameSprite, onMinigameArtReady } from "./minigame-art";
+import type { MinigameSprite } from "./minigame-art-layout";
 import "./mixing-workspace.css";
-import { drawPreparationArt, onPreparationArtReady } from "./preparation-art";
 
 export interface MixingWorkspaceEvents {
   addIngredient: (ingredient: string) => void;
@@ -122,7 +123,7 @@ export class MixingWorkspace {
     this.toolsImage = image(toolsUrl, redraw);
     this.effectsImage = image(effectsUrl, redraw);
     onDrinkArtReady(redraw);
-    onPreparationArtReady(redraw);
+    onMinigameArtReady(redraw);
     window.addEventListener("pointerup", () => this.finishTool());
   }
 
@@ -249,9 +250,12 @@ export class MixingWorkspace {
       button.textContent = `Hold ${expected.tool} · ${(expected.targetMs / 1000).toFixed(1)} sec`;
       const start = (event: Event) => { event.preventDefault(); this.startTool(expected.tool); };
       const finish = (event: Event) => { event.preventDefault(); this.finishTool(); };
-      button.addEventListener("pointerdown", start);
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault(); button.setPointerCapture(event.pointerId); start(event);
+      });
       button.addEventListener("pointerup", finish);
       button.addEventListener("pointercancel", finish);
+      button.addEventListener("lostpointercapture", finish);
       button.addEventListener("keydown", (event) => {
         if (event.key === " " || event.key === "Enter") start(event);
       });
@@ -431,43 +435,45 @@ export class MixingWorkspace {
     const steps = mixingStepsForRecipe(this.recipe);
     const expected = expectedMixingStep(this.session);
     this.drawAtlasContained(this.effectsImage, 3, 2, MIXING_EFFECT_FRAME_INDEX.multiplayer, 64, 70, 88, 78, 0.82);
-    this.drawAtlasContained(this.toolsImage, 3, 2, GLASS_FRAME_INDEX[this.recipe.glass] ?? 3, 400, 214, 126, 150, 0.92);
+    if (!(expected?.kind === "timed-tool" && expected.tool === "pourer")) {
+      this.drawGlass(expected?.kind === "ingredient" ? 400 : 600, expected?.kind === "ingredient" ? 302 : 352);
+    }
 
     const positions = this.playerIngredients.length === 1 ? [400] : this.playerIngredients.length === 2 ? [300, 500] : [210, 400, 590];
-    this.playerIngredients.forEach((ingredient, index) => {
+    if (expected?.kind === "ingredient") this.playerIngredients.forEach((ingredient, index) => {
       const used = this.session!.usedIngredients.filter((item) => item === ingredient).length;
       const occurrences = this.playerIngredients.slice(0, index + 1).filter((item) => item === ingredient).length;
-      this.drawIngredient(ingredient, positions[index] ?? 400, 335, used >= occurrences ? 0.32 : 1);
+      this.drawIngredient(ingredient, positions[index] ?? 400, 382, used >= occurrences ? 0.32 : 1);
     });
 
     if (expected?.kind === "timed-tool") {
       if (expected.tool === "spoon") {
         const reducedMotion = this.paused || document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         drawStirringBowl(context, this.recipe.color, performance.now() - (this.toolHoldStartedAt ?? performance.now()), this.toolHolding, reducedMotion);
+      } else if (expected.tool === "pourer") {
+        const reducedMotion = this.paused || document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        this.drawPouring(performance.now() - (this.toolHoldStartedAt ?? performance.now()), reducedMotion);
       } else if (this.toolHolding) {
         const reducedMotion = this.paused || document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const pose = toolAnimationFrame(expected.tool, performance.now() - (this.toolHoldStartedAt ?? performance.now()), reducedMotion);
         context.save();
-        context.translate(400 + pose.x, 310 + pose.y);
+        context.translate(400 + pose.x, 285 + pose.y);
         context.rotate(pose.angle);
-        this.drawAtlasContained(this.toolsImage, 3, 2, MIXING_TOOL_FRAME_INDEX[expected.tool], 0, 0, 190, 172);
+        drawMinigameSprite(context, "shaker", 0, 0, 90, 150);
         context.restore();
-        if (pose.stream) {
-          context.fillStyle = this.recipe.color;
-          context.fillRect(373, 250, 5, Math.round(52 * pose.stream));
-          context.fillStyle = "#fff2d7"; context.fillRect(374, 258, 2, 24);
-        }
+
       } else {
-        this.drawAtlasContained(this.toolsImage, 3, 2, MIXING_TOOL_FRAME_INDEX[expected.tool], 400, 310, 190, 172);
+        drawMinigameSprite(context, "shaker", 400, 285, 90, 150);
       }
     } else if (expected?.kind === "rhythm") {
       this.drawRhythmAction(expected);
     }
-    this.drawAtlasContained(
-      this.effectsImage, 3, 2,
-      this.toolHolding ? MIXING_EFFECT_FRAME_INDEX.activePaws : MIXING_EFFECT_FRAME_INDEX.paws,
-      400, 432, 300, 154
-    );
+    // Paw mixing has its hands beside the bowl; other actions use a quiet resting pose.
+    if (!(expected?.kind === "rhythm" && expected.style === "hand-mix")) {
+      const raised = this.toolHolding && expected?.kind === "timed-tool" && expected.tool === "shaker";
+      this.drawPaw("left", raised ? 348 : 294, raised ? 330 : 429, raised ? .65 : .12);
+      this.drawPaw("right", raised ? 452 : 506, raised ? 330 : 429, raised ? -.65 : -.12);
+    }
     this.drawAtlasContained(this.effectsImage, 3, 2, MIXING_EFFECT_FRAME_INDEX.progress, 720, 78, 62, 62, 0.9);
 
     context.fillStyle = "rgba(31,17,38,.8)";
@@ -476,54 +482,75 @@ export class MixingWorkspace {
     context.fillRect(640, 105, 120 * Math.min(1, this.session.stepIndex / steps.length), 8);
   }
 
+  private drawGlass(centerX: number, bottom: number) {
+    if (!this.recipe || !this.toolsImage.complete || !this.toolsImage.naturalWidth) return;
+    const cup = glassLayout(this.recipe.glass, centerX, bottom);
+    this.context.drawImage(this.toolsImage, cup.frame.x, cup.frame.y, cup.frame.width, cup.frame.height,
+      cup.left, cup.top, cup.width, cup.height);
+  }
+
+  private drawPouring(elapsed: number, reducedMotion: boolean) {
+    if (!this.recipe || !this.toolsImage.complete || !this.toolsImage.naturalWidth) return;
+    const context = this.context, pose = pouringLayout(this.recipe.glass, elapsed, this.toolHolding, reducedMotion);
+    const { cup } = pose;
+    this.drawGlass(400, 366);
+    context.save(); context.translate(pose.spout.x, pose.spout.y); context.rotate(pose.angle);
+    const bottle = pose.bottleFrame;
+    drawMinigameBand(context, "pourer",
+      -pose.tipInFrame.x * pose.bottleScale, -pose.tipInFrame.y * pose.bottleScale,
+      bottle.width * pose.bottleScale, bottle.height * pose.bottleScale);
+    context.restore();
+    if (pose.stream) {
+      context.save(); context.strokeStyle = this.recipe.color; context.lineWidth = 5;
+      context.beginPath(); context.moveTo(pose.spout.x, pose.spout.y); context.lineTo(pose.streamEnd.x, pose.streamEnd.y); context.stroke();
+      context.strokeStyle = "#fff2d7"; context.lineWidth = 1;
+      context.beginPath(); context.moveTo(pose.spout.x - 1, pose.spout.y); context.lineTo(pose.streamEnd.x - 1, pose.streamEnd.y); context.stroke();
+      context.restore();
+      // Restore the foreground of the cup so no liquid can draw through its wall.
+      const front = .16;
+      context.drawImage(this.toolsImage, cup.frame.x, cup.frame.y + cup.frame.height * front,
+        cup.frame.width, cup.frame.height * (1 - front), cup.left, cup.top + cup.height * front,
+        cup.width, cup.height * (1 - front));
+    }
+  }
+
   private drawRhythmAction(action: RhythmAction) {
     const context = this.context;
     context.save();
     if (action.style === "chop") {
-      context.fillStyle = "#3b2332"; context.fillRect(318, 280, 164, 83);
-      context.fillStyle = "#b57953"; context.fillRect(324, 284, 152, 73);
-      context.fillStyle = "#d79b65"; context.fillRect(331, 290, 138, 57);
-      const pieces = Math.max(1, this.session?.rhythmHits ?? 0);
-      for (let index = 0; index < pieces; index++) {
-        context.fillStyle = this.recipe?.color ?? "#8ee17a";
-        context.fillRect(352 + index * 28, 314 + (index % 2) * 9, 19, 12);
-        context.fillStyle = "#f6dda9"; context.fillRect(354 + index * 28, 315 + (index % 2) * 9, 5, 4);
-      }
+      drawMinigameSprite(context, "board", 400, 320, 222, 100);
+      const ingredient: MinigameSprite = action.ingredient === "kelp" ? "kelp" : action.ingredient === "lime" ? "lime" : "tuna";
+      drawMinigameSprite(context, ingredient, 382, 320, 90, 58);
+      if ((this.session?.rhythmHits ?? 0) > 1) drawMinigameSprite(context, ingredient, 442, 334, 34, 24);
       const motion = !this.paused && document.body.dataset.reducedMotion !== "true" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const age = performance.now() - (this.pendingRhythmHitAt ?? this.rhythmLocalHitAt ?? -Infinity);
       const bounce = motion && age < 220 ? Math.round(Math.sin(age / 220 * Math.PI) * 18) : 0;
-      context.fillStyle = "#34233c"; context.fillRect(399, 273 - bounce, 72, 12);
-      context.fillStyle = "#f2c57d"; context.fillRect(402, 276 - bounce, 55, 6);
-      context.fillStyle = "#454c66"; context.fillRect(356, 285 - bounce, 51, 12);
-      context.fillStyle = "#d8e5e7"; context.fillRect(356, 286 - bounce, 47, 7);
-      context.fillStyle = "#fff8d9"; context.fillRect(359, 287 - bounce, 39, 2);
+      drawMinigameSprite(context, "cleaver", 420, 291 - bounce, 142, 54);
     } else {
       const lastHitAt = this.pendingRhythmHitAt ?? this.rhythmLocalHitAt;
       const reducedMotion = this.paused || document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const pose = handMixFrame(performance.now(), lastHitAt, reducedMotion);
       drawStirringBowl(context, this.recipe?.color ?? "#a9dbc4", performance.now(), true, reducedMotion);
-      const left = (this.session?.rhythmHits ?? 0) % 2 === 0;
-      context.fillStyle = "#f6d09c";
-      context.fillRect(302 + pose.leftPawX, 290, 26, 29);
-      context.fillRect(467 - pose.rightPawX, 290, 26, 29);
-      context.fillStyle = "#d98f93";
-      context.fillRect(310 + pose.leftPawX, 296, 11, 10);
-      context.fillRect(475 - pose.rightPawX, 296, 11, 10);
-      context.fillStyle = "#fff0cd";
-      context.fillRect((left ? 308 + pose.leftPawX : 473 - pose.rightPawX), 311, 15, 5);
-
+      this.drawPaw("left", 294 + pose.leftPawX, 326, .35);
+      this.drawPaw("right", 506 - pose.rightPawX, 326, -.35);
     }
     context.restore();
   }
 
   private drawIngredient(ingredient: string, x: number, y: number, alpha: number) {
-    if (ingredient === "chopped-tuna") {
-      this.context.save(); this.context.globalAlpha = alpha;
-      drawPreparationArt(this.context, 1, x, y, 112); this.context.restore(); return;
+    const painted = ({ "chopped-tuna":"tuna", lime:"lime", kelp:"kelp", catnip:"catnip" } as Record<string, MinigameSprite>)[ingredient];
+    if (painted) {
+      drawMinigameSprite(this.context, painted, x, y, 118, 100, alpha); return;
     }
     const frame = INGREDIENT_FRAMES[ingredient];
     if (!frame || !this.ingredientsImage.complete || !this.ingredientsImage.naturalWidth) return;
     this.drawFrameContained(this.ingredientsImage, frame, x, y, 118, 112, alpha);
+  }
+
+  private drawPaw(hand: "left" | "right", x: number, y: number, angle: number) {
+    this.context.save(); this.context.translate(x, y); this.context.rotate(angle);
+    drawMinigameSprite(this.context, hand === "left" ? "leftPaw" : "rightPaw", 0, 0, 48, 78);
+    this.context.restore();
   }
 
   private drawAtlasContained(image: HTMLImageElement, columns: number, rows: number, index: number, x: number, y: number, width: number, height: number, alpha = 1) {

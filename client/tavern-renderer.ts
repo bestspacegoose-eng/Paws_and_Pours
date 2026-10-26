@@ -1,5 +1,6 @@
-import { GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, stationBounds, recipeById, type Order, type Player, type Station, type Tavern } from "../shared/game";
-import { INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
+import { GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, stationBounds, recipeById, seatForOrder, type Order, type Player, type Station, type Tavern } from "../shared/game";
+import { INGREDIENT_FRAMES } from "./sprite-frames";
+import { seatedCustomerLayout } from "./customer-layout";
 import { drawRecipeDrink } from "./drink-art";
 import decorUrl from "./assets/tilemap/cozy-decor-atlas.png";
 import toolsUrl from "./assets/tilemap/mixing-tools-spritesheet.png";
@@ -84,7 +85,7 @@ export function drawTavernFloor(context: CanvasRenderingContext2D, tavern: Taver
   // Flat, low-contrast woven rugs do not change the walkable grid.
   for (const row of [1, 6]) {
     const rug = boardPoint(10 * cell, row * cell);
-    drawDiningRug(context, rug.x - 8, rug.y - 10, cell * 5 + 16, cell * 2 * TAVERN_VIEW.depth + 20);
+    drawDiningRug(context, rug.x - 6, rug.y - 10, cell * 6 + 6, cell * 2 * TAVERN_VIEW.depth + 20);
   }
   // Inlaid lanes decorate the same grid; they never add collision.
   context.strokeStyle = "#ead19b60"; context.lineWidth = 2;
@@ -123,27 +124,33 @@ export function drawIngredientIcon(context: CanvasRenderingContext2D, image: HTM
 function drawDiningFurniture(context: CanvasRenderingContext2D, tavern: Tavern, station: Station, orders: Order[], cats: HTMLImageElement | undefined, highlighted: boolean) {
   const bounds = stationBounds(station), a = boardPoint(bounds.left, bounds.top), b = boardPoint(bounds.right, bounds.bottom);
   const x = (a.x + b.x) / 2;
-  const tableId = station.id.replace("-seat", ""), order = orders.find(candidate => candidate.tableId === tableId);
   const seat = station.kind === "seat";
+  const guests = orders.filter(order => seat ? seatForOrder(tavern, order)?.id === station.id : order.tableId === station.id);
+  const order = guests[0];
   drawDiningTile(context, station, x, b.y - 2, tavern.theme);
   if (seat && order && cats?.complete && cats.naturalWidth) {
-    const frame = PLAYER_FRAMES.down[0];
-    const height = 43, width = Math.round(height * frame.width / frame.height);
-    context.drawImage(cats, frame.x, frame.y, frame.width, frame.height, x - width / 2, b.y - height - 1, width, height);
-    context.fillStyle = "#f1e4d6"; context.fillRect(x + 18, a.y - 2, 25, 25);
-    context.fillRect(x + 14, a.y + 14, 6, 4);
-    context.strokeStyle = "#9b86a6"; context.lineWidth = 1; context.strokeRect(x + 18, a.y - 2, 25, 25);
-    drawRecipeDrink(context, recipeById(order.recipeId), x + 30, a.y + 10, 21);
+    const pose = seatedCustomerLayout(station, x, b.y - 2, tavern.theme), frame = pose.frame;
+    context.drawImage(cats, frame.x, frame.y, frame.width, frame.height, pose.left, pose.top, pose.width, pose.height);
+    drawDiningTile(context, station, x, b.y - 2, tavern.theme, pose.frontFrom);
+    const bubbleX = x + 18, bubbleY = pose.top - 9;
+    context.fillStyle = "#f1e4d6"; context.fillRect(bubbleX, bubbleY, 25, 25);
+    context.fillRect(bubbleX - 4, bubbleY + 16, 6, 4);
+    context.strokeStyle = "#9b86a6"; context.lineWidth = 1; context.strokeRect(bubbleX, bubbleY, 25, 25);
+    drawRecipeDrink(context, recipeById(order.recipeId), bubbleX + 12, bubbleY + 12, 21);
   }
   if (!seat) {
     // A small table number is enough; keep the tabletop free of decorative clutter.
     context.fillStyle = "#746477"; context.fillRect(x - 8, b.y - 15, 16, 11);
     context.font = "bold 9px monospace"; context.textAlign = "center"; context.fillStyle = "#ecd5bd";
     context.fillText(station.label.replace("Table ", ""), x, b.y - 6);
-    if (order) {
-      context.fillStyle = "#746477"; context.fillRect(a.x + 9, b.y + 2, 40, 3);
-      context.fillStyle = order.patience / order.maxPatience < .3 ? "#d98e9b" : "#b3d2b5";
-      context.fillRect(a.x + 9, b.y + 2, 40 * Math.max(0, order.patience / order.maxPatience), 3);
+  } else if (order) {
+    const fraction = Math.max(0, order.patience / order.maxPatience);
+    context.fillStyle = "#746477"; context.fillRect(x - 14, b.y + 1, 28, 3);
+    context.fillStyle = fraction < .3 ? "#d98e9b" : "#b3d2b5";
+    context.fillRect(x - 14, b.y + 1, 28 * fraction, 3);
+    if (station.label !== "Bar stool") {
+      context.font = "bold 7px monospace"; context.textAlign = "center"; context.fillStyle = "#ecd5bd";
+      context.fillText(station.seatNumber === 2 ? "B" : "A", x, b.y - 4);
     }
   }
   if (highlighted) {
@@ -157,7 +164,7 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
   const p = palettes[tavern.theme], bounds = stationBounds(station);
   const a = boardPoint(bounds.left, bounds.top), b = boardPoint(bounds.right, bounds.bottom);
   const center = boardPoint(station.x, station.y);
-  if (station.kind === "serve" || station.kind === "seat") {
+  if ((station.kind === "serve" && station.serviceStyle !== "bar") || station.kind === "seat") {
     drawDiningFurniture(context, tavern, station, orders, cats, highlighted);
     return;
   }
