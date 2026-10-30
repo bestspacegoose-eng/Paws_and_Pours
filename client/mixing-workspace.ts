@@ -199,12 +199,12 @@ export class MixingWorkspace {
     this.root.classList.remove("hidden");
     this.title.textContent = `Prepare ${this.recipe.name}`;
     this.instruction.textContent = session.feedback;
-    this.timer.textContent = `0:${String(Math.max(0, Math.ceil((session.deadlineAt - Date.now()) / 1000))).padStart(2, "0")}`;
-    this.mistakes.textContent = `${session.mistakes} / 3 mistakes`;
+    this.timer.textContent = state.code === "TUTORIAL" ? "Practice" : `0:${String(Math.max(0, Math.ceil((session.deadlineAt - Date.now()) / 1000))).padStart(2, "0")}`;
+    this.mistakes.textContent = state.code === "TUTORIAL" ? "Free retries" : `${session.mistakes} / 3 mistakes`;
     const steps = mixingStepsForRecipe(this.recipe);
     this.progress.style.width = `${Math.min(100, session.stepIndex / steps.length * 100)}%`;
     this.configureToolTiming(expectedMixingStep(session));
-    this.renderControls(justOpened && !this.paused);
+    this.renderControls(justOpened && !this.paused && state.code !== "TUTORIAL");
     this.draw();
     this.syncVisualAnimation();
   }

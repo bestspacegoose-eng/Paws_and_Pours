@@ -1,5 +1,6 @@
 import type { GameState, MixingTool, RhythmAction, Theme } from "../shared/game";
 import type { DisplayAudioSettings } from "./preferences";
+import { approachMusicRate, shiftMusicRate } from "./music-tempo";
 
 import menuMusicUrl from "./assets/audio/music/menu-once-upon-a-time.mp3";
 import cozyMusicUrl from "./assets/audio/music/cozy-crowded-pub.ogg";
@@ -95,12 +96,17 @@ export class AudioDirector {
   private hidden = document.hidden;
   private ducked = false;
   private transition = 0;
+  private fading = false;
   private toolLoop?: string;
+  private tempoTarget = 1;
+  private tempoFrozen = false;
+  private tempoFrame?: number;
 
   constructor(settings: DisplayAudioSettings) {
     this.settings = settings;
     for (const [key, source] of Object.entries(MUSIC_SOURCES) as [MusicKey, string][]) {
       this.music.set(key, makeAudio(source, true));
+      this.music.get(key)!.preservesPitch = true;
     }
     for (const [key, source] of Object.entries(EFFECT_SOURCES) as [EffectName, string][]) {
       this.effects.set(key, makeAudio(source));
@@ -124,26 +130,39 @@ export class AudioDirector {
 
   setPageHidden(hidden: boolean) {
     this.hidden = hidden;
+    this.stopTempoRamp();
     const current = this.currentMusic && this.music.get(this.currentMusic);
     if (hidden) {
       current?.pause();
       for (const entry of this.loops.values()) entry.audio.pause();
     } else if (this.unlocked) {
       void this.playDesiredMusic();
+      this.rampTempo();
       for (const entry of this.loops.values()) void entry.audio.play().catch(() => undefined);
     }
   }
 
   syncMenu() {
     this.ducked = false;
+    this.tempoFrozen = false;
+    this.tempoTarget = 1;
     this.stopTool();
     this.stopLoop("hazard");
     this.chooseMusic("menu");
+    this.rampTempo();
+  }
+
+  stopPracticeEffects() {
+    this.stopTool();
+    this.stopLoop("hazard");
   }
 
   syncState(previous: GameState | null, next: GameState, playerId: string) {
     this.ducked = next.pausedAt !== null || next.phase === "complete";
+    this.tempoFrozen = next.pausedAt !== null;
+    this.tempoTarget = shiftMusicRate(next.phase, next.shiftSeconds);
     this.chooseMusic(next.phase === "lobby" ? "menu" : THEME_MUSIC[next.tavern.theme]);
+    if (this.tempoFrozen) this.stopTempoRamp(); else this.rampTempo();
 
     if (next.pausedAt !== null || !next.mixing[playerId]) this.stopTool();
     if (next.phase === "shift") this.syncHazard(previous?.hazard ?? null, next.hazard);
@@ -285,7 +304,10 @@ export class AudioDirector {
     const next = this.music.get(key)!;
     this.currentMusic = key;
     const transition = ++this.transition;
+    this.fading = fade;
+    for (const [otherKey, track] of this.music) if (otherKey !== key && otherKey !== previousKey) track.pause();
     next.currentTime = 0;
+    next.playbackRate = 1;
     next.volume = fade ? 0 : this.musicVolume();
     if (this.unlocked && !this.hidden) void next.play().catch(() => undefined);
 
@@ -304,7 +326,7 @@ export class AudioDirector {
       next.volume = Math.max(0, Math.min(1, target * progress));
       if (previous) previous.volume = Math.max(0, Math.min(1, previousStart * (1 - progress)));
       if (progress < 1) window.requestAnimationFrame(frame);
-      else if (previous) { previous.pause(); previous.currentTime = 0; }
+      else { this.fading = false; if (previous) { previous.pause(); previous.currentTime = 0; } }
     };
     window.requestAnimationFrame(frame);
   }
@@ -313,8 +335,27 @@ export class AudioDirector {
     const desired = this.music.get(this.desiredMusic);
     if (!desired || this.hidden) return;
     this.currentMusic = this.desiredMusic;
-    desired.volume = this.musicVolume();
+    if (!this.fading) desired.volume = this.musicVolume();
     try { await desired.play(); } catch { this.unlocked = false; }
+  }
+
+  private stopTempoRamp() {
+    if (this.tempoFrame !== undefined) cancelAnimationFrame(this.tempoFrame);
+    this.tempoFrame = undefined;
+  }
+
+  private rampTempo() {
+    if (this.hidden || this.tempoFrozen || this.tempoFrame !== undefined) return;
+    let last = performance.now();
+    const frame = (now: number) => {
+      this.tempoFrame = undefined;
+      const track = this.currentMusic && this.music.get(this.currentMusic);
+      if (!track || this.hidden || this.tempoFrozen) return;
+      track.playbackRate = approachMusicRate(track.playbackRate, this.tempoTarget, now - last);
+      last = now;
+      if (Math.abs(track.playbackRate - this.tempoTarget) > .0001) this.tempoFrame = requestAnimationFrame(frame);
+    };
+    this.tempoFrame = requestAnimationFrame(frame);
   }
 
   private applyVolumes() {

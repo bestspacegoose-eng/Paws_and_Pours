@@ -1,6 +1,7 @@
 import { TouchControls } from "./touch-controls";
+import { TutorialPractice } from "./tutorial-practice";
 import { Tutorial } from "./tutorial";
-import { rememberTutorial, tutorialSeen, tutorialState, type TutorialStep } from "./tutorial-content";
+import { rememberTutorial, tutorialSeen, tutorialState, tutorialPlaysGame, type TutorialStep } from "./tutorial-content";
 import type { TutorialRect } from "./tutorial-layout";
 import { gameImage, loadGameAssets } from "./game-assets";
 import { loadMenuScene } from "./menu-scene";
@@ -155,7 +156,7 @@ const context = worldCanvas.getContext("2d")!;
 let boardProjection: { source:TutorialRect; destination:TutorialRect } | undefined;
 canvas.width = TAVERN_VIEW.width; canvas.height = TAVERN_VIEW.height;
 const touchControls = new TouchControls(game, input => { touchMove = input; },
-  () => socket.emit("interact"));
+  () => sendGameAction("interact"));
 if ("ResizeObserver" in window) new ResizeObserver(entries => {
   const height = entries[0].target.getBoundingClientRect().height;
   if (height > 0) game.style.setProperty("--touch-controls-height", `${height}px`);
@@ -169,19 +170,40 @@ window.addEventListener("resize", syncTouchLayout); syncTouchLayout();
 const orderHud = new OrderHud(document.querySelector<HTMLElement>("#order-hud")!, ingredientsSpritesheet);
 const audio = new AudioDirector(settings);
 const mixingWorkspace = new MixingWorkspace(game, {
-  addIngredient: (ingredient) => { audio.playIngredient(); socket.emit("mix-ingredient", ingredient); },
-  startTool: (tool) => { audio.startTool(tool); socket.emit("mix-tool-start", tool); },
-  finishTool: (tool) => { audio.stopTool(); socket.emit("mix-tool-finish", tool); },
-  rhythmHit: (style, hand) => { audio.playRhythm(style, hand); socket.emit("mix-rhythm-hit", { style, hand }); },
-  pause: () => { audio.stopTool(); socket.emit("set-pause", true); },
-  cancel: () => { audio.stopTool(); socket.emit("cancel-mixing"); }
+  addIngredient: (ingredient) => { audio.playIngredient(); sendGameAction("mix-ingredient", ingredient); },
+  startTool: (tool) => { audio.startTool(tool); sendGameAction("mix-tool-start", tool); },
+  finishTool: (tool) => { audio.stopTool(); sendGameAction("mix-tool-finish", tool); },
+  rhythmHit: (style, hand) => { audio.playRhythm(style, hand); sendGameAction("mix-rhythm-hit", { style, hand }); },
+  pause: () => { audio.stopTool(); sendGameAction("set-pause", true); },
+  cancel: () => { audio.stopTool(); sendGameAction("cancel-mixing"); }
 });
 
 let tutorialStarting=false;
+let practice: TutorialPractice | undefined;
 let tutorialReturn: { source:"menu"|"first"|"pause"; state:GameState|null; mode:"single"|"multiplayer";
-  step:"intro"|"selection"|"game"; overview:boolean; book:boolean; panel:"main"|"settings"; message:string; scroll:number } | undefined;
-const tutorial = new Tutorial(app, { touch:()=>touchLayout, step:applyTutorialStep, targets:tutorialTargets });
+  step:"intro"|"selection"|"game"; overview:boolean; book:boolean; panel:"main"|"settings"; message:string; scroll:number; settings:DisplayAudioSettings; profile:ReturnType<typeof profile>; roomInput:string } | undefined;
+const tutorial = new Tutorial(app, { touch:()=>touchLayout, step:applyTutorialStep, targets:tutorialTargets,
+  avoid:()=>[...document.querySelectorAll<HTMLElement>(".touch-pad,.touch-interact,.touch-map,.mixing-actions,.tool-timing:not(.hidden)")]
+    .filter(node=>node.getClientRects().length).map(node=>node.getBoundingClientRect()), escape:()=>{
+  if(!state||!tutorialPlaysGame(tutorial.step))return false;
+  if(state.pausedAt!==null&&(recipeBookOpen||pausePanel==="settings")){recipeBookOpen=false;pausePanel="main";renderOverlay();tutorial.refresh();}
+  else sendGameAction("set-pause",state.pausedAt===null);
+  return true;
+} });
 learnButton.onclick=()=>{void startTutorial("menu");};
+
+function sendGameAction(action:string,payload?:unknown) {
+  if(!tutorial.isOpen){socket.emit(action,payload);return;}
+  if(!practice||!state)return;
+  tutorial.practice();
+  const previous=structuredClone(state);
+  practice.dispatch(action,payload);
+  audio.syncState(previous,state,token);
+  move={x:0,y:0};touchControls.reset();
+  renderUi();
+  if(state.message)tutorial.report(state.message);
+  tutorial.refresh();
+}
 
 async function startTutorial(source:"menu"|"first"|"pause") {
   if(tutorial.isOpen||tutorialStarting)return;
@@ -191,30 +213,40 @@ async function startTutorial(source:"menu"|"first"|"pause") {
   catch { setToast("The tavern art could not load. Please try the tutorial again."); return; }
   finally { tutorialStarting=false;setConnectionPending(false);learnButton.disabled=false; }
   stopMovementInput();
+  audio.stopPracticeEffects();
   tutorialReturn={source,state,mode:sessionMode,step:menuStep,overview:touchControls.overview,
-    book:recipeBookOpen,panel:pausePanel,message:lastStateMessage,scroll:window.scrollY};
+    book:recipeBookOpen,panel:pausePanel,message:lastStateMessage,scroll:window.scrollY,settings:{...settings},profile:profile(),roomInput:document.querySelector<HTMLInputElement>("#room-input")!.value};
   tutorial.start(result=>{
     const saved=tutorialReturn; if(!saved)return;
-    rememberTutorial(result);mixingWorkspace.reset();state=saved.state;recipeBookOpen=saved.book;pausePanel=saved.panel;
+    rememberTutorial(result);audio.stopTool();practice=undefined;move={x:0,y:0};touchControls.reset();localPrediction=null;mixingWorkspace.reset();state=saved.state;recipeBookOpen=saved.book;pausePanel=saved.panel;
     lastStateMessage=saved.message;setMenuMode(saved.mode,false);touchControls.setOverview(saved.overview);
-    tutorialReturn=undefined;window.scrollTo(0,saved.scroll);
+    tutorialReturn=undefined;
+    settings={...saved.settings};applySettings();syncSettingsForm();
+    document.querySelector<HTMLInputElement>("#room-input")!.value=saved.roomInput;
+    if(saved.source==="pause"){
+      selectedRole=saved.profile.role;selectedAccessory=saved.profile.accessory as TitleAccessory;
+      document.querySelector<HTMLInputElement>("#name")!.value=saved.profile.name;
+      document.querySelector<HTMLInputElement>("#fur")!.value=saved.profile.fur;
+      renderRoles();renderAccessoryChoice();
+    }
+    window.scrollTo(0,saved.scroll);
     if(saved.source==="first") {showSelection();void connect("create");}
     else if(saved.source==="menu")showIntro();
-    else {menuStep=saved.step;menu.classList.add("hidden");selection.classList.add("hidden");game.classList.remove("hidden");renderUi();
+    else {menuStep=saved.step;menu.classList.add("hidden");selection.classList.add("hidden");game.classList.remove("hidden");renderUi();if(state)audio.syncState(null,state,token);
       document.querySelector<HTMLElement>("#replay-tutorial")?.focus({preventScroll:true});}
   });
 }
 
 function applyTutorialStep(step:TutorialStep) {
-  mixingWorkspace.reset();move={x:0,y:0};touchControls.reset();localPrediction=null;
+  audio.stopTool();mixingWorkspace.reset();move={x:0,y:0};touchControls.reset();localPrediction=null;
   document.querySelector("#toast")!.classList.remove("show");
   setMenuMode(step.id==="crew"?"multiplayer":"single",false);
-  state=tutorialState(token,profile(),step.scene);lastStateMessage="";recipeBookOpen=step.scene==="book";recipeBookPage=0;pausePanel="main";
+  state=tutorialState(token,profile(),step.scene);practice=new TutorialPractice(state,token);lastStateMessage="";recipeBookOpen=step.scene==="book";recipeBookPage=0;pausePanel="main";
   touchControls.setOverview(["welcome","ready"].includes(step.scene));
   const title=step.scene==="title",choosing=step.scene==="selection";
   menuStep=title?"intro":choosing?"selection":"game";
   menu.classList.toggle("hidden",!title);selection.classList.toggle("hidden",!choosing);game.classList.toggle("hidden",title||choosing);
-  window.scrollTo(0,0);renderUi();
+  window.scrollTo(0,0);renderUi();audio.syncState(null,state,token);
   if(title){overlay.classList.add("hidden");void loadMenuScene(menu,"intro");}
   if(choosing){overlay.classList.add("hidden");renderSelection();void loadMenuScene(selection,"selection");
     for(const {role} of roles)if(!titlePortraitImages[role].getAttribute("src"))titlePortraitImages[role].src=catPortraits[role];}
@@ -227,7 +259,15 @@ function applyTutorialStep(step:TutorialStep) {
 }
 
 function tutorialTargets(step:TutorialStep):TutorialRect[] {
-  return (step.target??[]).flatMap(target=>{
+  let targets=step.target??[];
+  if(step.scene==="timed"&&document.querySelector(".tutorial-card.practicing"))targets=[".tool-timing",".tool-action"];
+  if(state?.pausedAt!==null&&state?.code==="TUTORIAL"&&!["book","settings","pause"].includes(step.id))targets=["#resume-shift"];
+  if(step.id==="pause"&&state?.pausedAt===null)targets=["#game-menu"];
+  if(step.id==="book"&&!recipeBookOpen)targets=[state?.pausedAt===null?"#game-menu":"#open-pause-book"];
+  if(step.id==="settings"&&pausePanel==="settings")targets=["#pause-brightness"];
+  if(step.id==="saves"&&document.querySelector("#tutorial-save-preview")?.getClientRects().length)targets=["#tutorial-save-preview"];
+  if(state?.code==="TUTORIAL"&&["ingredients","timed","chop-beat","paw-beat"].includes(step.scene)&&!state.mixing[token])targets=["carry"];
+  return targets.flatMap(target=>{
     if(target==="movement")return [...document.querySelectorAll<HTMLElement>(touchLayout?".touch-pad,.touch-map":".controls")].map(node=>node.getBoundingClientRect());
     if(target==="action"||target==="carry"){
       const node=document.querySelector<HTMLElement>(target==="action"?(touchLayout?".touch-interact":".controls"):(touchLayout?".touch-carry":"#carry"));
@@ -271,7 +311,7 @@ function applySettings() {
   brightnessShade.style.mixBlendMode = settings.brightness > 100 ? "screen" : "normal";
   brightnessShade.style.opacity = String(Math.abs(settings.brightness - 100) / 100);
   audio.setSettings(settings);
-  saveSettings(settings);
+  if(!tutorial.isOpen)saveSettings(settings);
 }
 function syncSettingsForm() {
   document.querySelector<HTMLSelectElement>("#setting-scale")!.value = String(settings.scale);
@@ -286,7 +326,7 @@ function syncSettingsForm() {
 }
 applySettings();
 function setMenuMode(mode: "single" | "multiplayer", persist=true) {
-  sessionMode = mode; if(persist)sessionStorage.setItem("paws-pours-mode", mode);
+  sessionMode = mode; if(persist&&!tutorial.isOpen)sessionStorage.setItem("paws-pours-mode", mode);
   document.querySelector<HTMLElement>(".intro-menu")!.dataset.mode = mode;
   document.querySelector<HTMLButtonElement>("#save-menu")!.disabled = mode === "multiplayer";
   document.querySelector<HTMLButtonElement>("#solo")!.disabled = mode === "multiplayer";
@@ -325,7 +365,7 @@ function showSelection() {
   if (entering) document.querySelector<HTMLInputElement>("#name")!.focus();
 }
 function syncLobbyProfile() {
-  if (menuStep === "selection" && state?.phase === "lobby") socket.emit("lobby-profile", profile());
+  if (!tutorial.isOpen && menuStep === "selection" && state?.phase === "lobby") socket.emit("lobby-profile", profile());
   document.querySelectorAll<HTMLElement>("[data-cat-preset]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.catPreset === selectedRole)));
 }
 function renderSelection() {
@@ -408,7 +448,8 @@ document.querySelector<HTMLInputElement>("#name")!.addEventListener("input", () 
 });
 
 async function connect(action: "create" | "join") {
-  if (connectionPending||tutorial.isOpen||tutorialStarting) return;
+  if(tutorial.isOpen){tutorial.practice();tutorial.report("Room codes connect your crew after the tour. No room is opened during practice.");return;}
+  if (connectionPending||tutorialStarting) return;
   const code = document.querySelector<HTMLInputElement>("#room-input")!.value.toUpperCase().trim();
   if (action === "join" && !/^[A-Z0-9]{4}$/.test(code)) return setToast("Enter the four-character room code first.");
   const payload = { ...profile(), solo: sessionMode === "single", snapshot: sessionMode === "single" ? pendingSave?.snapshot : undefined };
@@ -443,7 +484,7 @@ document.querySelector<HTMLButtonElement>("#selection-start")!.onclick = () => {
 };
 setMenuMode(sessionMode);
 document.querySelector<HTMLButtonElement>("#game-menu")!.onclick = () => {
-  if (state?.phase === "shift" && state.pausedAt === null) socket.emit("set-pause", true);
+  if (state?.phase === "shift" && state.pausedAt === null) sendGameAction("set-pause", true);
 };
 document.querySelector<HTMLButtonElement>("#settings")!.onclick = () => { syncSettingsForm(); const panel = document.querySelector<HTMLElement>("#settings-panel")!; panel.classList.remove("hidden"); panel.scrollIntoView({ block: "center", behavior: settings.reducedMotion ? "instant" : "smooth" }); document.querySelector<HTMLSelectElement>("#setting-scale")!.focus({ preventScroll: true }); };
 document.querySelector<HTMLButtonElement>("#close-settings")!.onclick = () => document.querySelector("#settings-panel")!.classList.add("hidden");
@@ -477,6 +518,11 @@ function startSaveSlot(index: number, save: SoloSave | null) {
   document.querySelector<HTMLDialogElement>("#save-dialog")!.close(); showSelection();
 }
 function openSaveMenu() {
+  if(tutorial.isOpen){
+    tutorial.practice();overlay.classList.remove("hidden");
+    overlay.innerHTML=`<section id="tutorial-save-preview" class="modal card"><p class="eyebrow">LOCAL ADVENTURES</p><h2>Your three save slots</h2><p>Choose a slot on the title screen to save a real adventure. Practice leaves your saves untouched.</p><button id="tutorial-close-save" type="button">Back to the tour</button></section>`;
+    document.querySelector<HTMLButtonElement>("#tutorial-close-save")!.onclick=()=>{overlay.classList.add("hidden");tutorial.refresh();};tutorial.refresh();return;
+  }
   if (sessionMode !== "single") return;
   const dialog = document.querySelector<HTMLDialogElement>("#save-dialog")!;
   const slots = document.querySelector("#save-slots")!; slots.replaceChildren();
@@ -562,7 +608,7 @@ function renderUi() {
   if (!state) return;
   orderHud.render(state.orders);
   document.querySelector("#theme")!.textContent = state.tavern.theme.toUpperCase();
-  document.querySelector("#room-display")!.textContent = sessionMode === "single" ? "SOLO SHIFT" : `ROOM ${state.code}`;
+  document.querySelector("#room-display")!.textContent = tutorial.isOpen ? "OPENING TOUR" : sessionMode === "single" ? "SOLO SHIFT" : `ROOM ${state.code}`;
   const keepsake=document.querySelector<HTMLElement>("#active-keepsake")!;
   keepsake.hidden=!state.activeKeepsake;
   keepsake.textContent=state.activeKeepsake ? keepsakeSummary(state.activeKeepsake) : "";
@@ -575,13 +621,13 @@ function renderUi() {
   const heartStatus = document.querySelector<HTMLElement>("#heart-status")!;
   heartStatus.setAttribute("aria-label", `${hearts} team heart${hearts === 1 ? "" : "s"}`);
   heartStatus.classList.toggle("critical", hearts <= 1);
-  document.querySelector("#timer")!.textContent = state.phase === "shift" ? `${state.pausedAt !== null ? "Ⅱ " : ""}${time(state.shiftSeconds)}` : state.phase.toUpperCase();
+  document.querySelector("#timer")!.textContent = tutorial.isOpen ? "Ⅱ 3:00" : state.phase === "shift" ? `${state.pausedAt !== null ? "Ⅱ " : ""}${time(state.shiftSeconds)}` : state.phase.toUpperCase();
   document.querySelector<HTMLButtonElement>("#game-menu")!.disabled = state.phase !== "shift" || state.pausedAt !== null;
   const player = localPlayer();
   document.querySelector("#carry")!.textContent = state.mixing[token] ? `Preparing: ${recipeById(state.mixing[token].recipeId).name}` : player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.join(", ")}${state.activeKeepsake === "bottomless-bag" ? ` · ${player.carrying.length}/4 slots` : ""}` : "Paws empty";
   if (state.message !== lastStateMessage) {
     lastStateMessage = state.message;
-    setToast(state.message);
+    if(!tutorial.isOpen)setToast(state.message);
   }
   touchControls.setEnabled(state.phase === "shift" && state.pausedAt === null && !state.mixing[token] && !state.mixingChoices?.[token]);
   renderOverlay();
@@ -611,13 +657,13 @@ function renderOverlay() {
         <button id="pause-reset" class="secondary" type="button">Reset settings</button></div><button class="recipe-book-close" id="pause-back" type="button">← Pause menu</button></div>`;
       syncPauseSettingsForm();
       for (const key of ["scale", "pixel", "motion", "brightness", "master", "music", "effects", "muted"]) document.querySelector(`#pause-${key}`)!.addEventListener("input", readPauseSettingsForm);
-      document.querySelector<HTMLButtonElement>("#pause-fullscreen")!.onclick = () => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.(); };
+      document.querySelector<HTMLButtonElement>("#pause-fullscreen")!.onclick = () => { if(tutorial.isOpen){tutorial.report("Fullscreen is available here during your real shift.");return;} if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.(); };
       document.querySelector<HTMLButtonElement>("#pause-reset")!.onclick = () => { settings = { ...defaultSettings }; applySettings(); syncPauseSettingsForm(); syncSettingsForm(); };
       document.querySelector<HTMLButtonElement>("#pause-back")!.onclick = () => { pausePanel = "main"; renderOverlay(); };
     } else {
       overlay.innerHTML = `<div class="modal card pause-menu" role="dialog" aria-modal="true" aria-label="Paused game menu"><p class="eyebrow">SHIFT PAUSED FOR EVERYONE</p><h2>Pause menu</h2><p><span id="pause-by-name"></span> paused the tavern. The shift, orders, and preparation timers are frozen for all cats.</p><div class="pause-actions"><button class="primary" id="resume-shift" type="button">Resume for everyone</button><button id="open-pause-book" type="button">Recipe book</button><button id="open-pause-settings" type="button">Settings</button>${sessionMode === "single" ? '<button id="replay-tutorial" type="button">Replay tutorial</button>' : ""}<button id="leave-game" type="button">Leave game</button></div></div>`;
       document.querySelector("#pause-by-name")!.textContent = pauser;
-      document.querySelector<HTMLButtonElement>("#resume-shift")!.onclick = () => socket.emit("set-pause", false);
+      document.querySelector<HTMLButtonElement>("#resume-shift")!.onclick = () => sendGameAction("set-pause", false);
       document.querySelector<HTMLButtonElement>("#open-pause-book")!.onclick = () => { recipeBookPage = 0; recipeBookOpen = true; renderOverlay(); };
       document.querySelector<HTMLButtonElement>("#open-pause-settings")!.onclick = () => { pausePanel = "settings"; renderOverlay(); };
       const replay=document.querySelector<HTMLButtonElement>("#replay-tutorial");if(replay)replay.onclick=()=>{void startTutorial("pause");};
@@ -626,14 +672,14 @@ function renderOverlay() {
   } else if (state.phase === "shift" && state.mixingChoices?.[token]) {
     overlay.classList.remove("hidden");
     overlay.innerHTML = `<div class="modal card recipe-choice" role="dialog" aria-modal="true" aria-label="Choose a drink"><p class="eyebrow">BOTTOMLESS BAG</p><h2>What shall we make?</h2><p>Choose a drink. Spare ingredients stay in your bag.</p><div class="recipe-choice-actions">${state.mixingChoices[token].map(id => `<button class="upgrade" data-mix-recipe="${id}"><b>${recipeById(id).name}</b><small>${recipeById(id).ingredients.join(" · ")}</small></button>`).join("")}</div><button id="cancel-recipe-choice" class="secondary" type="button">Back to tavern</button></div>`;
-    overlay.querySelectorAll<HTMLButtonElement>("[data-mix-recipe]").forEach(button=>button.onclick=()=>socket.emit("mix-recipe-select",button.dataset.mixRecipe));
-    document.querySelector<HTMLButtonElement>("#cancel-recipe-choice")!.onclick=()=>socket.emit("cancel-mixing");
+    overlay.querySelectorAll<HTMLButtonElement>("[data-mix-recipe]").forEach(button=>button.onclick=()=>sendGameAction("mix-recipe-select",button.dataset.mixRecipe));
+    document.querySelector<HTMLButtonElement>("#cancel-recipe-choice")!.onclick=()=>sendGameAction("cancel-mixing");
   } else if (state.phase === "lobby") {
     overlay.classList.add("hidden");
   } else if (state.phase === "upgrades") {
     overlay.classList.remove("hidden"); const host = state.hostId === token;
     overlay.innerHTML = `<div class="modal card"><p class="eyebrow">SHIFT ${state.round} COMPLETE</p><h2>Choose a keepsake</h2><p>Choose your next shift’s bonus. It replaces the last keepsake.</p><div class="upgrade-grid">${state.upgrades.map((upgrade) => `<button class="upgrade" data-upgrade="${upgrade.id}" ${host && !(upgrade.id === "nine-lives" && state!.health >= 3) ? "" : "disabled"}><b>${upgrade.title}</b><small>${upgrade.body}</small></button>`).join("")}</div>${host ? "" : "<p class=waiting>The host is choosing…</p>"}</div>`;
-    document.querySelectorAll<HTMLButtonElement>("[data-upgrade]").forEach((button) => button.onclick = () => socket.emit("choose-upgrade", button.dataset.upgrade));
+    document.querySelectorAll<HTMLButtonElement>("[data-upgrade]").forEach((button) => button.onclick = () => sendGameAction("choose-upgrade", button.dataset.upgrade));
   } else if (state.phase === "complete") {
     overlay.classList.remove("hidden"); overlay.innerHTML = `<div class="modal card"><p class="eyebrow">RUN OVER</p><h2>A furry good effort.</h2><p>You earned ${state.coins} coins and ${state.reputation} reputation across ${state.round} tavern${state.round > 1 ? "s" : ""}.</p><button class="primary" onclick="location.reload()">Return to menu</button></div>`;
   } else {
@@ -673,7 +719,7 @@ function rememberLocalPrediction(player: Player) {
   };
 }
 function emitMovement(player: Player, moving: boolean) {
-  if(tutorial.isOpen)return;
+  if(tutorial.isOpen){player.moving=moving;return;}
   lastSentMoveSequence += 1; player.moveSequence = lastSentMoveSequence; player.moving = moving;
   rememberLocalPrediction(player);
   socket.emit("move", {
@@ -682,7 +728,7 @@ function emitMovement(player: Player, moving: boolean) {
   });
 }
 function movePlayer(elapsedMs: number) {
-  if(tutorial.isOpen)return;
+  if(tutorial.isOpen&&!tutorialPlaysGame(tutorial.step))return;
   const player = localPlayer();
   if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || state.mixing[token] || state.mixingChoices?.[token]) return;
   const input = movementInput();
@@ -694,6 +740,10 @@ function movePlayer(elapsedMs: number) {
   const resolved = moveWithCounterCollisions(state.tavern, player, movementTarget(player, input, player.role, elapsedMs, keepsakeEffects(state.activeKeepsake).movementMultiplier));
   const travelling = Math.hypot(resolved.x - player.x, resolved.y - player.y) > .001;
   const wasMoving = player.moving;
+  if(tutorial.isOpen&&travelling){
+    tutorial.practice();
+    const feedback=practice?.noteMovement(Math.hypot(resolved.x-player.x,resolved.y-player.y));if(feedback)tutorial.report(feedback);
+  }
   player.x = resolved.x;
   player.y = resolved.y;
   player.moving = travelling;
@@ -705,17 +755,17 @@ function movePlayer(elapsedMs: number) {
 }
 const movementKeys: Record<string, keyof typeof move> = { w: "y", ArrowUp: "y", s: "y", ArrowDown: "y", a: "x", ArrowLeft: "x", d: "x", ArrowRight: "x" };
 window.addEventListener("keydown", (event) => {
-  if(tutorial.isOpen)return;
+  if(tutorial.isOpen&&!tutorialPlaysGame(tutorial.step))return;
   if (event.key === "Escape" && state?.phase === "shift") {
     event.preventDefault();
-    if (state.pausedAt === null) socket.emit("set-pause", true);
+    if (state.pausedAt === null) sendGameAction("set-pause", true);
     else if (recipeBookOpen || pausePanel === "settings") { recipeBookOpen = false; pausePanel = "main"; renderOverlay(); }
-    else socket.emit("set-pause", false);
+    else sendGameAction("set-pause", false);
     return;
   }
   if (state?.pausedAt !== null || event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
-  if (!event.repeat && event.key.toLowerCase() === "e" && state?.phase === "shift" && !state.mixing[token] && !state.mixingChoices?.[token]) { event.preventDefault(); socket.emit("interact"); }
-  if (!event.repeat && event.key.toLowerCase() === "q" && state?.phase === "shift" && !state.mixing[token] && !state.mixingChoices?.[token]) { event.preventDefault(); socket.emit("counter-drink"); }
+  if (!event.repeat && event.key.toLowerCase() === "e" && state?.phase === "shift" && !state.mixing[token] && !state.mixingChoices?.[token]) { event.preventDefault(); sendGameAction("interact"); }
+  if (!event.repeat && event.key.toLowerCase() === "q" && state?.phase === "shift" && !state.mixing[token] && !state.mixingChoices?.[token]) { event.preventDefault(); sendGameAction("counter-drink"); }
   const axis = movementKeys[event.key]; if (!axis) return;
   if (state?.mixing[token] || state?.mixingChoices?.[token]) return;
   event.preventDefault(); move[axis] = event.key === "w" || event.key === "ArrowUp" || event.key === "a" || event.key === "ArrowLeft" ? -1 : 1;
@@ -897,7 +947,7 @@ function renderBoard(now = performance.now()) {
   drawBarGate(context, Object.values(state.players), state.pausedAt !== null, state.tavern.theme);
   drawHazard();
   if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(300, 678, 488, 26); drawText(`⚠ ${state.hazard.message}`, 544, 695, "bold 12px system-ui", "white"); }
-  presentBoard(player);
+  presentBoard(player);if(tutorial.isOpen)tutorial.refresh();
 }
 function presentBoard(player: Player | undefined) {
   const rect = canvas.getBoundingClientRect();

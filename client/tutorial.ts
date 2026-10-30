@@ -1,5 +1,5 @@
 import { clipTutorialTarget, tutorialCardPosition, type TutorialRect } from "./tutorial-layout";
-import { TUTORIAL_STEPS, type TutorialStep } from "./tutorial-content";
+import { TUTORIAL_STEPS, tutorialControls, tutorialPlaysGame, type TutorialStep } from "./tutorial-content";
 import "./tutorial.css";
 
 export class Tutorial {
@@ -10,33 +10,44 @@ export class Tutorial {
   private focusBefore?: HTMLElement;
   private inertBefore = false;
   private onClose?: (result:"complete"|"skipped")=>void;
+  private feedback?: string;
   private readonly maskId = `tour-mask-${Math.random().toString(36).slice(2)}`;
   constructor(private readonly scope:HTMLElement, private readonly options: {
-    touch:()=>boolean; step:(step:TutorialStep)=>void; targets:(step:TutorialStep)=>TutorialRect[];
+    touch:()=>boolean; step:(step:TutorialStep)=>void; targets:(step:TutorialStep)=>TutorialRect[]; avoid?:()=>TutorialRect[]; escape?:()=>boolean;
   }) {
     this.root.className="tutorial-layer"; this.root.hidden=true;
     this.root.innerHTML=`<svg class="tutorial-shade" aria-hidden="true"><defs><mask id="${this.maskId}" maskUnits="userSpaceOnUse"><rect class="tour-mask-base" fill="white" width="100%" height="100%"/><g class="tour-cutouts"></g></mask></defs><rect fill="#100d18" fill-opacity=".66" width="100%" height="100%" mask="url(#${this.maskId})"/><g class="tour-outlines"></g></svg>
-      <article class="tutorial-card" role="dialog" aria-modal="true" aria-labelledby="tutorial-title" aria-describedby="tutorial-copy tutorial-tip">
+      <article class="tutorial-card" role="dialog" aria-modal="false" aria-labelledby="tutorial-title" aria-describedby="tutorial-copy tutorial-tip">
         <header><span class="tutorial-step"></span><button class="tutorial-skip" type="button">Skip tutorial</button></header>
         <progress class="tutorial-progress" max="${TUTORIAL_STEPS.length}" aria-label="Tutorial progress"></progress>
-        <div class="tutorial-words" aria-live="polite" aria-atomic="true"><h2 id="tutorial-title"></h2><p id="tutorial-copy"></p><p id="tutorial-tip"></p></div>
-        <footer><button class="tutorial-back" type="button">Back</button><button class="tutorial-next" type="button">Next</button></footer>
+        <div class="tutorial-words"><h2 id="tutorial-title"></h2><p id="tutorial-copy"></p><p id="tutorial-tip" role="status"></p><button class="tutorial-explain" type="button" hidden>Show instructions</button></div>
+        <footer><button class="tutorial-back" type="button">Back</button><button class="tutorial-reset" type="button">Reset</button><button class="tutorial-next" type="button">Next</button></footer>
       </article>`;
     document.body.append(this.root); this.card=this.root.querySelector("article")!;
     this.root.querySelector<HTMLButtonElement>(".tutorial-skip")!.onclick=()=>this.finish("skipped");
+    this.root.querySelector<HTMLButtonElement>(".tutorial-reset")!.onclick=()=>{
+      if(this.card.classList.contains("practicing"))this.render();else this.practice();
+    };
+    this.root.querySelector<HTMLButtonElement>(".tutorial-explain")!.onclick=()=>{this.card.classList.remove("practicing");this.root.querySelector<HTMLButtonElement>(".tutorial-explain")!.hidden=true;this.position();this.schedule();};
     this.root.querySelector<HTMLButtonElement>(".tutorial-back")!.onclick=()=>{if(this.index>0){this.index--;this.render();}};
     this.root.querySelector<HTMLButtonElement>(".tutorial-next")!.onclick=()=>{
       if(this.index===TUTORIAL_STEPS.length-1)this.finish("complete"); else {this.index++;this.render();}
     };
     window.addEventListener("keydown",event=>{
       if(!this.isOpen)return;
-      if(event.key==="Escape"){event.preventDefault();event.stopImmediatePropagation();this.finish("skipped");}
+      if(event.key==="Escape"){event.preventDefault();event.stopImmediatePropagation();if(!this.options.escape?.())this.finish("skipped");}
       if(event.key==="Tab"){
-        const buttons=[...this.card.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
-        const index=buttons.indexOf(document.activeElement as HTMLButtonElement);
-        const next=event.shiftKey?(index<=0?buttons.length-1:index-1):(index+1)%buttons.length;
-        event.preventDefault();event.stopImmediatePropagation();buttons[next]?.focus();
+        const controls=[...document.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex='0']")]
+          .filter(node=>node.getClientRects().length&&(this.card.contains(node)||this.allowed(node)));
+        const index=controls.indexOf(document.activeElement as HTMLElement);
+        const next=event.shiftKey?(index<=0?controls.length-1:index-1):(index+1)%controls.length;
+        event.preventDefault();event.stopImmediatePropagation();controls[next]?.focus();
       }
+    },true);
+    for(const name of ["pointerdown","click","dblclick","contextmenu"])document.addEventListener(name,event=>{
+      if(!this.isOpen||!(event.target instanceof Element)||this.card.contains(event.target))return;
+      if(this.allowed(event.target)){if(name==="pointerdown")this.practice();return;}
+      event.preventDefault();event.stopImmediatePropagation();
     },true);
     const schedule=()=>this.schedule();
     window.addEventListener("resize",schedule);window.addEventListener("scroll",schedule,true);
@@ -46,14 +57,31 @@ export class Tutorial {
   }
   get isOpen(){return !this.root.hidden;}
   get step(){return TUTORIAL_STEPS[this.index];}
+  private allowed(target:Element){
+    const label=target.closest("label");
+    return tutorialControls(this.step).some(selector=>Boolean(target.closest(selector)||label?.querySelector(selector)));
+  }
+  refresh(){this.schedule();}
+  practice(){
+    if(!this.isOpen||this.card.classList.contains("practicing"))return;
+    this.card.classList.add("practicing");this.root.querySelector<HTMLButtonElement>(".tutorial-explain")!.hidden=false;this.position();this.schedule();
+    this.root.querySelector(".tutorial-reset")!.textContent="Reset";
+  }
+  report(message:string){if(!this.isOpen||this.feedback===message)return;this.feedback=message;this.root.querySelector("#tutorial-tip")!.textContent=message;this.position();this.schedule();}
   start(onClose:(result:"complete"|"skipped")=>void){
     if(this.isOpen)return;
     this.focusBefore=document.activeElement instanceof HTMLElement?document.activeElement:undefined;
-    this.inertBefore=this.scope.inert;this.scope.inert=true;this.onClose=onClose;this.index=0;this.root.hidden=false;
+    this.inertBefore=this.scope.inert;this.scope.inert=false;this.onClose=onClose;this.index=0;this.root.hidden=false;
+    document.body.dataset.tutorialActive="true";
     this.render();this.root.querySelector<HTMLButtonElement>(".tutorial-next")!.focus();
   }
   private render(){
     const step=this.step,touch=this.options.touch();this.root.dataset.step=step.id;
+    this.feedback=undefined;this.card.classList.remove("practicing");
+    this.root.querySelector<HTMLButtonElement>(".tutorial-explain")!.hidden=true;
+    this.root.querySelector<HTMLButtonElement>(".tutorial-reset")!.hidden=!tutorialPlaysGame(step)&&step.scene!=="upgrades";
+    this.root.querySelector(".tutorial-reset")!.textContent="Try it";
+    document.body.dataset.tutorialPractice=String(tutorialPlaysGame(step));
     this.options.step(step);
     this.root.querySelector(".tutorial-step")!.textContent=`Opening tour · ${this.index+1} of ${TUTORIAL_STEPS.length}`;
     this.root.querySelector<HTMLProgressElement>("progress")!.value=this.index+1;
@@ -66,11 +94,13 @@ export class Tutorial {
     this.root.querySelector<HTMLButtonElement>(".tutorial-back")!.disabled=this.index===0;
     this.root.querySelector(".tutorial-next")!.textContent=this.index===TUTORIAL_STEPS.length-1?"Finish tour":this.index===0?"Show me around":"Next";
     this.card.querySelector(".tutorial-words")!.scrollTop=0;
+    this.position();
     this.schedule();
   }
   private finish(result:"complete"|"skipped"){
     if(!this.isOpen)return;
     this.root.hidden=true;this.scope.inert=this.inertBefore;
+    delete document.body.dataset.tutorialActive;delete document.body.dataset.tutorialPractice;
     if(this.frame!==undefined)cancelAnimationFrame(this.frame);
     this.frame=undefined;const done=this.onClose;this.onClose=undefined;done?.(result);
     if(this.focusBefore?.isConnected&&!this.focusBefore.closest(".hidden")&&!(this.focusBefore as HTMLButtonElement).disabled)
@@ -89,7 +119,8 @@ export class Tutorial {
     const targets=this.options.targets(this.step).map(rect=>clipTutorialTarget(rect,viewport)).filter((r):r is TutorialRect=>Boolean(r));
     const wide=viewport.height<=520&&viewport.width>viewport.height&&targets.some(r=>r.width>viewport.width*.55);
     this.card.style.width=wide?`${Math.min(480,viewport.width-24)}px`:"";
-    const box=this.card.getBoundingClientRect(),p=tutorialCardPosition(viewport,box,targets);
+    const avoids=this.card.classList.contains("practicing")?(this.options.avoid?.()??[]):[];
+    const box=this.card.getBoundingClientRect(),p=tutorialCardPosition(viewport,box,[...targets,...avoids]);
     this.card.style.left=`${p.x}px`;this.card.style.top=`${p.y}px`;
     const svg=this.root.querySelector("svg")!;svg.setAttribute("viewBox",`0 0 ${viewport.width} ${viewport.height}`);
     const rects=targets.map(r=>`<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="7"/>`).join("");

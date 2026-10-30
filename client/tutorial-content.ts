@@ -9,6 +9,21 @@ export interface TutorialStep {
   tip?: string; touchTip?: string;
 }
 
+export function tutorialPlaysGame(step: TutorialStep) {
+  return !["welcome", "selection", "title", "upgrades", "ready"].includes(step.scene);
+}
+
+export function tutorialControls(step: TutorialStep): string[] {
+  if (step.scene === "selection") return ["#name", "#fur", "#role-prev", "#role-next", "[data-cat-preset]", "#accessory-prev", "#accessory-next"];
+  if (step.id === "saves") return ["#save-menu", "#tutorial-close-save"];
+  if (step.id === "crew") return ["#room-input", "#mode-solo", "#mode-party", "#create", "#join"];
+  if (step.scene === "upgrades") return ["[data-upgrade]"];
+  if (!tutorialPlaysGame(step)) return [];
+  return [".touch-pad", ".touch-interact", ".touch-map", "#game-menu", ".mixing-actions button", ".mixing-pause", ".mixing-cancel",
+    "#resume-shift", "#open-pause-book", "#open-pause-settings", "#previous-recipe", "#next-recipe", "#close-book", "#pause-back",
+    ".pause-settings input", ".pause-settings select", ".pause-settings button", "[data-mix-recipe]", "#cancel-recipe-choice"];
+}
+
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   { id:"welcome", scene:"welcome", title:"Your first tavern awaits.",
     body:"Congratulations! You've opened your first tavern. Aunt Juniper has left you the keys, a well-loved recipe book, and one piece of advice: a good drink makes a guest feel at home.",
@@ -23,7 +38,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   { id:"movement", scene:"move", title:"Find your paws.", target:["movement"],
     body:"The kitchen is on the left and the guest tables are on the right. Use WASD or the arrow keys to walk around counters and chairs.",
     touchTip:"Drag the movement pad to walk. Map shows the whole tavern; Follow brings the camera back to your cat.",
-    tip:"This is a guided preview. You can try the controls after the tour." },
+    tip:"Try it now. Next is always available; Reset starts this practice step again." },
   { id:"action", scene:"action", title:"One action, many helpful paws.", target:["action"],
     body:"Walk close to a station, then press E. The same action gathers ingredients, prepares and serves drinks, cleans, or places and retrieves a finished drink.",
     touchTip:"Walk close to a station and tap this one button. Its label changes to match the action: Take, Mix, Serve, Place drink, or Pick up drink.",
@@ -44,7 +59,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   { id:"mixer", scene:"mixer", title:"Make a little tavern magic.", target:["station:mix"],
     body:"Bring a recipe's three ingredients here and interact to open your workbench. In multiplayer, the other bartenders keep working while you prepare the drink." },
   { id:"ingredients", scene:"ingredients", title:"First, add your ingredients.", target:[".mixing-actions"],
-    body:"Use the three Add buttons in any order. The preparation clock gives you 45 seconds; three mistakes spoil the mixture. Cancel keeps the ingredients in your paws so you can return later.",
+    body:"Try the three Add buttons in any order. In a real shift, you have 45 seconds and three mistakes spoil the mixture. Here, practice is untimed and you can retry freely. Cancel keeps your ingredients.",
     tip:"Menu · Pause also freezes preparation time for everyone." },
   { id:"timing", scene:"timed", title:"Find the sweet spot.", target:[".tool-timing"],
     body:"The green window is the sweet spot. The target line and seconds show when to release. The bar fills while you hold a shaker, spoon, or pourer." },
@@ -78,7 +93,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 
 export function tutorialCameraFocus(scene: TutorialScene): Vec {
   const cells: Partial<Record<TutorialScene, [number, number]>> = {
-    pantry:[1,2], action:[1,2], carry:[3,2], chop:[2,5], mixer:[3,2], handoff:[5,3], tidy:[2,9], serve:[12,3]
+    pantry:[1,2], action:[1,2], carry:[3,2], chop:[2,5], mixer:[3,2], handoff:[5,3], tidy:[1,9], serve:[12,3]
   };
   const [x,y] = cells[scene] ?? [3,8];
   return gridCellCenter(x,y);
@@ -99,7 +114,7 @@ export function tutorialState(playerId: string, profile: { name:string; role:Cat
   if (["ingredients","timed","chop-beat","paw-beat"].includes(scene)) {
     const recipe = recipeById(recipeId), session = createMixingSession(playerId, recipeId);
     player.carrying = [...recipe.ingredients];
-    if (scene !== "ingredients") { session.stepIndex = 3; session.usedIngredients = [...recipe.ingredients]; }
+    if (scene !== "ingredients") { session.stepIndex = 3; session.usedIngredients = [...recipe.ingredients]; session.qualityPoints = recipe.ingredients.length; }
     session.feedback = scene === "ingredients" ? "Add your three ingredients in any order." : scene === "timed"
       ? "Hold, then release in the green sweet spot." : "Follow the highlighted beat button.";
     state.mixing[playerId] = session;
