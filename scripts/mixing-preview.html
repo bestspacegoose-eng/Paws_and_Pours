@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Mixing alignment QA</title>
 <style>body{margin:0;background:#21172c;color:#fce8c4;font:14px monospace}#picker{position:fixed;z-index:100;inset:0 0 auto;padding:6px;background:#342342;display:flex;flex-wrap:wrap;gap:8px}#picker label{display:flex;align-items:center;gap:5px}#picker select{padding:6px;max-width:200px;font-size:14px}.mixing-workspace{top:86px!important}.mixing-shell{max-height:calc(100dvh - 100px)!important}</style></head>
-<body><div id="picker"><label>Recipe <select id="animation"></select></label><label>Action <select id="step"></select></label><label><input id="reduced" type="checkbox">Reduced motion</label></div><main id="mount"></main>
+<body><div id="picker"><label>Theme <select id="theme"><option>Cozy Village Pub</option><option>Haunted Moonlit Inn</option><option>Pirate Cat Tavern</option></select></label><label>Recipe <select id="animation"></select></label><label>Action <select id="step"></select></label><label><input id="reduced" type="checkbox">Reduced motion</label></div><main id="mount"></main>
 <script type="module">
 import { loadGameAssets } from '/client/game-assets.ts';
 import { MixingWorkspace } from '/client/mixing-workspace.ts';
@@ -17,6 +17,7 @@ const workspace=new MixingWorkspace(document.querySelector('#mount'),{
 const recipeSelect=document.querySelector('#animation'),stepSelect=document.querySelector('#step');
 recipeSelect.replaceChildren(...RECIPES.map(recipe=>new Option(recipe.name,recipe.id)));
 function action(){
+ state.tavern.theme=document.querySelector('#theme').value;
  const recipe=recipeById(recipeSelect.value),index=Number(stepSelect.value),expected=recipe.preparation.actions[index];
  state.players.qa.carrying=[...recipe.ingredients];state.mixing.qa=createMixingSession('qa',recipe.id);
  Object.assign(state.mixing.qa,{stepIndex:3+index,usedIngredients:[...recipe.ingredients],feedback:expected.kind==='timed-tool'?`Hold ${expected.tool} near ${(expected.targetMs/1000).toFixed(1)} seconds.`:`Tap ${expected.style==='chop'?'to chop':'alternating paws'} along with the beat.`});
@@ -24,6 +25,7 @@ function action(){
 }
 function recipe(){stepSelect.replaceChildren(...recipeById(recipeSelect.value).preparation.actions.map((step,index)=>new Option(step.kind==='timed-tool'?step.tool:step.style,String(index))));action();}
 recipeSelect.onchange=recipe;stepSelect.onchange=action;
+document.querySelector('#theme').onchange=action;
 document.querySelector('#reduced').onchange=event=>{document.body.dataset.reducedMotion=String(event.target.checked);action();};
 recipe();await loadGameAssets();document.body.dataset.ready='true';
 </script></body></html>

@@ -1,4 +1,5 @@
-import { createMixingSession, initialState, makeTavern, mixingStepsForRecipe, PLAYER_SPAWNS, pointCollidesWithCounters, RECIPES, UPGRADES, type GameState, type Player } from "./game.js";
+import { keepsakeEffects, isKeepsakeId } from "./keepsakes.js";
+import { TAVERN_THEMES, recipesForCarriedIngredients, nearbyStation, createMixingSession, initialState, makeTavern, mixingStepsForRecipe, PLAYER_SPAWNS, pointCollidesWithCounters, RECIPES, UPGRADES, type GameState, type Player } from "./game.js";
 
 export interface SoloSnapshot {
   version: 1;
@@ -22,15 +23,18 @@ export function restoreSoloSnapshot(input: unknown, code: string, player: Player
         !finite(saved.coins, 0, 1e7) || !finite(saved.reputation, 0, 1e7) || !finite(saved.health, 0, 3) ||
         !finite(saved.shiftSeconds, 0, 180) || !["lobby", "shift", "upgrades", "complete"].includes(saved.phase) ||
         !finite(saved.orderPatienceBonus, 0, 1200) || !Array.isArray(saved.orders) || saved.orders.length > 4) return;
+    if (saved.activeKeepsake !== undefined && !isKeepsakeId(saved.activeKeepsake)) return;
+    const activeKeepsake = saved.activeKeepsake ?? (saved.orderPatienceBonus === 12 ? "patient-patrons" : undefined);
     const source = saved.players?.[snapshot.playerId];
     const ingredients = new Set(RECIPES.flatMap((recipe) => recipe.ingredients).concat("tuna"));
     const validRecipe = (id: unknown) => typeof id === "string" && RECIPES.some((recipe) => recipe.id === id);
-    if (!source || !Array.isArray(source.carrying) || source.carrying.length > 3 || source.carrying.some((item) => !ingredients.has(item)) ||
+    if (!source || !Array.isArray(source.carrying) || source.carrying.length > keepsakeEffects(activeKeepsake).carryCapacity || source.carrying.some((item) => !ingredients.has(item)) ||
         (source.drink !== undefined && !validRecipe(source.drink))) return;
     const state = initialState(code, player.id, saved.tavern.seed);
     state.tavern = makeTavern(saved.tavern.seed, saved.round);
+    if (TAVERN_THEMES.includes(saved.tavern.theme)) state.tavern.theme = saved.tavern.theme;
     Object.assign(state, { round: saved.round, phase: saved.phase, coins: saved.coins, reputation: saved.reputation,
-      health: saved.health, shiftSeconds: saved.shiftSeconds, orderPatienceBonus: saved.orderPatienceBonus });
+      health: saved.health, shiftSeconds: saved.shiftSeconds, activeKeepsake, orderPatienceBonus: keepsakeEffects(activeKeepsake).patienceBonus });
     state.upgrades = UPGRADES.filter((upgrade) => saved.upgrades?.some((entry) => entry.id === upgrade.id));
     const assigned = new Set<string>();
     for (const order of saved.orders) {
@@ -65,6 +69,10 @@ export function restoreSoloSnapshot(input: unknown, code: string, player: Player
           feedback: "Save loaded. Continue preparing; restart any interrupted tool action." });
         state.mixing[player.id] = mixing;
       }
+    }
+    if (!state.mixing[player.id] && saved.mixingChoices?.[snapshot.playerId] && nearbyStation(state.tavern, state.players[player.id])?.kind === "mix") {
+      const choices = recipesForCarriedIngredients(source.carrying);
+      if (choices.length > 1) state.mixingChoices = { [player.id]: choices.map(recipe => recipe.id) };
     }
     if (saved.hazard && ["napkins", "fire", "ectoplasm"].includes(saved.hazard.kind) && finite(saved.hazard.x, 10, 918) && finite(saved.hazard.y, 10, 628))
       state.hazard = { id: "restored-hazard", kind: saved.hazard.kind, x: saved.hazard.x, y: saved.hazard.y, message: String(saved.hazard.message).slice(0, 100) };

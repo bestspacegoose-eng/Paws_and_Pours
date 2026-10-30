@@ -19,7 +19,7 @@ export class Tutorial {
       <article class="tutorial-card" role="dialog" aria-modal="true" aria-labelledby="tutorial-title" aria-describedby="tutorial-copy tutorial-tip">
         <header><span class="tutorial-step"></span><button class="tutorial-skip" type="button">Skip tutorial</button></header>
         <progress class="tutorial-progress" max="${TUTORIAL_STEPS.length}" aria-label="Tutorial progress"></progress>
-        <div class="tutorial-words"><h2 id="tutorial-title"></h2><p id="tutorial-copy"></p><p id="tutorial-tip"></p></div>
+        <div class="tutorial-words" aria-live="polite" aria-atomic="true"><h2 id="tutorial-title"></h2><p id="tutorial-copy"></p><p id="tutorial-tip"></p></div>
         <footer><button class="tutorial-back" type="button">Back</button><button class="tutorial-next" type="button">Next</button></footer>
       </article>`;
     document.body.append(this.root); this.card=this.root.querySelector("article")!;
@@ -82,8 +82,13 @@ export class Tutorial {
   }
   private position(){
     if(!this.isOpen)return;
-    const viewport={width:document.documentElement.clientWidth,height:window.innerHeight};
+    const style=getComputedStyle(this.root);
+    const viewport={width:document.documentElement.clientWidth,height:window.innerHeight,insets:{
+      top:parseFloat(style.paddingTop)||0,right:parseFloat(style.paddingRight)||0,
+      bottom:parseFloat(style.paddingBottom)||0,left:parseFloat(style.paddingLeft)||0}};
     const targets=this.options.targets(this.step).map(rect=>clipTutorialTarget(rect,viewport)).filter((r):r is TutorialRect=>Boolean(r));
+    const wide=viewport.height<=520&&viewport.width>viewport.height&&targets.some(r=>r.width>viewport.width*.55);
+    this.card.style.width=wide?`${Math.min(480,viewport.width-24)}px`:"";
     const box=this.card.getBoundingClientRect(),p=tutorialCardPosition(viewport,box,targets);
     this.card.style.left=`${p.x}px`;this.card.style.top=`${p.y}px`;
     const svg=this.root.querySelector("svg")!;svg.setAttribute("viewBox",`0 0 ${viewport.width} ${viewport.height}`);

@@ -1,10 +1,11 @@
+import { themeArt } from "./theme-tiles";
 import { gameImage } from "./game-assets";
 import { furnitureArt } from "./furniture-art";
 import type { Station, Theme } from "../shared/game";
 import atlasUrl from "./assets/tilemap/dining-furniture-v2.png";
 
 const atlas = gameImage(atlasUrl);
-// The quiet lavender rug remains shared; furniture comes from each theme's sheet.
+// Keep the moon tavern's quiet lavender rug; the other rooms have their own woven rugs.
 const rugFrame = { x: 50, y: 888, width: 358, height: 146 };
 const ready = () => atlas.complete && atlas.naturalWidth > 0;
 
@@ -20,13 +21,15 @@ export function drawDiningTile(context: CanvasRenderingContext2D, station: Stati
     return;
   }
   const frame = art.layout[seat ? station.label === "Bar stool" ? "stool" : "chair" : "table"];
-  const scale = Math.min(54 / frame.width, (seat ? 46 : 43) / frame.height);
-  const width = Math.round(frame.width * scale) * (station.widthCells ?? 1), height = Math.round(frame.height * scale);
+  const scale = Math.min((seat ? 54 : 54 * (art.layout.tableSpan ?? 1)) / frame.width, (seat ? 46 : 43) / frame.height);
+  const width = Math.round(frame.width * scale) * ((station.widthCells ?? 1) / (seat ? 1 : art.layout.tableSpan ?? 1)), height = Math.round(frame.height * scale);
   context.drawImage(art.image, frame.x, frame.y + frame.height * from, frame.width, frame.height * (1 - from),
     Math.round(x - width / 2), Math.round(bottom - height) + height * from, width, height * (1 - from));
 }
 
-export function drawDiningRug(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+export function drawDiningRug(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, theme:Theme = "Haunted Moonlit Inn") {
+  const art=themeArt(theme);
+  if(art){const frame=art.layout.rug;context.drawImage(art.image,frame.x,frame.y,frame.width,frame.height,x,y,width,height);return;}
   if (!ready()) {
     context.fillStyle = "#978ca8"; context.fillRect(x, y, width, height);
     context.strokeStyle = "#d8c8c0"; context.lineWidth = 2;

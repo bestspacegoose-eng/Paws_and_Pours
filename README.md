@@ -54,6 +54,8 @@ npm test
 
 ## Controls
 
+Choose **How to play** on the title screen for a skippable, story-led opening tour. It appears automatically before your first new solo shift and can be replayed from the solo pause menu. Existing saves load directly. The tour uses a separate preview, so clocks, saved progress, unfinished drinks, and multiplayer rooms are unaffected. See [`docs/TUTORIAL.md`](docs/TUTORIAL.md).
+
 On phones and tablets, drag the movement pad and use the single contextual action button to gather, mix, serve, place, or pick up drinks. Its label changes with the nearby station and your carried item. **Map** shows the full tavern; **Follow** returns to the following camera. Touch controls support portrait and landscape.
 
 - `WASD` or arrow keys: move your cat.
@@ -94,6 +96,7 @@ For the real two-client server smoke test, start the built server in one termina
 npm start
 npm run test:multiplayer
 npm run test:seating
+npm run test:keepsakes
 ```
 
 The smoke test creates two Socket.IO clients and verifies the shared pause, gathering, an independently controlled player during mixing, ordered recipe actions, server-owned timing and quality, drink completion, and serving the matching live order.
@@ -111,3 +114,5 @@ See [`docs/MOBILE_AND_MIXING.md`](docs/MOBILE_AND_MIXING.md) for mobile controls
 See [`docs/MINIGAME_ART.md`](docs/MINIGAME_ART.md) for the new pixel-art preparation tools, animation layers, generation prompt, and desktop/mobile review captures.
 
 See [`docs/MENU_LOADING.md`](docs/MENU_LOADING.md) for deferred game assets, optimized menu images, local fonts, and measured mobile loading improvements.
+
+See [`docs/THEMES_AND_KEEPSAKES.md`](docs/THEMES_AND_KEEPSAKES.md) for the complete village, moon, and pirate tilemaps, next-shift keepsake effects, and verification captures.

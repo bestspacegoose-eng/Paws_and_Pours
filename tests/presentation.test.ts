@@ -75,7 +75,7 @@ test("bar stools have solid cells and preserve the bar entrance and dining aisle
 
 test("every theme has separate furniture crops within its actual sheet bounds", () => {
   for (const [theme, layout] of Object.entries(FURNITURE_LAYOUT)) {
-    const [width, height] = theme === "Cozy Village Pub" ? [1536, 1024] : [1254, 1254];
+    const [width, height] = [1254, 1254];
     for (const frame of [...layout.counters, layout.table, layout.chair, layout.stool]) {
       assert.ok(frame.x >= 0 && frame.y >= 0 && frame.width > 0 && frame.height > 0);
       assert.ok(frame.x + frame.width <= width && frame.y + frame.height <= height);

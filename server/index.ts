@@ -5,14 +5,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import { restoreSoloSnapshot } from "../shared/solo-save.js";
+import { applyKeepsake, keepsakeEffects, keepsakeSummary, remainingIngredients, servingReward } from "../shared/keepsakes.js";
 import { usesDrinkHandoff } from "../shared/interaction.js";
 import {
   applyMissedOrderPenalty, createMixingSession, expectedMixingStep, type CatRole, type FacingDirection, type GameState,
   initialState, makeOrder, makeTavern, MIXING_MAX_MISTAKES, mixingQuality,
-  moveWithCounterCollisions, mulberry32, pauseShift, recipeById, recipeForIngredients, resumeShift, seededUpgrades,
+  moveWithCounterCollisions, mulberry32, pauseShift, recipeById, recipesForCarriedIngredients, resumeShift, seededUpgrades,
   nearbyStation, transferCounterDrink, PLAYER_SPAWNS, addMixingIngredient, chopTuna, nextCustomerSeat, servingOrderIndex,
   rhythmTimingAccepted, rhythmTimingQuality, shiftDurationForRound, toolTimingAccepted, toolTimingQuality,
-  type Hazard, type MixingSession, type MixingTool, type Player, type RhythmAction, type Station
+  TAVERN_THEMES, type KeepsakeId, type Hazard, type MixingSession, type MixingTool, type Player, type RhythmAction, type Station
 } from "../shared/game.js";
 
 const app = express();
@@ -44,7 +45,7 @@ function playerFor(socketId: string, state: GameState) {
 }
 function setMessage(state: GameState, message: string) { state.message = message; }
 function counterHandoff(state: GameState, player: Player, station: Station) {
-  const result = transferCounterDrink(player, station);
+  const result = transferCounterDrink(player, station, keepsakeEffects(state.activeKeepsake).carryCapacity);
   const messages = {
     placed: `${player.name} left a drink on the counter for the crew.`,
     "picked-up": `${player.name} picked up the prepared drink.`,
@@ -66,8 +67,9 @@ function nextMixingInstruction(session: MixingSession) {
 }
 
 function failMixing(state: GameState, player: Player, message: string) {
+  const session = state.mixing[player.id];
+  player.carrying = session ? remainingIngredients(player.carrying, recipeById(session.recipeId)) : player.carrying;
   delete state.mixing[player.id];
-  player.carrying = [];
   player.moving = false;
   setMessage(state, message);
 }
@@ -91,7 +93,7 @@ function completeMixing(state: GameState, player: Player, session: MixingSession
   const quality = mixingQuality(session, recipe);
   player.drink = recipe.id;
   player.drinkQuality = quality;
-  player.carrying = [];
+  player.carrying = remainingIngredients(player.carrying, recipe);
   player.moving = false;
   delete state.mixing[player.id];
   const qualityLabel = quality >= 0.88 ? "perfect" : quality >= 0.6 ? "tasty" : "rustic";
@@ -103,6 +105,7 @@ function startShift(state: GameState) {
   state.pausedAt = null;
   state.pausedBy = null;
   state.mixing = {};
+  state.mixingChoices = {};
   state.shiftSeconds = shiftDurationForRound(state.round);
   state.orders = [];
   state.hazard = null;
@@ -141,25 +144,26 @@ function spawnHazard(state: GameState): Hazard {
 }
 function endShift(state: GameState) {
   state.mixing = {};
+  state.mixingChoices = {};
   state.phase = "upgrades";
-  state.upgrades = seededUpgrades(seeds.get(state.code) ?? 1, state.round);
+  state.upgrades = seededUpgrades(seeds.get(state.code) ?? 1, state.round, state.health);
   state.message = "Shift complete! The crew chooses one keepsake for the next tavern.";
 }
 function failRun(state: GameState) {
   state.mixing = {};
+  state.mixingChoices = {};
   state.phase = "complete";
   state.message = "The tavern cat-astrophe got the better of the crew. Start a fresh run!";
 }
-function resetForRound(state: GameState, upgradeId: string) {
-  const seed = seeds.get(state.code) ?? 1;
+function resetForRound(state: GameState, upgradeId: KeepsakeId) {
+  const seed = seeds.get(state.code) ?? 1, previousTheme = state.tavern.theme;
   state.round += 1;
   state.tavern = makeTavern(seed, state.round);
-  state.orderPatienceBonus = upgradeId === "patient-patrons" ? 12 : 0;
-  if (upgradeId === "nine-lives") state.health = Math.min(3, state.health + 1);
+  // Legacy saves may have a theme chosen by the old random sequence.
+  if (state.tavern.theme === previousTheme) state.tavern.theme = TAVERN_THEMES[(TAVERN_THEMES.indexOf(previousTheme) + 1) % TAVERN_THEMES.length];
+  applyKeepsake(state, upgradeId);
   startShift(state);
-  if (upgradeId === "nine-lives") state.message = `Nine Lives restored a heart. ${state.health} team hearts remain.`;
-  else if (upgradeId === "patient-patrons") state.message = "Patient Patrons gives each order 12 extra seconds this shift.";
-  else if (upgradeId === "swift-paws") state.message = "Swift Paws acquired: the cats feel zoomy.";
+  state.message = `${state.tavern.theme}: shift ${state.round}. ${keepsakeSummary(upgradeId)}.`;
 }
 
 io.on("connection", (socket) => {
@@ -242,7 +246,7 @@ io.on("connection", (socket) => {
   socket.on("move", (position: { x: number; y: number; direction?: FacingDirection; moving?: boolean; sequence?: number }) => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.phase !== "shift" || state.pausedAt !== null) return;
-    if (state.mixing[player.id]) {
+    if (state.mixing[player.id] || state.mixingChoices?.[player.id]) {
       if (player.moving) { player.moving = false; broadcast(state); }
       return;
     }
@@ -261,7 +265,7 @@ io.on("connection", (socket) => {
   socket.on("interact", () => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.phase !== "shift" || state.pausedAt !== null) return;
-    if (state.mixing[player.id]) return;
+    if (state.mixing[player.id] || state.mixingChoices?.[player.id]) return;
     const nearby = nearbyStation(state.tavern, player);
     if (!nearby) return setMessage(state, "Walk up to a brightly colored station, then press E.");
     if (usesDrinkHandoff(player, nearby)) {
@@ -269,7 +273,7 @@ io.on("connection", (socket) => {
     }
     if (nearby.kind === "pantry") {
       if (player.drink) setMessage(state, "Set your finished drink on a counter with Q, or serve it first.");
-      else if (player.carrying.length >= 3) setMessage(state, `${player.name}'s paws are full—mix those ingredients first.`);
+      else if (player.carrying.length >= keepsakeEffects(state.activeKeepsake).carryCapacity) setMessage(state, `${player.name}'s paws are full—mix those ingredients first.`);
       else {
         const ingredient = nearby.ingredient;
         if (!ingredient) return setMessage(state, "Choose an ingredient from the prep table.");
@@ -278,11 +282,12 @@ io.on("connection", (socket) => {
       }
     }
     if (nearby.kind === "mix") {
-      if (player.carrying.includes("tuna")) {
+      const recipes = recipesForCarriedIngredients(player.carrying);
+      const recipe = recipes[0];
+      if (!recipe && player.carrying.includes("tuna")) {
         setMessage(state, "Chop the raw tuna at the chopping board first, then pick up the pieces.");
         broadcast(state); return;
       }
-      const recipe = recipeForIngredients(player.carrying);
       if (!recipe) {
         if (player.carrying.length >= 3) {
           player.carrying = [];
@@ -290,14 +295,19 @@ io.on("connection", (socket) => {
         } else setMessage(state, "Gather all three recipe ingredients before opening the workbench.");
       }
       else if (player.drink) setMessage(state, `${player.name} is already carrying a finished drink.`);
-      else {
+      else if (recipes.length > 1) {
+        state.mixingChoices ??= {};
+        state.mixingChoices[player.id] = recipes.map(recipe => recipe.id);
+        player.moving = false;
+        setMessage(state, "Choose a drink to prepare. Spare ingredients stay in your bag.");
+      } else {
         state.mixing[player.id] = createMixingSession(player.id, recipe.id);
         player.moving = false;
         setMessage(state, `${player.name} opened the workbench for ${recipe.name}.`);
       }
     }
     if (nearby.kind === "chop") {
-      const result = chopTuna(player, nearby);
+      const result = chopTuna(player, nearby, keepsakeEffects(state.activeKeepsake).carryCapacity);
       setMessage(state, { chopped: "Tuna chopped! Press E to pick up the pieces.", "picked-up": "Picked up chopped tuna.", full: "Your paws are full.", "needs-tuna": "Bring raw tuna here to chop it." }[result]);
     }
     if (nearby.kind === "serve" || nearby.kind === "seat") {
@@ -309,11 +319,10 @@ io.on("connection", (socket) => {
           const [order] = state.orders.splice(index, 1);
           const patienceQuality = order.patience / order.maxPatience;
           const preparationQuality = player.drinkQuality ?? 1;
-          const combinedQuality = patienceQuality * 0.6 + preparationQuality * 0.4;
-          const tip = Math.max(3, (patienceQuality > 0.6 ? 8 : 5) + (preparationQuality >= 0.88 ? 2 : preparationQuality < 0.45 ? -2 : 0));
-          state.coins += tip; state.reputation += combinedQuality > 0.6 ? 2 : 1; player.score += tip;
+          const { tip, reputation, bonus } = servingReward(patienceQuality, preparationQuality, state.activeKeepsake);
+          state.coins += tip; state.reputation += reputation; player.score += tip;
           player.drink = undefined; player.drinkQuality = undefined;
-          setMessage(state, `${order.customer} purrs with delight! +${tip} coins.`);
+          setMessage(state, `${order.customer} purrs with delight! +${tip} coins.${bonus ? ` Includes +${bonus} from Lucky Whiskers.` : ""}`);
         }
       }
     }
@@ -334,10 +343,23 @@ io.on("connection", (socket) => {
 
   socket.on("counter-drink", () => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
-    if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || state.mixing[player.id]) return;
+    if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || state.mixing[player.id] || state.mixingChoices?.[player.id]) return;
     const station = nearbyStation(state.tavern, player);
     if (station) counterHandoff(state, player, station);
     else setMessage(state, "Move beside a counter to place or pick up a drink.");
+    broadcast(state);
+  });
+
+  socket.on("mix-recipe-select", (recipeId: string) => {
+    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || player.drink ||
+        !state.mixingChoices?.[player.id]?.includes(recipeId) || nearbyStation(state.tavern, player)?.kind !== "mix") return;
+    const recipe = recipesForCarriedIngredients(player.carrying).find(recipe => recipe.id === recipeId);
+    if (!recipe) return;
+    delete state.mixingChoices[player.id];
+    state.mixing[player.id] = createMixingSession(player.id, recipe.id);
+    player.moving = false;
+    setMessage(state, `${player.name} opened the workbench for ${recipe.name}.`);
     broadcast(state);
   });
 
@@ -429,8 +451,9 @@ io.on("connection", (socket) => {
 
   socket.on("cancel-mixing", () => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
-    if (!state || !player || state.pausedAt !== null || !state.mixing[player.id]) return;
+    if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || (!state.mixing[player.id] && !state.mixingChoices?.[player.id])) return;
     delete state.mixing[player.id];
+    if (state.mixingChoices) delete state.mixingChoices[player.id];
     player.moving = false;
     setMessage(state, `${player.name} stepped away from the workbench. Ingredients were kept.`);
     broadcast(state);
@@ -439,8 +462,9 @@ io.on("connection", (socket) => {
   socket.on("choose-upgrade", (upgradeId: string) => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.hostId !== player.id || state.phase !== "upgrades") return;
-    if (!state.upgrades.some((upgrade) => upgrade.id === upgradeId)) return;
-    resetForRound(state, upgradeId); broadcast(state);
+    const offered = state.upgrades.find((upgrade) => upgrade.id === upgradeId);
+    if (!offered || (offered.id === "nine-lives" && state.health >= 3)) return;
+    resetForRound(state, offered.id); broadcast(state);
   });
 
   socket.on("disconnect", () => {

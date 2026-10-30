@@ -1,3 +1,4 @@
+import { THEME_TILES } from "./theme-tiles-layout";
 import type { Station, Theme } from "../shared/game";
 import { PLAYER_FRAMES } from "./sprite-frames";
 import { PLAYER_ANCHORS } from "./character-anchors";
@@ -8,9 +9,11 @@ export function seatedCustomerLayout(station: Station, x: number, chairBottom: n
   const anchor = PLAYER_ANCHORS[facing][0];
   const sourceHeight = Math.round(frame.height * .84), height = 36, scale = height / sourceHeight;
   const stool = station.label === "Bar stool";
-  const seatOffset = stool ? 39 : theme === "Cozy Village Pub" ? 16 : 17;
-  const bottom = chairBottom - seatOffset;
+  const themed=THEME_TILES[theme];
+  const contact = themed ? (stool ? themed.stoolSeat : themed.chairSeat) : undefined;
+  const seatOffset = contact !== undefined ? 46 * (1-contact) : stool ? 39 : 17;
+  const bottom = Math.round(chairBottom - seatOffset);
   return { frame: { ...frame, height: sourceHeight },
     left: Math.round(x - (anchor.feetX - frame.x) * scale), top: Math.round(bottom - height),
-    width: Math.round(frame.width * scale), height, bottom, frontFrom: stool ? .22 : .72 };
+    width: Math.round(frame.width * scale), height, bottom, frontFrom: contact !== undefined ? contact + .06 : stool ? .22 : .72 };
 }

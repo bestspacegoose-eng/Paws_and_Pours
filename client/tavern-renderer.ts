@@ -1,11 +1,12 @@
+import { themeArt, drawThemeFrame } from "./theme-tiles";
 import { gameImage } from "./game-assets";
-import { GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, stationBounds, recipeById, seatForOrder, type Order, type Player, type Station, type Tavern } from "../shared/game";
+import { GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, stationBounds, recipeById, seatForOrder, type Order, type Player, type Station, type Tavern, type Theme } from "../shared/game";
 import { INGREDIENT_FRAMES } from "./sprite-frames";
 import { seatedCustomerLayout } from "./customer-layout";
 import { drawRecipeDrink } from "./drink-art";
 import decorUrl from "./assets/tilemap/cozy-decor-atlas.png";
 import toolsUrl from "./assets/tilemap/mixing-tools-spritesheet.png";
-import surfacesUrl from "./assets/tilemap/handdrawn-surfaces.png";
+
 import { drawPreparationArt } from "./preparation-art";
 import { boardPoint, TAVERN_VIEW } from "./tavern-projection";
 import { COUNTER_RISE, drawDepthFloor, drawDepthWalls, drawDepthShadows, drawDepthCounter } from "./depth-tiles";
@@ -14,7 +15,7 @@ export { boardPoint, TAVERN_VIEW } from "./tavern-projection";
 
 let gateAmount = 0;
 let gateFrameAt = 0;
-export function drawBarGate(context: CanvasRenderingContext2D, players: Player[], paused: boolean) {
+export function drawBarGate(context: CanvasRenderingContext2D, players: Player[], paused: boolean, theme:Theme = "Haunted Moonlit Inn") {
   const now = performance.now(), dt = Math.min(50, now - gateFrameAt); gateFrameAt = now;
   const target = players.some((player) => Math.abs(player.x - 8.5 * GRID_CELL_SIZE) < 110 && player.y > 5.5 * GRID_CELL_SIZE && player.y < 9.5 * GRID_CELL_SIZE) ? 1 : 0;
   if (!paused) gateAmount += (target - gateAmount) * Math.min(1, dt / 130);
@@ -23,23 +24,24 @@ export function drawBarGate(context: CanvasRenderingContext2D, players: Player[]
   const top = boardPoint(8.5 * GRID_CELL_SIZE, 6 * GRID_CELL_SIZE);
   const bottom = boardPoint(8.5 * GRID_CELL_SIZE, 9 * GRID_CELL_SIZE);
   const length = (bottom.y - top.y) / 2 - 3;
+  const gate = theme === "Cozy Village Pub" ? ["#68432b","#ab763e","#dec18b"] : theme === "Pirate Cat Tavern" ? ["#293b48","#3f6170","#ab946c"] : ["#65506e","#bc9fa9","#e1c6a5"];
   // Automatic saloon leaves are visual, not a second hidden collision barrier.
   for (const [point, sign] of [[top, 1], [bottom, -1]] as const) {
     context.save(); context.translate(point.x, point.y); context.rotate(sign * openness * 1.28);
-    context.fillStyle = "#65506e"; context.fillRect(-9, sign > 0 ? 0 : -length, 18, length);
-    context.fillStyle = "#bc9fa9"; context.fillRect(-6, sign > 0 ? 3 : -length + 3, 12, length - 6);
-    context.fillStyle = "#e1c6a5";
+    context.fillStyle = gate[0]; context.fillRect(-9, sign > 0 ? 0 : -length, 18, length);
+    context.fillStyle = gate[1]; context.fillRect(-6, sign > 0 ? 3 : -length + 3, 12, length - 6);
+    context.fillStyle = gate[2];
     for (let y = 9; y < length - 4; y += 10) context.fillRect(-5, sign * y, 10, 3);
     context.fillStyle = "#f0d7a8"; context.fillRect(-3, sign * (length - 12), 6, 6);
     context.restore();
-    context.fillStyle = "#66516b"; context.fillRect(point.x - 11, point.y - 5, 22, 10);
-    context.fillStyle = "#ddc19c"; context.fillRect(point.x - 7, point.y - 4, 14, 4);
+    context.fillStyle = gate[0]; context.fillRect(point.x - 11, point.y - 5, 22, 10);
+    context.fillStyle = gate[2]; context.fillRect(point.x - 7, point.y - 4, 14, 4);
   }
 }
 
 const decor = gameImage(decorUrl);
 const tools = gameImage(toolsUrl);
-const surfaces = gameImage(surfacesUrl);
+
 const decorFrames = [
   { x: 46, y: 72, width: 468, height: 462 }, { x: 559, y: 47, width: 421, height: 485 },
   { x: 1025, y: 112, width: 472, height: 498 }, { x: 107, y: 599, width: 344, height: 376 },
@@ -52,9 +54,9 @@ export function ornament(context: CanvasRenderingContext2D, index: number, x: nu
   context.drawImage(decor, frame.x, frame.y, frame.width, frame.height, Math.round(x - w / 2), Math.round(y - h / 2), w, h);
 }
 const palettes = {
-  "Cozy Village Pub": { floor: ["#c9b5b4", "#d0beb9"], seam: "#b19da6", top: "#a69ab6", light: "#d4c7df", front: "#75647e", wall: "#6d5c7c" },
+  "Cozy Village Pub": { floor: ["#d9c9ae", "#dbcbb0"], seam: "#9e8a70", top: "#ddcaaa", light: "#f0dec0", front: "#8e5b32", wall: "#76553d" },
   "Haunted Moonlit Inn": { floor: ["#b0adc7", "#bcb6cf"], seam: "#9692ad", top: "#91b3b5", light: "#c2d8d0", front: "#66768c", wall: "#655b7c" },
-  "Pirate Cat Tavern": { floor: ["#c5b7a9", "#d0c2af"], seam: "#ab9d98", top: "#96b5ac", light: "#c9d7bf", front: "#677f82", wall: "#63747e" }
+  "Pirate Cat Tavern": { floor: ["#77838b", "#818d96"], seam: "#424c54", top: "#826d58", light: "#b4a188", front: "#2c4a5d", wall: "#344653" }
 };
 
 export function drawTavernFloor(context: CanvasRenderingContext2D, tavern: Tavern) {
@@ -74,19 +76,12 @@ export function drawTavernFloor(context: CanvasRenderingContext2D, tavern: Taver
     context.fillStyle = x < 9 ? p.floor[(x + y) % 2] : ["#c5a6ac", "#cbb0b3"][(x + y) % 2]; context.fillRect(a.x + 1, a.y + 1, cell - 2, b.y - a.y - 2);
     context.fillStyle = "#ffffff0a"; context.fillRect(a.x + 3, a.y + 3, cell - 6, 2);
     context.fillStyle = "#35263c13"; context.fillRect(a.x + 10 + (y % 2) * 9, a.y + 17, 24, 1);
-    if (!drawDepthFloor(context, tavern, x, y) && surfaces.complete && surfaces.naturalWidth) {
-      const half = surfaces.naturalWidth / 2;
-      // One painted ceramic tile per world cell; wood uses contiguous atlas sections.
-      const sx = x < 9 ? half + half / 3 : (x % 3) * half / 3;
-      const sy = x < 9 ? half / 3 : (y % 3) * half / 3;
-      context.drawImage(surfaces, sx, sy, half / 3, half / 3, a.x + 1, a.y + 1, cell - 2, b.y - a.y - 2);
-      context.fillStyle = "#d3c4d02a"; context.fillRect(a.x + 1, a.y + 1, cell - 2, b.y - a.y - 2);
-    }
+    drawDepthFloor(context, tavern, x, y);
   }
   // Flat, low-contrast woven rugs do not change the walkable grid.
   for (const row of [1, 6]) {
     const rug = boardPoint(10 * cell, row * cell);
-    drawDiningRug(context, rug.x - 6, rug.y - 10, cell * 6 + 6, cell * 2 * TAVERN_VIEW.depth + 20);
+    drawDiningRug(context, rug.x - 6, rug.y - 10, cell * 6 + 6, cell * 2 * TAVERN_VIEW.depth + 20, tavern.theme);
   }
   // Inlaid lanes decorate the same grid; they never add collision.
   context.strokeStyle = "#ead19b60"; context.lineWidth = 2;
@@ -95,18 +90,24 @@ export function drawTavernFloor(context: CanvasRenderingContext2D, tavern: Taver
   context.fillStyle = "#76506c"; context.fillRect(left - 12, top - 5, width + 24, 5);
   drawDepthWalls(context, tavern);
   drawDepthShadows(context, tavern);
-  // Keep every window above the raised counter line, on a shared sill and centerline.
-  for (const fraction of [.1, .5, .9]) ornament(context, 1, left + width * fraction, top - 61, 47, 61);
-  for (const fraction of [.3, .7]) ornament(context, 0, left + width * fraction, top - 59, 122, 61);
-  for (const x of [left + 140, left + width - 140]) {
-    const glow = context.createRadialGradient(x, top - 48, 2, x, top - 48, 28);
-    glow.addColorStop(0, "#ffd77b1c"); glow.addColorStop(1, "#ffd77b00");
-    context.fillStyle = glow; context.fillRect(x - 28, top - 76, 56, 56);
-    ornament(context, 4, x, top - 48, 24, 32);
-  }
-  for (const x of [left - 42, left + width + 42]) {
-    ornament(context, 2, x, top + 62, 68, 68);
-    ornament(context, 3, x, top + height - 50, 56, 67);
+  // A shared sill line keeps every theme's windows neatly above the bar.
+  const art = themeArt(tavern.theme);
+  if(art){
+    for(const fraction of [.1,.5,.9])drawThemeFrame(context,art.image,art.layout.window,left+width*fraction,top-61,59,61);
+    for(const fraction of [.3,.7])drawThemeFrame(context,art.image,art.layout.cabinet,left+width*fraction,top-59,91,61);
+    for(const x of [left+140,left+width-140])drawThemeFrame(context,art.image,art.layout.lantern,x,top-48,24,36);
+    for(const x of [left-42,left+width+42]){
+      drawThemeFrame(context,art.image,art.layout.prop,x,top+62,57,68);
+      drawThemeFrame(context,art.image,art.layout.barrel,x,top+height-50,53,67);
+    }
+  } else {
+    for (const fraction of [.1, .5, .9]) ornament(context, 1, left + width * fraction, top - 61, 47, 61);
+    for (const fraction of [.3, .7]) ornament(context, 0, left + width * fraction, top - 59, 122, 61);
+    for (const x of [left + 140, left + width - 140]) ornament(context, 4, x, top - 48, 24, 32);
+    for (const x of [left - 42, left + width + 42]) {
+      ornament(context, 2, x, top + 62, 68, 68);
+      ornament(context, 3, x, top + height - 50, 56, 67);
+    }
   }
   context.fillStyle = "#e4ca9a"; context.textAlign = "center"; context.font = "bold 10px monospace";
   context.fillText("PAWS & POURS  /  " + tavern.theme.toUpperCase(), TAVERN_VIEW.width / 2, top + height + 35);
@@ -174,12 +175,6 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
   const hasDepthArt = drawDepthCounter(context, tavern, station);
   if (!hasDepthArt) {
     context.fillStyle = p.top; context.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
-    if (surfaces.complete && surfaces.naturalWidth) {
-      const half = surfaces.naturalWidth / 2, piece = half / 3;
-      const base = station.gridX === 8 || tavern.theme !== "Pirate Cat Tavern" ? 0 : half;
-      context.drawImage(surfaces, base + (station.gridX % 3) * piece, half + (station.gridY % 3) * piece, piece, piece,
-        a.x + 2, a.y + 2, 54, b.y - a.y - front - 3);
-    }
     context.fillStyle = "#ffffff12"; context.fillRect(a.x + 6, a.y + 10, 22, 2);
     context.fillStyle = "#62546b18"; context.fillRect(a.x + 30, a.y + 25, 18, 2);
     context.fillStyle = "#ffffff0c"; context.fillRect(a.x + 3, a.y + 3, 52, 2);
@@ -236,8 +231,8 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
     context.strokeStyle = "#d9c5a442"; context.lineWidth = 1;
     context.strokeRect(x - 9, y - 8, 18, 15);
     // Small ornaments stay within the counter cell and clear when a drink is placed.
-    if (!station.drink && station.gridY === 0 && station.gridX % 4 === 1) ornament(context, 5, x, y, 30, 24);
-    if (!station.drink && station.gridY === 10 && station.gridX % 5 === 0) ornament(context, 4, x, y - 5, 23, 32);
+    if (tavern.theme === "Haunted Moonlit Inn" && !station.drink && station.gridY === 0 && station.gridX % 4 === 1) ornament(context, 5, x, y, 30, 24);
+    if (tavern.theme === "Haunted Moonlit Inn" && !station.drink && station.gridY === 10 && station.gridX % 5 === 0) ornament(context, 4, x, y - 5, 23, 32);
   }
   if (station.kind !== "counter") {
     context.font = "bold 7px monospace"; context.textAlign = "center";

@@ -1,3 +1,4 @@
+import { themeArt } from "./theme-tiles";
 import { gameImage } from "./game-assets";
 import { GRID_CELL_SIZE, GRID_COLUMNS, stationBounds, type Station, type Tavern } from "../shared/game";
 import { boardPoint, TAVERN_VIEW } from "./tavern-projection";
@@ -13,6 +14,12 @@ export const COUNTER_RISE = 22;
 // These supplied sheets are 1254px, with painted gutters rather than a uniform atlas grid.
 const floorColumns = [0, 316, 629, 943];
 export function drawDepthFloor(context: CanvasRenderingContext2D, tavern: Tavern, x: number, y: number) {
+  const art = themeArt(tavern.theme);
+  if (art) {
+    const frame=art.layout[x < 9 ? "kitchen" : "floor"], point=boardPoint(x*GRID_CELL_SIZE,y*GRID_CELL_SIZE);
+    context.drawImage(art.image,frame.x,frame.y,frame.width,frame.height,point.x,point.y,GRID_CELL_SIZE,GRID_CELL_SIZE*TAVERN_VIEW.depth);
+    return true;
+  }
   if (!ready(floors)) return false;
   const point = boardPoint(x * GRID_CELL_SIZE, y * GRID_CELL_SIZE);
   const variant = (x * 3 + y * 5) % 4;
@@ -34,7 +41,9 @@ export function drawDepthWalls(context: CanvasRenderingContext2D, tavern: Tavern
   const width = GRID_COLUMNS * GRID_CELL_SIZE, panels = 10, panelWidth = width / panels;
   for (let i = 0; i < panels; i++) {
     const column = stone ? (i === 2 || i === 7 ? 3 : i % 2) : (i % 4 === 2 ? 2 : i % 2);
-    context.drawImage(walls, [32, 343, 646, 950][column], stone ? 39 : 333, 271, stone ? 260 : 278,
+    const art=themeArt(tavern.theme);
+    if(art){const frame=art.layout.wall;context.drawImage(art.image,frame.x,frame.y,frame.width,frame.height,left+i*panelWidth,top-96,panelWidth,96);}
+    else context.drawImage(walls, [32, 343, 646, 950][column], stone ? 39 : 333, 271, stone ? 260 : 278,
       left + i * panelWidth, top - 96, panelWidth, 96);
   }
   // Contact shade at the wall/floor junction makes the room read as a recessed space.
@@ -70,7 +79,7 @@ export function drawDepthCounter(context: CanvasRenderingContext2D, tavern: Tave
   if (neighbor(0, 1) || neighbor(0, -1)) {
     // Use the quiet interior for north/south joins: no repeated rounded caps or
     // front bevels inside a continuous slab, including the preparation islands.
-    context.drawImage(counters, sx + sw * .08, sy + 8, sw * .84, topHeight - 56,
+    context.drawImage(counters, sx + sw * .08, sy + topHeight * .08, sw * .84, topHeight * .58,
       a.x, a.y - COUNTER_RISE, w, h);
   } else context.drawImage(counters, sx, sy, sw, topHeight, a.x, a.y - COUNTER_RISE, w, h);
   if (!neighbor(0, 1)) {

@@ -1,4 +1,6 @@
 export type Theme = "Cozy Village Pub" | "Haunted Moonlit Inn" | "Pirate Cat Tavern";
+export const TAVERN_THEMES: readonly Theme[] = ["Cozy Village Pub", "Haunted Moonlit Inn", "Pirate Cat Tavern"];
+export type KeepsakeId = "swift-paws" | "patient-patrons" | "lucky-whiskers" | "bottomless-bag" | "nine-lives";
 export type CatRole = "Tabby" | "Siamese" | "Maine Coon" | "Black Cat" | "Calico";
 export type FacingDirection = "down" | "left" | "right" | "up";
 export type StationKind = "pantry" | "mix" | "chop" | "serve" | "seat" | "mop" | "trash" | "counter";
@@ -41,12 +43,13 @@ export interface Player {
   ready?: boolean;
 }
 export interface Tavern { seed: number; theme: Theme; stations: Station[]; decoration: string[] }
-export interface Upgrade { id: string; title: string; body: string }
+export interface Upgrade { id: KeepsakeId; title: string; body: string }
 export interface GameState {
   code: string; hostId: string; phase: Phase; players: Record<string, Player>; tavern: Tavern;
   orders: Order[]; mixing: Record<string, MixingSession>; shiftSeconds: number; coins: number;
   reputation: number; health: number; round: number; hazard: Hazard | null;
   upgrades: Upgrade[]; orderPatienceBonus: number; message: string;
+  activeKeepsake?: KeepsakeId; mixingChoices?: Record<string, string[]>;
   pausedAt: number | null; pausedBy: string | null
 }
 
@@ -120,10 +123,10 @@ export const RECIPES: Recipe[] = [
 export const INGREDIENTS = ["catnip", "lime", "fizz", "moonmilk", "cream", "stardust", "tuna", "tonic", "kelp"];
 export const UPGRADES: Upgrade[] = [
   { id: "swift-paws", title: "Swift Paws", body: "+20% movement speed next shift" },
-  { id: "patient-patrons", title: "Patient Patrons", body: "+12 patience on all orders" },
-  { id: "lucky-whiskers", title: "Lucky Whiskers", body: "+2 bonus coins per perfect pour" },
-  { id: "bottomless-bag", title: "Bottomless Bag", body: "Carry four ingredients at once" },
-  { id: "nine-lives", title: "Nine Lives", body: "Restore one team heart (up to three)" }
+  { id: "patient-patrons", title: "Patient Patrons", body: "+12 seconds of patience on every order next shift" },
+  { id: "lucky-whiskers", title: "Lucky Whiskers", body: "+2 bonus coins when serving a perfect drink next shift" },
+  { id: "bottomless-bag", title: "Bottomless Bag", body: "Carry four ingredients next shift; mixing keeps the spare" },
+  { id: "nine-lives", title: "Nine Lives", body: "Restore one team heart now (up to three)" }
 ];
 
 export function mulberry32(seed: number) {
@@ -150,9 +153,8 @@ function counterVariantForPantry(index: number): CounterVariant {
 }
 
 export function makeTavern(seed: number, round = 1): Tavern {
-  const random = mulberry32(seed + round * 997);
-  const themes: Theme[] = ["Cozy Village Pub", "Haunted Moonlit Inn", "Pirate Cat Tavern"];
-  const theme = themes[Math.floor(random() * themes.length)];
+  const start = Math.floor(mulberry32(seed)() * TAVERN_THEMES.length);
+  const theme = TAVERN_THEMES[(start + Math.max(0, round - 1)) % TAVERN_THEMES.length];
   const ingredientTable = INGREDIENTS.map((ingredient, index): Station => ({
     id: `ingredient-${ingredient}`,
     kind: "pantry",
@@ -296,10 +298,10 @@ export function nearbyStation(tavern: Tavern, player: Vec): Station | undefined 
     });
 }
 
-export function transferCounterDrink(player: Player, station: Station): "placed" | "picked-up" | "occupied" | "empty" | "unavailable" {
+export function transferCounterDrink(player: Player, station: Station, carryCapacity = 3): "placed" | "picked-up" | "occupied" | "empty" | "unavailable" {
   if (!["counter", "pantry", "mix"].includes(station.kind)) return "unavailable";
   if (station.drink) {
-    if (player.drink || player.carrying.length) return "occupied";
+    if (player.drink || (player.carrying.length && carryCapacity <= 3)) return "occupied";
     player.drink = station.drink.recipeId;
     player.drinkQuality = station.drink.quality;
     delete station.drink;
@@ -366,10 +368,10 @@ export function addMixingIngredient(session: MixingSession, carried: string[], i
   return true;
 }
 
-export function chopTuna(player: Player, station: Station): "chopped" | "picked-up" | "full" | "needs-tuna" {
+export function chopTuna(player: Player, station: Station, carryCapacity = 3): "chopped" | "picked-up" | "full" | "needs-tuna" {
   if (station.kind !== "chop") return "needs-tuna";
   if (station.preparedIngredient) {
-    if (player.drink || player.carrying.length >= 3 || player.carrying.includes("chopped-tuna")) return "full";
+    if (player.drink || player.carrying.length >= carryCapacity || player.carrying.includes("chopped-tuna")) return "full";
     player.carrying.push(station.preparedIngredient);
     delete station.preparedIngredient;
     return "picked-up";
@@ -418,9 +420,19 @@ export function createMixingSession(playerId: string, recipeId: string, now = Da
   };
 }
 
-export function seededUpgrades(seed: number, round: number): Upgrade[] {
+export function seededUpgrades(seed: number, round: number, health = 2): Upgrade[] {
   const random = mulberry32(seed * 19 + round);
-  return [...UPGRADES].sort(() => random() - 0.5).slice(0, 3);
+  const available = UPGRADES.filter(upgrade => upgrade.id !== "nine-lives" || health < 3);
+  for (let index = available.length - 1; index > 0; index--) {
+    const other = Math.floor(random() * (index + 1));
+    [available[index], available[other]] = [available[other], available[index]];
+  }
+  return available.slice(0, 3);
+}
+
+export function recipesForCarriedIngredients(ingredients: string[]): Recipe[] {
+  return RECIPES.filter(recipe => recipe.ingredients.every(ingredient =>
+    ingredients.filter(item => item === ingredient).length >= recipe.ingredients.filter(item => item === ingredient).length));
 }
 
 export function recipeForIngredients(ingredients: string[]): Recipe | undefined {
@@ -432,7 +444,7 @@ export function initialState(code: string, hostId: string, seed: number): GameSt
   return {
     code, hostId, phase: "lobby", players: {}, tavern: makeTavern(seed), orders: [], mixing: {},
     shiftSeconds: shiftDurationForRound(1), coins: 0, reputation: 0, health: 3, round: 1, hazard: null,
-    upgrades: [], orderPatienceBonus: 0, message: "Pick your cat, then the host can begin the shift.",
+    upgrades: [], orderPatienceBonus: 0, mixingChoices: {}, message: "Pick your cat, then the host can begin the shift.",
     pausedAt: null, pausedBy: null
   };
 }

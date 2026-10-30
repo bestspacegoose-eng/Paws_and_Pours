@@ -35,12 +35,16 @@ export class TouchControls {
     for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) this.pad.addEventListener(name, () => this.reset());
     this.root.querySelector(".touch-interact")!.addEventListener("click", () => { if (this.enabled) interact(); });
     const map = this.root.querySelector<HTMLButtonElement>(".touch-map")!;
-    map.onclick = () => { this.overview = !this.overview; map.setAttribute("aria-pressed", String(this.overview)); map.textContent = this.overview ? "Follow" : "Map"; };
+    map.onclick = () => this.setOverview(!this.overview);
     window.addEventListener("blur", () => this.reset());
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.reset(); });
     window.addEventListener("orientationchange", () => this.reset());
   }
   reset() { this.pointer = undefined; this.move({ x: 0, y: 0 }); this.knob.style.transform = "translate(0,0)"; }
+  setOverview(value:boolean) {
+    this.overview=value;const map=this.root.querySelector<HTMLButtonElement>(".touch-map")!;
+    map.setAttribute("aria-pressed",String(value));map.textContent=value?"Follow":"Map";
+  }
   setEnabled(enabled: boolean) {
     if (this.enabled && !enabled) this.reset();
     this.enabled = enabled; this.pad.setAttribute("aria-disabled", String(!enabled));

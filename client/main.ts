@@ -1,9 +1,13 @@
 import { TouchControls } from "./touch-controls";
+import { Tutorial } from "./tutorial";
+import { rememberTutorial, tutorialSeen, tutorialState, type TutorialStep } from "./tutorial-content";
+import type { TutorialRect } from "./tutorial-layout";
 import { gameImage, loadGameAssets } from "./game-assets";
 import { loadMenuScene } from "./menu-scene";
 import { interactionLabel } from "../shared/interaction";
 import { mobileCamera } from "./mobile-camera";
 import { recolorFurPixels, walkingFurMask } from "./fur-color";
+import { keepsakeEffects, keepsakeSummary } from "../shared/keepsakes";
 import { movementTarget } from "../shared/movement";
 import { advanceWalkAnimation, type WalkAnimation } from "./walk-animation";
 import { io, type Socket } from "socket.io-client";
@@ -126,7 +130,7 @@ app.innerHTML = `
       <footer class="selection-footer"><button id="selection-back">← Back</button><button id="ready-player" class="hidden">Ready</button><p id="crew-status" aria-live="polite"></p><button id="selection-start" class="primary">Start shift →</button></footer>
     </section>
     <section id="game" class="game hidden">
-      <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span class="heart-status" id="heart-status" aria-label="3 team hearts"><span id="heart-icons" aria-hidden="true">♥♥♥</span><b id="health">3</b></span><span class="timer" id="timer">3:00</span></div><button class="leave" id="game-menu" type="button">Menu · Pause</button></div>
+      <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong><small id="active-keepsake" class="active-keepsake" hidden></small></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span class="heart-status" id="heart-status" aria-label="3 team hearts"><span id="heart-icons" aria-hidden="true">♥♥♥</span><b id="health">3</b></span><span class="timer" id="timer">3:00</span></div><button class="leave" id="game-menu" type="button">Menu · Pause</button></div>
       <section id="order-hud" class="order-hud" aria-label="Current orders and required ingredients"></section>
       <div class="canvas-card"><canvas id="board" width="1088" height="680" aria-label="Paws and Pours game board"></canvas><div id="toast" class="toast"></div></div>
       <p class="controls"><kbd>WASD</kbd> move · <kbd>E</kbd> interact · <kbd>Q</kbd> place / pick up drink · <span id="interaction"></span> · <span id="carry">Paws empty</span></p>
@@ -137,6 +141,8 @@ app.innerHTML = `
 const brightnessShade = document.createElement("div"); brightnessShade.id = "brightness-shade"; brightnessShade.setAttribute("aria-hidden", "true"); document.body.append(brightnessShade);
 
 const menu = document.querySelector<HTMLElement>("#menu")!;
+const learnButton = document.createElement("button"); learnButton.id="learn-to-play"; learnButton.type="button";
+learnButton.textContent="How to play"; menu.querySelector(".menu-utilities")!.append(learnButton);
 const selection = document.querySelector<HTMLElement>("#bartender-selection")!;
 void loadMenuScene(menu, "intro");
 const game = document.querySelector<HTMLElement>("#game")!;
@@ -146,6 +152,7 @@ const displayContext = canvas.getContext("2d")!;
 const worldCanvas = document.createElement("canvas"); worldCanvas.id = "tavern-world";
 worldCanvas.width = TAVERN_VIEW.width; worldCanvas.height = TAVERN_VIEW.height;
 const context = worldCanvas.getContext("2d")!;
+let boardProjection: { source:TutorialRect; destination:TutorialRect } | undefined;
 canvas.width = TAVERN_VIEW.width; canvas.height = TAVERN_VIEW.height;
 const touchControls = new TouchControls(game, input => { touchMove = input; },
   () => socket.emit("interact"));
@@ -169,6 +176,76 @@ const mixingWorkspace = new MixingWorkspace(game, {
   pause: () => { audio.stopTool(); socket.emit("set-pause", true); },
   cancel: () => { audio.stopTool(); socket.emit("cancel-mixing"); }
 });
+
+let tutorialStarting=false;
+let tutorialReturn: { source:"menu"|"first"|"pause"; state:GameState|null; mode:"single"|"multiplayer";
+  step:"intro"|"selection"|"game"; overview:boolean; book:boolean; panel:"main"|"settings"; message:string; scroll:number } | undefined;
+const tutorial = new Tutorial(app, { touch:()=>touchLayout, step:applyTutorialStep, targets:tutorialTargets });
+learnButton.onclick=()=>{void startTutorial("menu");};
+
+async function startTutorial(source:"menu"|"first"|"pause") {
+  if(tutorial.isOpen||tutorialStarting)return;
+  tutorialStarting=true;setConnectionPending(true);learnButton.disabled=true;
+  setToast("Opening the tavern tour…");
+  try { await loadGameAssets(); }
+  catch { setToast("The tavern art could not load. Please try the tutorial again."); return; }
+  finally { tutorialStarting=false;setConnectionPending(false);learnButton.disabled=false; }
+  stopMovementInput();
+  tutorialReturn={source,state,mode:sessionMode,step:menuStep,overview:touchControls.overview,
+    book:recipeBookOpen,panel:pausePanel,message:lastStateMessage,scroll:window.scrollY};
+  tutorial.start(result=>{
+    const saved=tutorialReturn; if(!saved)return;
+    rememberTutorial(result);mixingWorkspace.reset();state=saved.state;recipeBookOpen=saved.book;pausePanel=saved.panel;
+    lastStateMessage=saved.message;setMenuMode(saved.mode,false);touchControls.setOverview(saved.overview);
+    tutorialReturn=undefined;window.scrollTo(0,saved.scroll);
+    if(saved.source==="first") {showSelection();void connect("create");}
+    else if(saved.source==="menu")showIntro();
+    else {menuStep=saved.step;menu.classList.add("hidden");selection.classList.add("hidden");game.classList.remove("hidden");renderUi();
+      document.querySelector<HTMLElement>("#replay-tutorial")?.focus({preventScroll:true});}
+  });
+}
+
+function applyTutorialStep(step:TutorialStep) {
+  mixingWorkspace.reset();move={x:0,y:0};touchControls.reset();localPrediction=null;
+  document.querySelector("#toast")!.classList.remove("show");
+  setMenuMode(step.id==="crew"?"multiplayer":"single",false);
+  state=tutorialState(token,profile(),step.scene);lastStateMessage="";recipeBookOpen=step.scene==="book";recipeBookPage=0;pausePanel="main";
+  touchControls.setOverview(["welcome","ready"].includes(step.scene));
+  const title=step.scene==="title",choosing=step.scene==="selection";
+  menuStep=title?"intro":choosing?"selection":"game";
+  menu.classList.toggle("hidden",!title);selection.classList.toggle("hidden",!choosing);game.classList.toggle("hidden",title||choosing);
+  window.scrollTo(0,0);renderUi();
+  if(title){overlay.classList.add("hidden");void loadMenuScene(menu,"intro");}
+  if(choosing){overlay.classList.add("hidden");renderSelection();void loadMenuScene(selection,"selection");
+    for(const {role} of roles)if(!titlePortraitImages[role].getAttribute("src"))titlePortraitImages[role].src=catPortraits[role];}
+  document.querySelector("#room-display")!.textContent="OPENING TOUR";
+  document.querySelector("#timer")!.textContent="Ⅱ 3:00";
+  const target=step.target?.find(value=>!value.includes(":"));
+  if(target){const node=document.querySelector<HTMLElement>(target);if(node)requestAnimationFrame(()=>{
+    const r=node.getBoundingClientRect();if(r.top<8||r.bottom>window.innerHeight-8)node.scrollIntoView({block:"center",behavior:"instant"});
+  });}
+}
+
+function tutorialTargets(step:TutorialStep):TutorialRect[] {
+  return (step.target??[]).flatMap(target=>{
+    if(target==="movement")return [...document.querySelectorAll<HTMLElement>(touchLayout?".touch-pad,.touch-map":".controls")].map(node=>node.getBoundingClientRect());
+    if(target==="action"||target==="carry"){
+      const node=document.querySelector<HTMLElement>(target==="action"?(touchLayout?".touch-interact":".controls"):(touchLayout?".touch-carry":"#carry"));
+      return node?[node.getBoundingClientRect()]:[];
+    }
+    if(target.startsWith("station:")){
+      const station=state?.tavern.stations.find(item=>item.id===target.slice(8));if(!station||!boardProjection)return [];
+      const b=stationBounds(station),a=boardPoint(b.left,b.top),z=boardPoint(b.right,b.bottom);
+      const rise=station.kind==="seat"||station.kind==="serve"&&station.serviceStyle!=="bar"?0:22;
+      const {source:s,destination:d}=boardProjection;
+      const x=d.x+(a.x-s.x)/s.width*d.width,y=d.y+(a.y-rise-s.y)/s.height*d.height;
+      const right=Math.min(d.x+d.width,d.x+(z.x-s.x)/s.width*d.width),bottom=Math.min(d.y+d.height,d.y+(z.y-rise-s.y)/s.height*d.height);
+      const left=Math.max(d.x,x),top=Math.max(d.y,y);
+      return right>left&&bottom>top?[{x:left,y:top,width:right-left,height:bottom-top}]:[];
+    }
+    return [...document.querySelectorAll<HTMLElement>(target)].filter(node=>node.getClientRects().length).map(node=>node.getBoundingClientRect());
+  });
+}
 
 const unlockAudio = () => { void audio.unlock(); };
 window.addEventListener("pointerdown", unlockAudio, { capture: true });
@@ -208,8 +285,8 @@ function syncSettingsForm() {
   document.querySelector<HTMLInputElement>("#setting-muted")!.checked = settings.muted;
 }
 applySettings();
-function setMenuMode(mode: "single" | "multiplayer") {
-  sessionMode = mode; sessionStorage.setItem("paws-pours-mode", mode);
+function setMenuMode(mode: "single" | "multiplayer", persist=true) {
+  sessionMode = mode; if(persist)sessionStorage.setItem("paws-pours-mode", mode);
   document.querySelector<HTMLElement>(".intro-menu")!.dataset.mode = mode;
   document.querySelector<HTMLButtonElement>("#save-menu")!.disabled = mode === "multiplayer";
   document.querySelector<HTMLButtonElement>("#solo")!.disabled = mode === "multiplayer";
@@ -331,7 +408,7 @@ document.querySelector<HTMLInputElement>("#name")!.addEventListener("input", () 
 });
 
 async function connect(action: "create" | "join") {
-  if (connectionPending) return;
+  if (connectionPending||tutorial.isOpen||tutorialStarting) return;
   const code = document.querySelector<HTMLInputElement>("#room-input")!.value.toUpperCase().trim();
   if (action === "join" && !/^[A-Z0-9]{4}$/.test(code)) return setToast("Enter the four-character room code first.");
   const payload = { ...profile(), solo: sessionMode === "single", snapshot: sessionMode === "single" ? pendingSave?.snapshot : undefined };
@@ -358,7 +435,10 @@ document.querySelector<HTMLButtonElement>("#selection-back")!.onclick = () => {
 };
 document.querySelector<HTMLButtonElement>("#ready-player")!.onclick = () => socket.emit("lobby-ready", !localPlayer()?.ready);
 document.querySelector<HTMLButtonElement>("#selection-start")!.onclick = () => {
-  if (sessionMode === "single") connect("create");
+  if (sessionMode === "single") {
+    if(!pendingSave?.snapshot&&!tutorialSeen())void startTutorial("first");
+    else void connect("create");
+  }
   else socket.emit("start-shift");
 };
 setMenuMode(sessionMode);
@@ -421,6 +501,7 @@ socket.on("left-lobby", () => {
   document.querySelector<HTMLInputElement>("#room-input")!.value = ""; showIntro();
 });
 socket.on("state", (next: GameState) => {
+  if(tutorial.isOpen&&tutorialReturn){tutorialReturn.state=next;return;}
   const previousState = state;
   const authoritativePlayer = next.players[token];
   if (authoritativePlayer) {
@@ -428,7 +509,7 @@ socket.on("state", (next: GameState) => {
       move = { x: 0, y: 0 }; touchControls.reset();
       localPrediction = null;
       authoritativePlayer.moving = false;
-    } else if (next.mixing[token]) {
+    } else if (next.mixing[token] || next.mixingChoices?.[token]) {
       move = { x: 0, y: 0 }; touchControls.reset();
       localPrediction = null;
       authoritativePlayer.moving = false;
@@ -459,7 +540,7 @@ socket.on("error-message", (message: string) => {
   document.querySelectorAll<HTMLButtonElement>(".save-slot").forEach((button) => button.disabled = false);
 });
 function persistSoloSave() {
-  if (!state || sessionMode !== "single" || activeSaveSlot < 0 || !state.players[token]) return;
+  if (tutorial.isOpen||!state || sessionMode !== "single" || activeSaveSlot < 0 || !state.players[token]) return;
   lastSaveAt = Date.now();
   const success = saveSoloSlot(activeSaveSlot, { version: 1, profile: profile(), savedAt: lastSaveAt,
     summary: { coins: state.coins, reputation: state.reputation, round: state.round, phase: state.phase }, snapshot: captureSoloSnapshot(state, token) });
@@ -482,6 +563,10 @@ function renderUi() {
   orderHud.render(state.orders);
   document.querySelector("#theme")!.textContent = state.tavern.theme.toUpperCase();
   document.querySelector("#room-display")!.textContent = sessionMode === "single" ? "SOLO SHIFT" : `ROOM ${state.code}`;
+  const keepsake=document.querySelector<HTMLElement>("#active-keepsake")!;
+  keepsake.hidden=!state.activeKeepsake;
+  keepsake.textContent=state.activeKeepsake ? keepsakeSummary(state.activeKeepsake) : "";
+  keepsake.title=keepsake.textContent;
   document.querySelector("#coins")!.textContent = String(state.coins);
   document.querySelector("#rep")!.textContent = String(state.reputation);
   const hearts = Math.max(0, Math.min(3, state.health));
@@ -493,12 +578,12 @@ function renderUi() {
   document.querySelector("#timer")!.textContent = state.phase === "shift" ? `${state.pausedAt !== null ? "Ⅱ " : ""}${time(state.shiftSeconds)}` : state.phase.toUpperCase();
   document.querySelector<HTMLButtonElement>("#game-menu")!.disabled = state.phase !== "shift" || state.pausedAt !== null;
   const player = localPlayer();
-  document.querySelector("#carry")!.textContent = state.mixing[token] ? `Preparing: ${recipeById(state.mixing[token].recipeId).name}` : player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.join(", ")}` : "Paws empty";
+  document.querySelector("#carry")!.textContent = state.mixing[token] ? `Preparing: ${recipeById(state.mixing[token].recipeId).name}` : player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.join(", ")}${state.activeKeepsake === "bottomless-bag" ? ` · ${player.carrying.length}/4 slots` : ""}` : "Paws empty";
   if (state.message !== lastStateMessage) {
     lastStateMessage = state.message;
     setToast(state.message);
   }
-  touchControls.setEnabled(state.phase === "shift" && state.pausedAt === null && !state.mixing[token]);
+  touchControls.setEnabled(state.phase === "shift" && state.pausedAt === null && !state.mixing[token] && !state.mixingChoices?.[token]);
   renderOverlay();
   mixingWorkspace.render(state, token);
 }
@@ -530,18 +615,24 @@ function renderOverlay() {
       document.querySelector<HTMLButtonElement>("#pause-reset")!.onclick = () => { settings = { ...defaultSettings }; applySettings(); syncPauseSettingsForm(); syncSettingsForm(); };
       document.querySelector<HTMLButtonElement>("#pause-back")!.onclick = () => { pausePanel = "main"; renderOverlay(); };
     } else {
-      overlay.innerHTML = `<div class="modal card pause-menu" role="dialog" aria-modal="true" aria-label="Paused game menu"><p class="eyebrow">SHIFT PAUSED FOR EVERYONE</p><h2>Pause menu</h2><p><span id="pause-by-name"></span> paused the tavern. The shift, orders, and preparation timers are frozen for all cats.</p><div class="pause-actions"><button class="primary" id="resume-shift" type="button">Resume for everyone</button><button id="open-pause-book" type="button">Recipe book</button><button id="open-pause-settings" type="button">Settings</button><button id="leave-game" type="button">Leave game</button></div></div>`;
+      overlay.innerHTML = `<div class="modal card pause-menu" role="dialog" aria-modal="true" aria-label="Paused game menu"><p class="eyebrow">SHIFT PAUSED FOR EVERYONE</p><h2>Pause menu</h2><p><span id="pause-by-name"></span> paused the tavern. The shift, orders, and preparation timers are frozen for all cats.</p><div class="pause-actions"><button class="primary" id="resume-shift" type="button">Resume for everyone</button><button id="open-pause-book" type="button">Recipe book</button><button id="open-pause-settings" type="button">Settings</button>${sessionMode === "single" ? '<button id="replay-tutorial" type="button">Replay tutorial</button>' : ""}<button id="leave-game" type="button">Leave game</button></div></div>`;
       document.querySelector("#pause-by-name")!.textContent = pauser;
       document.querySelector<HTMLButtonElement>("#resume-shift")!.onclick = () => socket.emit("set-pause", false);
       document.querySelector<HTMLButtonElement>("#open-pause-book")!.onclick = () => { recipeBookPage = 0; recipeBookOpen = true; renderOverlay(); };
       document.querySelector<HTMLButtonElement>("#open-pause-settings")!.onclick = () => { pausePanel = "settings"; renderOverlay(); };
+      const replay=document.querySelector<HTMLButtonElement>("#replay-tutorial");if(replay)replay.onclick=()=>{void startTutorial("pause");};
       document.querySelector<HTMLButtonElement>("#leave-game")!.onclick = () => { sessionStorage.removeItem("paws-pours-room"); location.reload(); };
     }
+  } else if (state.phase === "shift" && state.mixingChoices?.[token]) {
+    overlay.classList.remove("hidden");
+    overlay.innerHTML = `<div class="modal card recipe-choice" role="dialog" aria-modal="true" aria-label="Choose a drink"><p class="eyebrow">BOTTOMLESS BAG</p><h2>What shall we make?</h2><p>Choose a drink. Spare ingredients stay in your bag.</p><div class="recipe-choice-actions">${state.mixingChoices[token].map(id => `<button class="upgrade" data-mix-recipe="${id}"><b>${recipeById(id).name}</b><small>${recipeById(id).ingredients.join(" · ")}</small></button>`).join("")}</div><button id="cancel-recipe-choice" class="secondary" type="button">Back to tavern</button></div>`;
+    overlay.querySelectorAll<HTMLButtonElement>("[data-mix-recipe]").forEach(button=>button.onclick=()=>socket.emit("mix-recipe-select",button.dataset.mixRecipe));
+    document.querySelector<HTMLButtonElement>("#cancel-recipe-choice")!.onclick=()=>socket.emit("cancel-mixing");
   } else if (state.phase === "lobby") {
     overlay.classList.add("hidden");
   } else if (state.phase === "upgrades") {
     overlay.classList.remove("hidden"); const host = state.hostId === token;
-    overlay.innerHTML = `<div class="modal card"><p class="eyebrow">SHIFT ${state.round} COMPLETE</p><h2>Choose a keepsake</h2><p>The host's choice carries the crew to a new seeded tavern.</p><div class="upgrade-grid">${state.upgrades.map((upgrade) => `<button class="upgrade" data-upgrade="${upgrade.id}" ${host ? "" : "disabled"}><b>${upgrade.title}</b><small>${upgrade.body}</small></button>`).join("")}</div>${host ? "" : "<p class=waiting>The host is choosing…</p>"}</div>`;
+    overlay.innerHTML = `<div class="modal card"><p class="eyebrow">SHIFT ${state.round} COMPLETE</p><h2>Choose a keepsake</h2><p>Choose your next shift’s bonus. It replaces the last keepsake.</p><div class="upgrade-grid">${state.upgrades.map((upgrade) => `<button class="upgrade" data-upgrade="${upgrade.id}" ${host && !(upgrade.id === "nine-lives" && state!.health >= 3) ? "" : "disabled"}><b>${upgrade.title}</b><small>${upgrade.body}</small></button>`).join("")}</div>${host ? "" : "<p class=waiting>The host is choosing…</p>"}</div>`;
     document.querySelectorAll<HTMLButtonElement>("[data-upgrade]").forEach((button) => button.onclick = () => socket.emit("choose-upgrade", button.dataset.upgrade));
   } else if (state.phase === "complete") {
     overlay.classList.remove("hidden"); overlay.innerHTML = `<div class="modal card"><p class="eyebrow">RUN OVER</p><h2>A furry good effort.</h2><p>You earned ${state.coins} coins and ${state.reputation} reputation across ${state.round} tavern${state.round > 1 ? "s" : ""}.</p><button class="primary" onclick="location.reload()">Return to menu</button></div>`;
@@ -582,6 +673,7 @@ function rememberLocalPrediction(player: Player) {
   };
 }
 function emitMovement(player: Player, moving: boolean) {
+  if(tutorial.isOpen)return;
   lastSentMoveSequence += 1; player.moveSequence = lastSentMoveSequence; player.moving = moving;
   rememberLocalPrediction(player);
   socket.emit("move", {
@@ -590,15 +682,16 @@ function emitMovement(player: Player, moving: boolean) {
   });
 }
 function movePlayer(elapsedMs: number) {
+  if(tutorial.isOpen)return;
   const player = localPlayer();
-  if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || state.mixing[token]) return;
+  if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || state.mixing[token] || state.mixingChoices?.[token]) return;
   const input = movementInput();
   if (!input.x && !input.y) {
     if (player.moving) emitMovement(player, false);
     return;
   }
   player.direction = Math.abs(input.x) > Math.abs(input.y) ? (input.x < 0 ? "left" : "right") : (input.y < 0 ? "up" : "down");
-  const resolved = moveWithCounterCollisions(state.tavern, player, movementTarget(player, input, player.role, elapsedMs));
+  const resolved = moveWithCounterCollisions(state.tavern, player, movementTarget(player, input, player.role, elapsedMs, keepsakeEffects(state.activeKeepsake).movementMultiplier));
   const travelling = Math.hypot(resolved.x - player.x, resolved.y - player.y) > .001;
   const wasMoving = player.moving;
   player.x = resolved.x;
@@ -612,6 +705,7 @@ function movePlayer(elapsedMs: number) {
 }
 const movementKeys: Record<string, keyof typeof move> = { w: "y", ArrowUp: "y", s: "y", ArrowDown: "y", a: "x", ArrowLeft: "x", d: "x", ArrowRight: "x" };
 window.addEventListener("keydown", (event) => {
+  if(tutorial.isOpen)return;
   if (event.key === "Escape" && state?.phase === "shift") {
     event.preventDefault();
     if (state.pausedAt === null) socket.emit("set-pause", true);
@@ -620,17 +714,17 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (state?.pausedAt !== null || event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
-  if (!event.repeat && event.key.toLowerCase() === "e" && state?.phase === "shift" && !state.mixing[token]) { event.preventDefault(); socket.emit("interact"); }
-  if (!event.repeat && event.key.toLowerCase() === "q" && state?.phase === "shift" && !state.mixing[token]) { event.preventDefault(); socket.emit("counter-drink"); }
+  if (!event.repeat && event.key.toLowerCase() === "e" && state?.phase === "shift" && !state.mixing[token] && !state.mixingChoices?.[token]) { event.preventDefault(); socket.emit("interact"); }
+  if (!event.repeat && event.key.toLowerCase() === "q" && state?.phase === "shift" && !state.mixing[token] && !state.mixingChoices?.[token]) { event.preventDefault(); socket.emit("counter-drink"); }
   const axis = movementKeys[event.key]; if (!axis) return;
-  if (state?.mixing[token]) return;
+  if (state?.mixing[token] || state?.mixingChoices?.[token]) return;
   event.preventDefault(); move[axis] = event.key === "w" || event.key === "ArrowUp" || event.key === "a" || event.key === "ArrowLeft" ? -1 : 1;
 });
 window.addEventListener("keyup", (event) => { const axis = movementKeys[event.key]; if (axis) move[axis] = 0; });
 function stopMovementInput() {
   move = { x: 0, y: 0 }; touchControls.reset();
   const player = localPlayer();
-  if (player?.moving && state?.phase === "shift" && state.pausedAt === null && !state.mixing[token]) emitMovement(player, false);
+  if (player?.moving && state?.phase === "shift" && state.pausedAt === null && !state.mixing[token] && !state.mixingChoices?.[token]) emitMovement(player, false);
 }
 window.addEventListener("blur", stopMovementInput);
 document.addEventListener("visibilitychange", () => { if (document.hidden) stopMovementInput(); });
@@ -784,7 +878,7 @@ let lastBoardFrame = performance.now();
 function renderBoard(now = performance.now()) {
   const elapsedMs = now - lastBoardFrame; lastBoardFrame = now;
   requestAnimationFrame(renderBoard); movePlayer(elapsedMs); context.imageSmoothingEnabled = false;
-  if (!state || state.phase === "lobby") return;
+  if (!state || state.phase === "lobby" || game.classList.contains("hidden")) return;
   drawTavernFloor(context, state.tavern);
   const player = localPlayer();
   const nearby = player && nearbyStation(state.tavern, player);
@@ -800,7 +894,7 @@ function renderBoard(now = performance.now()) {
     ...Object.values(state.players).map((player) => ({ depth: player.y, draw: () => drawPlayer(player) }))
   ].sort((left, right) => left.depth - right.depth);
   objects.forEach((object) => object.draw());
-  drawBarGate(context, Object.values(state.players), state.pausedAt !== null);
+  drawBarGate(context, Object.values(state.players), state.pausedAt !== null, state.tavern.theme);
   drawHazard();
   if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(300, 678, 488, 26); drawText(`⚠ ${state.hazard.message}`, 544, 695, "bold 12px system-ui", "white"); }
   presentBoard(player);
@@ -815,8 +909,13 @@ function presentBoard(player: Player | undefined) {
   displayContext.fillStyle = "#201828"; displayContext.fillRect(0, 0, width, height);
   if (touchLayout && player && !touchControls.overview) {
     const view = mobileCamera(boardPoint(player.x, player.y), rect.width, rect.height);
+    boardProjection={source:view,destination:{x:rect.x,y:rect.y,width:rect.width,height:rect.height}};
     displayContext.drawImage(worldCanvas, view.x, view.y, view.width, view.height, 0, 0, width, height);
   } else {
+    const cssScale=Math.min(rect.width/worldCanvas.width,rect.height/worldCanvas.height);
+    boardProjection={source:{x:0,y:0,width:worldCanvas.width,height:worldCanvas.height},destination:{
+      x:rect.x+(rect.width-worldCanvas.width*cssScale)/2,y:rect.y+(rect.height-worldCanvas.height*cssScale)/2,
+      width:worldCanvas.width*cssScale,height:worldCanvas.height*cssScale}};
     const scale = Math.min(width / worldCanvas.width, height / worldCanvas.height);
     const w = worldCanvas.width * scale, h = worldCanvas.height * scale;
     displayContext.drawImage(worldCanvas, (width - w) / 2, (height - h) / 2, w, h);

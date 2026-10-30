@@ -1,3 +1,4 @@
+import { drawThemedWorkbench } from "./theme-tiles";
 import { gameImage } from "./game-assets";
 import {
   expectedMixingStep, mixingStepsForRecipe, recipeById, type GameState,
@@ -129,6 +130,14 @@ export class MixingWorkspace {
 
   isOpen() { return !this.root.classList.contains("hidden"); }
 
+  reset() {
+    window.clearTimeout(this.outcomeTimer);this.stopToolTiming();this.stopRhythmTiming();this.stopVisualAnimation();
+    this.session=undefined;this.recipe=undefined;this.outcome=undefined;this.outcomeRecipeId=undefined;
+    this.toolHolding=false;this.activeTool=undefined;this.rhythmServerHitAt=undefined;this.rhythmLocalHitAt=undefined;
+    this.pendingRhythmHitAt=undefined;this.controlsKey="";this.cancelRequested=false;this.paused=false;
+    this.actions.innerHTML="";this.root.classList.add("hidden");this.root.classList.remove("tool-holding");
+  }
+
   render(state: GameState, playerId: string) {
     if (state.pausedAt !== null && !this.paused) {
       this.paused = true;
@@ -195,7 +204,7 @@ export class MixingWorkspace {
     const steps = mixingStepsForRecipe(this.recipe);
     this.progress.style.width = `${Math.min(100, session.stepIndex / steps.length * 100)}%`;
     this.configureToolTiming(expectedMixingStep(session));
-    this.renderControls(justOpened);
+    this.renderControls(justOpened && !this.paused);
     this.draw();
     this.syncVisualAnimation();
   }
@@ -240,6 +249,8 @@ export class MixingWorkspace {
           button.disabled = true;
           button.textContent = `${ingredient} added`;
           used.splice(usedIndex, 1);
+        } else if (!this.recipe!.ingredients.includes(ingredient)) {
+          button.disabled = true; button.textContent = `${ingredient} kept in bag`;
         } else button.onclick = () => this.events.addIngredient(ingredient);
         this.actions.append(button);
       });
@@ -414,16 +425,14 @@ export class MixingWorkspace {
   private draw() {
     const context = this.context;
     context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    if (this.workspaceImage.complete && this.workspaceImage.naturalWidth) {
+    if (drawThemedWorkbench(context,this.theme)) {
+      // The full room materials carry through to the workbench.
+    } else if (this.workspaceImage.complete && this.workspaceImage.naturalWidth) {
       context.drawImage(this.workspaceImage, 0, 0, this.canvas.width, this.canvas.height);
     } else {
       context.fillStyle = "#5a3342";
       context.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
-    const tint = this.theme === "Haunted Moonlit Inn" ? "rgba(90,68,170,.22)" :
-      this.theme === "Pirate Cat Tavern" ? "rgba(0,110,125,.16)" : "rgba(238,142,66,.06)";
-    context.fillStyle = tint;
-    context.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     if (this.outcome) {
       this.drawAtlasContained(this.effectsImage, 3, 2, MIXING_EFFECT_FRAME_INDEX[this.outcome], 400, 280, 260, 230);
@@ -439,10 +448,11 @@ export class MixingWorkspace {
       this.drawGlass(expected?.kind === "ingredient" ? 400 : 600, expected?.kind === "ingredient" ? 302 : 352);
     }
 
-    const positions = this.playerIngredients.length === 1 ? [400] : this.playerIngredients.length === 2 ? [300, 500] : [210, 400, 590];
-    if (expected?.kind === "ingredient") this.playerIngredients.forEach((ingredient, index) => {
+    const neededIngredients=this.playerIngredients.filter(ingredient=>this.recipe!.ingredients.includes(ingredient));
+    const positions = neededIngredients.length === 1 ? [400] : neededIngredients.length === 2 ? [300, 500] : [210, 400, 590];
+    if (expected?.kind === "ingredient") neededIngredients.forEach((ingredient, index) => {
       const used = this.session!.usedIngredients.filter((item) => item === ingredient).length;
-      const occurrences = this.playerIngredients.slice(0, index + 1).filter((item) => item === ingredient).length;
+      const occurrences = neededIngredients.slice(0, index + 1).filter((item) => item === ingredient).length;
       this.drawIngredient(ingredient, positions[index] ?? 400, 382, used >= occurrences ? 0.32 : 1);
     });
 
