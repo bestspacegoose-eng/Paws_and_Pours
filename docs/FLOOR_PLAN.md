@@ -23,6 +23,6 @@ The left kitchen has a compact preparation island. All ingredients remain on its
 
 Orders reserve individual seats and show Table 1 · A/B or Bar 1–4 on the ticket. Press E or tap Interact at the matching table, chair, or bar counter to serve. A table can accept a drink for either guest; a chair accepts its occupant's order. Wrong delivery retains the drink. The active-order limit remains two in solo and three in multiplayer, so available seats do not force a crowded room.
 
-Finished drinks can be placed on preparation, ingredient, or mixing surfaces with Q or Handoff. E also handles ordinary-counter handoffs and retrieves a drink occupying a work surface. Quality travels with the drink. Occupied hands and counters reject an overwrite. A new round starts with clean counters and clear spawns.
+Finished drinks can be placed on preparation, ingredient, or mixing surfaces with E or the single mobile action button; Q remains a keyboard shortcut. The same action retrieves a drink occupying a work surface. Quality travels with the drink. Occupied hands and counters reject an overwrite. A new round starts with clean counters and clear spawns.
 
 See [SEATING.md](SEATING.md) for seat assignments, save migration, visual alignment, and verification captures.

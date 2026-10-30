@@ -1,11 +1,12 @@
+import { gameImage } from "./game-assets";
 import { GRID_CELL_SIZE, GRID_COLUMNS, stationBounds, type Station, type Tavern } from "../shared/game";
 import { boardPoint, TAVERN_VIEW } from "./tavern-projection";
 import floorUrl from "./assets/tilemap/floors-depth-v1.png";
 import wallUrl from "./assets/tilemap/walls-depth-v1.png";
 import { furnitureArt } from "./furniture-art";
 
-const floors = new Image(); floors.src = floorUrl;
-const walls = new Image(); walls.src = wallUrl;
+const floors = gameImage(floorUrl);
+const walls = gameImage(wallUrl);
 const ready = (image: HTMLImageElement) => image.complete && image.naturalWidth > 0;
 export const COUNTER_RISE = 22;
 

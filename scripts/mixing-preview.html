@@ -2,9 +2,11 @@
 <style>body{margin:0;background:#21172c;color:#fce8c4;font:14px monospace}#picker{position:fixed;z-index:100;inset:0 0 auto;padding:6px;background:#342342;display:flex;flex-wrap:wrap;gap:8px}#picker label{display:flex;align-items:center;gap:5px}#picker select{padding:6px;max-width:200px;font-size:14px}.mixing-workspace{top:86px!important}.mixing-shell{max-height:calc(100dvh - 100px)!important}</style></head>
 <body><div id="picker"><label>Recipe <select id="animation"></select></label><label>Action <select id="step"></select></label><label><input id="reduced" type="checkbox">Reduced motion</label></div><main id="mount"></main>
 <script type="module">
+import { loadGameAssets } from '/client/game-assets.ts';
 import { MixingWorkspace } from '/client/mixing-workspace.ts';
 import { initialState, createMixingSession, recipeById, PLAYER_SPAWNS, RECIPES } from '/shared/game.ts';
 import '/client/style.css'; import '/client/menu-polish.css'; import '/client/mobile.css';
+await loadGameAssets();
 const state=initialState('QA','qa',1); state.phase='shift';
 state.players.qa={id:'qa',name:'QA',role:'Tabby',fur:'#e5a265',accessory:'Bow tie',...PLAYER_SPAWNS[0],direction:'down',moving:false,moveSequence:0,carrying:[],connected:true,score:0};
 const workspace=new MixingWorkspace(document.querySelector('#mount'),{
@@ -23,5 +25,5 @@ function action(){
 function recipe(){stepSelect.replaceChildren(...recipeById(recipeSelect.value).preparation.actions.map((step,index)=>new Option(step.kind==='timed-tool'?step.tool:step.style,String(index))));action();}
 recipeSelect.onchange=recipe;stepSelect.onchange=action;
 document.querySelector('#reduced').onchange=event=>{document.body.dataset.reducedMotion=String(event.target.checked);action();};
-recipe();document.body.dataset.ready='true';
+recipe();await loadGameAssets();document.body.dataset.ready='true';
 </script></body></html>

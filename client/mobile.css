@@ -11,10 +11,8 @@
 .touch-pad-cross{position:absolute;inset:0;display:grid;place-items:center;color:#cfbacd;font-size:76px;opacity:.3;pointer-events:none}
 .touch-pad[aria-disabled=true]{opacity:.4}
 .touch-hint{display:block;text-align:center;font:12px var(--font-game);color:#c4adc9;margin-top:3px}
-.touch-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;flex:1;max-width:270px}
+.touch-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;flex:1;max-width:168px}
 .touch-actions button{min-height:74px;min-width:0;padding:8px 6px;border:2px solid #d3bacd;border-radius:5px;background:#d6bfad;color:#38243e;font:19px/1.15 var(--font-game)}
-.touch-actions .touch-handoff{background:#9f8bad;color:#fff0d8;border-color:#c4a9cb}
-.touch-actions small{display:block;font-size:11px;line-height:1.4;font-weight:400;margin-top:4px}
 .touch-actions button:active{transform:translateY(2px);filter:brightness(1.15)}
 .game[data-touch=true]:not(.hidden) .controls{display:none}
 .game[data-touch=true]:not(.hidden) .game-header{top:max(6px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right));display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;padding:7px 9px;min-height:84px;backdrop-filter:none}
@@ -76,14 +74,14 @@
   .game[data-touch=true]:not(.hidden) .order-hud{top:calc(max(6px,env(safe-area-inset-top)) + 54px);height:68px}
   .game[data-touch=true] .order-ticket{flex-basis:174px;grid-template-rows:15px 31px 4px;gap:1px;padding:3px 5px}
   .game[data-touch=true] .order-ticket canvas{width:160px;height:31px}
-  .game[data-touch=true]:not(.hidden) .canvas-card{inset:calc(max(6px,env(safe-area-inset-top)) + 126px) 224px 36px 116px}
+  .game[data-touch=true]:not(.hidden) .canvas-card{inset:calc(max(6px,env(safe-area-inset-top)) + 126px) 180px 36px 116px}
   .game[data-touch=true] .touch-controls{background:none;border:0;pointer-events:none;padding-bottom:max(6px,env(safe-area-inset-bottom))}
   .touch-pad,.touch-actions,.touch-map{pointer-events:auto}
   .touch-readout{position:absolute;left:auto;right:16px;bottom:94px;justify-content:center;min-height:40px;background:#211829df;border-radius:4px;padding:4px 7px}
-  .touch-carry{display:block;position:fixed;left:116px;right:224px;bottom:max(6px,env(safe-area-inset-bottom));min-height:25px;padding:4px 7px;border-radius:3px;background:#211829df;text-align:center;font-size:13px}
+  .touch-carry{display:block;position:fixed;left:116px;right:180px;bottom:max(6px,env(safe-area-inset-bottom));min-height:25px;padding:4px 7px;border-radius:3px;background:#211829df;text-align:center;font-size:13px}
   .touch-pad{width:92px;height:92px}
   .touch-pad-knob{inset:24px}
-  .touch-actions{max-width:200px}
+  .touch-actions{max-width:156px}
   .touch-actions button{min-height:65px}
   .touch-hint{display:none}
   .mixing-shell{display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:8px;width:min(980px,100%)}
@@ -94,4 +92,4 @@
   .mixing-actions{grid-column:2;grid-row:2;align-self:start;grid-template-columns:1fr;padding:0}
   .mixing-action{min-height:48px}
 }
-@media(max-width:370px){.touch-pad{width:92px;height:92px}.touch-pad-knob{inset:24px}.touch-actions button{font-size:17px}.touch-actions small{font-size:10px}.shell .pause-actions{grid-template-columns:1fr}}
+@media(max-width:370px){.touch-pad{width:92px;height:92px}.touch-pad-knob{inset:24px}.touch-actions button{font-size:17px}.shell .pause-actions{grid-template-columns:1fr}}

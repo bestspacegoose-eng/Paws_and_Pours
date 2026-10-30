@@ -1,10 +1,11 @@
+import { gameImage } from "./game-assets";
 import preparationUrl from "./assets/tilemap/tuna-preparation.png";
 
-const atlas = new Image();
+const atlas = gameImage(preparationUrl);
 const listeners = new Set<() => void>();
 atlas.onload = () => listeners.forEach((listener) => listener());
-atlas.src = preparationUrl;
-export function onPreparationArtReady(listener: () => void) { listeners.add(listener); if (atlas.complete) listener(); }
+
+export function onPreparationArtReady(listener: () => void) { listeners.add(listener); if (atlas.complete && atlas.naturalWidth) listener(); }
 const frames = [[40, 70, 745, 560], [875, 175, 575, 430], [1535, 72, 590, 570]];
 export function drawPreparationArt(context: CanvasRenderingContext2D, index: number, x: number, y: number, size: number) {
   if (!atlas.complete || !atlas.naturalWidth) return;

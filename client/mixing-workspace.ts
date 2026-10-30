@@ -1,3 +1,4 @@
+import { gameImage } from "./game-assets";
 import {
   expectedMixingStep, mixingStepsForRecipe, recipeById, type GameState,
   type MixingSession, type MixingTool, type Recipe, type RhythmAction, type Theme
@@ -27,9 +28,8 @@ export interface MixingWorkspaceEvents {
 }
 
 function image(source: string, onLoad: () => void) {
-  const result = new Image();
+  const result = gameImage(source);
   result.addEventListener("load", onLoad);
-  result.src = source;
   return result;
 }
 

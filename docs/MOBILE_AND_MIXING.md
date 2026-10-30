@@ -15,7 +15,7 @@ The other scenes use the same measured art bounds. Shakers sit clear of the rece
 ## Touch gameplay and layout
 
 - Drag the movement pad to walk; release, cancel, pause, or background the page to stop.
-- Use **Interact** at stations and **Handoff** to place or pick up a finished drink.
+- Use the single contextual action button at stations, including **Place drink** and **Pick up drink** at preparation, ingredient, and mixing counters. The separate Handoff button has been removed.
 - **Map** shows the entire tavern; **Follow** returns to the following camera.
 - The HUD and horizontally scrollable order tickets stay above the scene. Portrait controls reserve their measured height below it. Landscape controls sit in side gutters, clear of the playable viewport.
 - Phone/tablet layouts account for viewport changes and safe-area insets. Name fields use 16px text. Character selection, local saves, settings, pause, upgrades, and the recipe book remain scrollable. The recipe book uses readable text pages on small screens instead of shrinking a full illustrated canvas.

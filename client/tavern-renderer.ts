@@ -1,3 +1,4 @@
+import { gameImage } from "./game-assets";
 import { GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, stationBounds, recipeById, seatForOrder, type Order, type Player, type Station, type Tavern } from "../shared/game";
 import { INGREDIENT_FRAMES } from "./sprite-frames";
 import { seatedCustomerLayout } from "./customer-layout";
@@ -36,9 +37,9 @@ export function drawBarGate(context: CanvasRenderingContext2D, players: Player[]
   }
 }
 
-const decor = new Image(); decor.src = decorUrl;
-const tools = new Image(); tools.src = toolsUrl;
-const surfaces = new Image(); surfaces.src = surfacesUrl;
+const decor = gameImage(decorUrl);
+const tools = gameImage(toolsUrl);
+const surfaces = gameImage(surfacesUrl);
 const decorFrames = [
   { x: 46, y: 72, width: 468, height: 462 }, { x: 559, y: 47, width: 421, height: 485 },
   { x: 1025, y: 112, width: 472, height: 498 }, { x: 107, y: 599, width: 344, height: 376 },

@@ -1,4 +1,7 @@
 import { TouchControls } from "./touch-controls";
+import { gameImage, loadGameAssets } from "./game-assets";
+import { loadMenuScene } from "./menu-scene";
+import { interactionLabel } from "../shared/interaction";
 import { mobileCamera } from "./mobile-camera";
 import { recolorFurPixels, walkingFurMask } from "./fur-color";
 import { movementTarget } from "../shared/movement";
@@ -71,13 +74,13 @@ const catPortraits: Record<CatRole, string> = {
   "Tabby": tabbyPortraitUrl, "Siamese": siamesePortraitUrl, "Maine Coon": maineCoonPortraitUrl,
   "Black Cat": blackCatPortraitUrl, "Calico": calicoPortraitUrl
 };
-const titlePortraitImages = Object.fromEntries(Object.entries(catPortraits).map(([role, source]) => {
-  const image = new Image(); image.addEventListener("load", renderTitlePreviews); image.src = source;
+const titlePortraitImages = Object.fromEntries(Object.keys(catPortraits).map(role => {
+  const image = new Image(); image.decoding = "async"; image.addEventListener("load", renderTitlePreviews);
   return [role, image];
 })) as Record<CatRole, HTMLImageElement>;
-const scrapBin = new Image(); scrapBin.src = scrapBinUrl;
-const catBartenderSpritesheet = new Image(); catBartenderSpritesheet.src = catBartenderSpritesheetUrl;
-const ingredientsSpritesheet = new Image(); ingredientsSpritesheet.src = ingredientsSpritesheetUrl;
+const scrapBin = gameImage(scrapBinUrl);
+const catBartenderSpritesheet = gameImage(catBartenderSpritesheetUrl);
+const ingredientsSpritesheet = gameImage(ingredientsSpritesheetUrl);
 const refreshOpenRecipeBook = () => {
   if (recipeBookOpen) drawRecipeBookPage(RECIPES[recipeBookPage], recipeBookPage);
 };
@@ -135,6 +138,7 @@ const brightnessShade = document.createElement("div"); brightnessShade.id = "bri
 
 const menu = document.querySelector<HTMLElement>("#menu")!;
 const selection = document.querySelector<HTMLElement>("#bartender-selection")!;
+void loadMenuScene(menu, "intro");
 const game = document.querySelector<HTMLElement>("#game")!;
 const overlay = document.querySelector<HTMLElement>("#overlay")!;
 const canvas = document.querySelector<HTMLCanvasElement>("#board")!;
@@ -144,7 +148,7 @@ worldCanvas.width = TAVERN_VIEW.width; worldCanvas.height = TAVERN_VIEW.height;
 const context = worldCanvas.getContext("2d")!;
 canvas.width = TAVERN_VIEW.width; canvas.height = TAVERN_VIEW.height;
 const touchControls = new TouchControls(game, input => { touchMove = input; },
-  () => socket.emit("interact"), () => socket.emit("counter-drink"));
+  () => socket.emit("interact"));
 if ("ResizeObserver" in window) new ResizeObserver(entries => {
   const height = entries[0].target.getBoundingClientRect().height;
   if (height > 0) game.style.setProperty("--touch-controls-height", `${height}px`);
@@ -225,6 +229,7 @@ function setConnectionPending(pending: boolean) {
 }
 function showIntro() {
   menuStep = "intro"; pendingSave = undefined;
+  void loadMenuScene(menu, "intro");
   selection.classList.add("hidden"); menu.classList.remove("hidden"); game.classList.add("hidden"); overlay.classList.add("hidden");
   audio.syncMenu();
   document.querySelector<HTMLButtonElement>(sessionMode === "single" ? "#solo" : "#create")!.focus();
@@ -232,6 +237,11 @@ function showIntro() {
 function showSelection() {
   const entering = menuStep !== "selection";
   menuStep = "selection";
+  if (entering) {
+    for (const { role } of roles) if (!titlePortraitImages[role].getAttribute("src")) titlePortraitImages[role].src = catPortraits[role];
+    // Let the selection backdrop finish first; warm game art while choosing a cat.
+    void loadMenuScene(selection, "selection").then(loadGameAssets).catch(() => undefined);
+  }
   menu.classList.add("hidden"); selection.classList.remove("hidden"); game.classList.add("hidden"); overlay.classList.add("hidden");
   audio.syncMenu();
   renderSelection();
@@ -298,7 +308,7 @@ const presets = document.querySelector("#cat-presets")!;
 roles.forEach(({ role, perk }) => {
   const button = document.createElement("button"); button.type = "button"; button.dataset.catPreset = role;
   button.setAttribute("aria-pressed", String(role === selectedRole));
-  const image = document.createElement("img"); image.src = catPortraits[role]; image.alt = "";
+  const image = document.createElement("img"); image.loading = "lazy"; image.decoding = "async"; image.src = catPortraits[role]; image.alt = "";
   const name = document.createElement("b"); name.textContent = role;
   const bonus = document.createElement("small"); bonus.textContent = perk;
   button.append(image, name, bonus);
@@ -320,13 +330,15 @@ document.querySelector<HTMLInputElement>("#name")!.addEventListener("input", () 
   renderAccessoryChoice();
 });
 
-function connect(action: "create" | "join") {
+async function connect(action: "create" | "join") {
   if (connectionPending) return;
   const code = document.querySelector<HTMLInputElement>("#room-input")!.value.toUpperCase().trim();
   if (action === "join" && !/^[A-Z0-9]{4}$/.test(code)) return setToast("Enter the four-character room code first.");
   const payload = { ...profile(), solo: sessionMode === "single", snapshot: sessionMode === "single" ? pendingSave?.snapshot : undefined };
   setConnectionPending(true);
   setToast(action === "join" ? "Joining the tavern…" : "Opening the tavern…");
+  try { await loadGameAssets(); }
+  catch { setConnectionPending(false); setToast("The tavern art could not load. Check your connection and try again."); return; }
   sendPendingConnection = () => {
     sendPendingConnection = undefined;
     socket.emit(action === "create" ? "create-room" : "join-room", action === "create" ? payload : { ...payload, code });
@@ -776,12 +788,11 @@ function renderBoard(now = performance.now()) {
   drawTavernFloor(context, state.tavern);
   const player = localPlayer();
   const nearby = player && nearbyStation(state.tavern, player);
-  document.querySelector("#interaction")!.textContent = nearby
-    ? nearby.drink ? `E · Pick up ${recipeById(nearby.drink.recipeId).name}` : nearby.kind === "counter"
-      ? "E · Set down drink" : `E · ${nearby.label}` : "Approach a counter";
+  document.querySelector("#interaction")!.textContent = player && nearby
+    ? `E · ${interactionLabel(player, nearby)}` : "Approach a counter";
   if (touchLayout) {
     touchControls.setStatus(document.querySelector("#carry")!.textContent ?? "Paws empty",
-      nearby?.kind === "seat" ? "Interact" : nearby?.drink ? "Pick up" : nearby?.label ?? "Interact");
+      player ? interactionLabel(player, nearby) : "Interact");
   }
   const objects = [
     ...state.tavern.stations.map((station) => ({ depth: stationBounds(station).bottom, draw: () =>

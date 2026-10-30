@@ -193,6 +193,20 @@ async function main() {
     await prepareRecipe(recipe.id);
     assert.ok((hostState!.players[hostToken].drinkQuality ?? 0) > 0.9, "on-target timing should create a high-quality drink");
 
+    // E / the single touch action handles every surface that previously needed Q.
+    for (const kind of ["counter", "pantry", "mix"]) {
+      smokeStage = `unified ${kind} handoff`;
+      const surface = hostState!.tavern.stations.find(station => station.kind === kind)!;
+      await approachStation(surface);
+      const quality = hostState!.players[hostToken].drinkQuality;
+      host.emit("interact");
+      await waitForState(host, () => hostState, state => Boolean(state.tavern.stations.find(station => station.id === surface.id)?.drink));
+      assert.equal(hostState!.players[hostToken].drink, undefined);
+      host.emit("interact");
+      await waitForState(host, () => hostState, state => state.players[hostToken].drink === recipe.id);
+      assert.equal(hostState!.players[hostToken].drinkQuality, quality);
+    }
+
     smokeStage = "shared counter handoff";
     const counter = hostState!.tavern.stations.find((station) => station.id === "counter-4-3")!;
     const quality = hostState!.players[hostToken].drinkQuality;
@@ -245,7 +259,8 @@ async function main() {
       secondClientMovedDuringMixing: true,
       advancedRhythmActionsCompleted: true,
       sharedPauseVerified: true,
-      counterHandoffVerified: true
+      counterHandoffVerified: true,
+      singleActionHandoffsVerified: true
     }, null, 2));
   } finally {
     host.disconnect();

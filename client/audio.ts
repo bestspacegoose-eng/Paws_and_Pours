@@ -71,8 +71,9 @@ interface ActiveEffect {
 }
 
 function makeAudio(source: string, loop = false) {
-  const audio = new Audio(source);
-  audio.preload = "auto";
+  const audio = new Audio();
+  audio.preload = "none";
+  audio.src = source;
   audio.loop = loop;
   return audio;
 }

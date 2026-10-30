@@ -5,8 +5,10 @@
 <label><input id="customers" type="checkbox"> Show customers and orders</label>
 <canvas width="1088" height="712"></canvas>
 <script type="module">
+import { loadGameAssets } from '/client/game-assets.ts';
 import { makeTavern, stationBounds, nextCustomerSeat, RECIPES } from '/shared/game.ts';
 import { drawTavernFloor, drawTavernCounter, drawBarGate } from '/client/tavern-renderer.ts';
+await loadGameAssets();
 const load = async src => { const image = new Image(); image.src = src; await image.decode(); return image; };
 const [ingredients, bin, cats] = await Promise.all([
   load('/client/assets/tilemap/ingredients-spritesheet.png'), load('/client/assets/props/scrap-bin.png'), load('/client/assets/tilemap/cat-bartender-spritesheet.png'),

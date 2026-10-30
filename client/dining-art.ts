@@ -1,8 +1,9 @@
+import { gameImage } from "./game-assets";
 import { furnitureArt } from "./furniture-art";
 import type { Station, Theme } from "../shared/game";
 import atlasUrl from "./assets/tilemap/dining-furniture-v2.png";
 
-const atlas = new Image(); atlas.src = atlasUrl;
+const atlas = gameImage(atlasUrl);
 // The quiet lavender rug remains shared; furniture comes from each theme's sheet.
 const rugFrame = { x: 50, y: 888, width: 358, height: 146 };
 const ready = () => atlas.complete && atlas.naturalWidth > 0;

@@ -1,9 +1,9 @@
+import { gameImage } from "./game-assets";
 import type { Recipe } from "../shared/game";
 import drinksUrl from "./assets/tilemap/drinks-complete-atlas.png";
 import { DRINK_SPRITES } from "./drink-sprites";
 
-const drinks = new Image();
-drinks.src = drinksUrl;
+const drinks = gameImage(drinksUrl);
 export function onDrinkArtReady(listener: () => void) { drinks.addEventListener("load", listener); }
 
 export function drawRecipeDrink(context: CanvasRenderingContext2D, recipe: Recipe, x: number, y: number, size: number) {

@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import { restoreSoloSnapshot } from "../shared/solo-save.js";
+import { usesDrinkHandoff } from "../shared/interaction.js";
 import {
   applyMissedOrderPenalty, createMixingSession, expectedMixingStep, type CatRole, type FacingDirection, type GameState,
   initialState, makeOrder, makeTavern, MIXING_MAX_MISTAKES, mixingQuality,
@@ -263,7 +264,7 @@ io.on("connection", (socket) => {
     if (state.mixing[player.id]) return;
     const nearby = nearbyStation(state.tavern, player);
     if (!nearby) return setMessage(state, "Walk up to a brightly colored station, then press E.");
-    if (nearby.kind === "counter" || nearby.drink) {
+    if (usesDrinkHandoff(player, nearby)) {
       counterHandoff(state, player, nearby); broadcast(state); return;
     }
     if (nearby.kind === "pantry") {

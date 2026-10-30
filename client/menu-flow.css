@@ -3,7 +3,7 @@
 #brightness-shade{position:fixed;inset:0;z-index:2147483647;pointer-events:none;opacity:0}
 body:has(.intro-menu:not(.hidden)),body:has(.bartender-selection:not(.hidden)){background:#241b30}
 .shell:has(.intro-menu){width:100%;padding:0;margin:0}
-.shell .intro-menu{position:relative;width:100%;max-width:none;min-height:100dvh;padding:0;border:0;border-radius:0;background:#493747 url('./assets/menus/intro-tavern.png') center top / 100% auto no-repeat;box-shadow:none;overflow:auto;isolation:isolate}
+.shell .intro-menu{position:relative;width:100%;max-width:none;min-height:100dvh;padding:0;border:0;border-radius:0;background:#493747 center top / 100% auto no-repeat;box-shadow:none;overflow:auto;isolation:isolate}
 .intro-menu .title-scene{position:absolute;inset:0;min-height:0;background:none;border:0;box-shadow:none;pointer-events:none}
 .intro-menu .title-scene::before,.intro-menu .title-scene::after{display:none}
 .intro-menu .title-console{position:relative;display:block;width:min(360px,calc(100% - 32px));margin-left:auto;margin-right:10%;padding:0;padding-top:clamp(235px,34vh,330px);padding-bottom:22px;background:none;box-shadow:none}
@@ -34,7 +34,7 @@ body:has(.intro-menu:not(.hidden)),body:has(.bartender-selection:not(.hidden)){b
 .shell .intro-menu .settings-panel{position:relative;z-index:3;width:min(680px,calc(100% - 32px));margin:0 5% 20px auto;background:#302238;border:2px solid #b797ae;box-shadow:3px 4px 0 #211323;color:#fff0d3}
 .intro-menu .settings-panel input[type=range]{accent-color:#e4b282;padding:0;max-width:100%}
 .intro-menu .settings-panel output{font-size:11px;color:#efc58c}
-.shell .bartender-selection{position:relative;min-height:100dvh;max-width:none;width:100%;padding:18px clamp(16px,5vw,80px) 24px;border:0;border-radius:0;background:linear-gradient(#26152f55,#26152f88),url('./assets/menus/bartender-tavern.png') center / cover no-repeat;box-shadow:none;overflow:auto;color:#fff0d0}
+.shell .bartender-selection{position:relative;min-height:100dvh;max-width:none;width:100%;padding:18px clamp(16px,5vw,80px) 24px;border:0;border-radius:0;background:#302238 center / cover no-repeat;box-shadow:none;overflow:auto;color:#fff0d0}
 .selection-heading{text-align:center;text-shadow:3px 3px #2b182b}
 .selection-heading>p:first-child{font:700 clamp(28px,4vw,48px) Fraunces,Georgia,serif;margin:0 0 6px;color:#ffe2b3}
 .selection-heading h1{font:700 clamp(24px,3.6vw,42px) Fraunces,Georgia,serif;margin:5px 0;color:#fff1d0}

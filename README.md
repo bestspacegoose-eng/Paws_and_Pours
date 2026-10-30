@@ -54,11 +54,11 @@ npm test
 
 ## Controls
 
-On phones and tablets, drag the movement pad, tap **Interact** at a station, and use **Handoff** to place or pick up a finished drink. **Map** shows the full tavern; **Follow** returns to the following camera. Touch controls support portrait and landscape.
+On phones and tablets, drag the movement pad and use the single contextual action button to gather, mix, serve, place, or pick up drinks. Its label changes with the nearby station and your carried item. **Map** shows the full tavern; **Follow** returns to the following camera. Touch controls support portrait and landscape.
 
 - `WASD` or arrow keys: move your cat.
-- `E`: interact at a station.
-- `Q`: place or pick up a finished drink at a preparation, ingredient, or mixing counter. At ordinary counters, `E` also transfers drinks. Occupied hands or surfaces never overwrite a drink.
+- `E`: interact at a station, including placing or retrieving a drink at a preparation, ingredient, or mixing counter.
+- `Q`: optional shortcut for placing or picking up a finished drink. Occupied hands or surfaces never overwrite a drink.
 - `Escape` or **Menu · Pause**: pause the room for everyone. The pause menu contains the illustrated recipe book and local display/audio settings.
 - Pick up three ingredients, open the matching recipe at the mixer, then add them in any order. For tuna recipes, bring raw tuna to the chopping board, press E to chop, and E again to pick up the pieces. The cleaver badge identifies prepared tuna in orders and recipes. Hold timed tools near their target duration; for chopping and hand mixing, tap in rhythm with the highlighted beat.
 - The mixing workspace is private to the active player; the shared online shift continues for everyone else unless anyone pauses the room. An active tool hold or beat sequence restarts after resuming without a mistake.
@@ -109,3 +109,5 @@ This vertical slice still defers persistent accounts, controller input, spectato
 See [`docs/MOBILE_AND_MIXING.md`](docs/MOBILE_AND_MIXING.md) for mobile controls, mixing alignment, chosen fur colors, and verification captures.
 
 See [`docs/MINIGAME_ART.md`](docs/MINIGAME_ART.md) for the new pixel-art preparation tools, animation layers, generation prompt, and desktop/mobile review captures.
+
+See [`docs/MENU_LOADING.md`](docs/MENU_LOADING.md) for deferred game assets, optimized menu images, local fonts, and measured mobile loading improvements.

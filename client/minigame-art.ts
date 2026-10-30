@@ -1,10 +1,10 @@
+import { gameImage } from "./game-assets";
 import atlasUrl from "./assets/tilemap/minigame-props-v1.png";
 import { MINIGAME_FRAMES, type MinigameSprite } from "./minigame-art-layout";
 
-const atlas = new Image();
+const atlas = gameImage(atlasUrl);
 const listeners = new Set<() => void>();
 atlas.onload = () => listeners.forEach(listener => listener());
-atlas.src = atlasUrl;
 
 export function onMinigameArtReady(listener: () => void) {
   listeners.add(listener);

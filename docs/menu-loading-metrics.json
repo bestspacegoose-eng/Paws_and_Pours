@@ -1,0 +1,40 @@
+{
+  "method": {
+    "browser": "Chromium, fresh mobile context",
+    "viewport": [
+      390,
+      844
+    ],
+    "cache": "disabled",
+    "networkLatencyMs": 100,
+    "downloadBytesPerSecond": 500000,
+    "uploadBytesPerSecond": 250000,
+    "server": "Vite production preview"
+  },
+  "before": {
+    "domMs": 537,
+    "menuVisibleMs": 573,
+    "backgroundMs": 37281,
+    "bytes": 18661513,
+    "mediaCount": 44
+  },
+  "after": {
+    "domMs": 555,
+    "menuVisibleMs": 595,
+    "backgroundMs": 1114,
+    "bytes": 582229,
+    "mediaCount": 1
+  },
+  "menuAssets": [
+    {
+      "name": "intro-tavern",
+      "sourcePngBytes": 2131969,
+      "webpBytes": 243010
+    },
+    {
+      "name": "bartender-tavern",
+      "sourcePngBytes": 1873274,
+      "webpBytes": 201926
+    }
+  ]
+}
