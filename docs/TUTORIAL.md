@@ -35,7 +35,7 @@ The tutorial is interactive and untimed. Players can use WASD/arrows, E/Q, the t
 
 ## Verification
 
-- All 71 automated tests pass. New cases cover valid isolated scenes, real recipe-step previews, safe starting positions, concise content, card positioning, safe areas, completion/skip persistence, and unavailable browser storage.
+- All 78 automated tests pass. New cases cover valid isolated scenes, real recipe-step previews, safe starting positions, concise content, card positioning, safe areas, completion/skip persistence, and unavailable browser storage.
 - Every step was inspected at 1440 × 960, 390 × 844, 320 × 740, 844 × 390, and 1024 × 768. Cards and navigation fit the viewport and explanatory body text remains at least 15px. The compact practice view additionally keeps the active controls clear.
 - Manual walkthroughs created no server room and left solo-save storage unchanged. Keyboard Tab reaches the relevant practice controls and coach. Escape pauses/resumes gameplay practice, and Skip remains available.
 - Automatic first-run completion and skipping both entered a real shift and were remembered on reload. A new saved run did not store preview state, including during a simulated page exit; skipping saved only the real shift.
@@ -52,3 +52,13 @@ The tutorial is interactive and untimed. Players can use WASD/arrows, E/Q, the t
 - [Recipe book](tutorial-book-390.png), [settings entry](tutorial-settings-390.png)
 
 Interactive review captures: [desktop](tutorial-interactive-1440.png), [phone](tutorial-interactive-390.png).
+
+## Mobile visibility pass
+
+Phone lessons now use separate short titles and one-action descriptions in `client/tutorial-mobile.ts`; laptop narration and floating-card presentation are unchanged. The mobile coach sits in a reserved top rail, or a side rail on landscape phones, so it does not cover the game or preparation workspace. Help reopens the short instructions, and practice feedback is kept to one line. Navigation remains at least 44 px high.
+
+Only the HUD being taught is expanded: orders for the ticket lesson and stats for the earnings/hearts/clock lesson. During hands-on practice the camera, joystick, single action button, timing bar and minigame artwork have their own visible space. The workspace appears immediately on mobile, without a fade that temporarily doubles the underlying UI.
+
+All 25 lessons were checked at 320×740, 390×844, 430×932, 667×375 and 844×390. Checks cover readable text, card bounds, no horizontal overflow, clear highlights, visible artwork and actual movement, chopping, mixing, serving, pause and recipe-book controls. Practice saves and preferences remain isolated.
+
+Review: [phone movement](mobile-tour-movement-390.png), [small-phone timing](mobile-tour-timing-320.png), [landscape chopping](mobile-tour-chop-beat-844.png), [small-landscape ingredients](mobile-tour-ingredients-667.png).

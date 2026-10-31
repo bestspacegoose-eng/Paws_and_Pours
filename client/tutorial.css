@@ -40,3 +40,55 @@ body[data-tutorial-practice=true] .tutorial-shade>rect{fill-opacity:.25}
   #tutorial-save-preview h2{font-size:28px}
 }
 @media(prefers-reduced-motion:reduce){.tutorial-card button{transition:none}}
+/* Phone coach: its own small rail, outside the game and preparation workspace. */
+body[data-tutorial-mobile=true] .tutorial-card{left:8px;top:calc(8px + env(safe-area-inset-top));width:calc(100vw - 16px);max-width:none;max-height:calc(100dvh - 16px);padding:9px 10px 8px;border-radius:7px}
+body[data-tutorial-mobile=true] .tutorial-card header{min-height:16px;padding-right:44px}
+body[data-tutorial-mobile=true] .tutorial-step{font-size:12px;line-height:16px}
+body[data-tutorial-mobile=true] .tutorial-card .tutorial-skip{position:absolute;right:7px;top:0;min-width:44px;min-height:44px;padding:0;font-size:13px}
+body[data-tutorial-mobile=true] .tutorial-progress{height:2px;margin:4px 0 6px}
+body[data-tutorial-mobile=true] .tutorial-card h2{font-size:19px;line-height:1.1;margin:0 48px 5px 0;text-wrap:initial}
+body[data-tutorial-mobile=true] .tutorial-card #tutorial-copy{font-size:15px;line-height:1.3}
+body[data-tutorial-mobile=true] .tutorial-card #tutorial-tip{display:none}
+body[data-tutorial-mobile=true] .tutorial-card footer{padding-top:7px;gap:7px}
+body[data-tutorial-mobile=true] .tutorial-card footer button{min-height:44px;padding:8px 11px;font-size:16px}
+body[data-tutorial-mobile=true] .tutorial-card .tutorial-next{min-width:85px}
+body[data-tutorial-mobile=true] .tutorial-card.practicing{padding-top:7px}
+body[data-tutorial-mobile=true] .tutorial-card.practicing h2{font-size:17px;margin:0 92px 0 0}
+body[data-tutorial-mobile=true] .tutorial-card.practicing .tutorial-progress{display:none}
+body[data-tutorial-mobile=true] .tutorial-card.practicing #tutorial-tip{display:block;margin:3px 0 0;font-size:13px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body[data-tutorial-mobile=true] .tutorial-card .tutorial-explain{position:absolute;top:0;right:51px;width:44px;min-height:44px;padding:0;font-size:13px}
+body[data-tutorial-mobile=true] .tutorial-card.practicing footer{padding-top:5px}
+body[data-tutorial-mobile=true] .tutorial-shade>rect{fill-opacity:.12}
+body[data-tutorial-mobile=true] .game:not(.hidden){top:var(--tutorial-rail-height,170px);height:calc(100dvh - var(--tutorial-rail-height,170px))}
+body[data-tutorial-mobile=true] .game[data-touch=true]:not(.hidden) .game-header{min-height:44px;grid-template-columns:minmax(0,1fr) auto;padding:4px 8px}
+body[data-tutorial-mobile=true] .game[data-touch=true]:not(.hidden) .game-header .stats{display:none}
+body[data-tutorial-mobile=true] .game[data-touch=true]:not(.hidden) .order-hud{display:none}
+body[data-tutorial-mobile=true] .game[data-touch=true]:not(.hidden) .canvas-card{top:60px}
+body[data-tutorial-mobile=true][data-tutorial-step=orders] .game[data-touch=true]:not(.hidden) .order-hud{display:flex;top:60px}
+body[data-tutorial-mobile=true][data-tutorial-step=orders] .game[data-touch=true]:not(.hidden) .canvas-card{top:146px}
+body[data-tutorial-mobile=true][data-tutorial-step=stats] .game[data-touch=true]:not(.hidden) .game-header{min-height:84px}
+body[data-tutorial-mobile=true][data-tutorial-step=stats] .game[data-touch=true]:not(.hidden) .game-header .stats{display:flex}
+body[data-tutorial-mobile=true][data-tutorial-step=stats] .game[data-touch=true]:not(.hidden) .canvas-card{top:100px}
+body[data-tutorial-mobile=true] .mixing-workspace{top:var(--tutorial-rail-height,170px);animation:none}
+body[data-tutorial-mobile=true] .mixing-shell{max-height:calc(100dvh - var(--tutorial-rail-height,170px) - 12px)}
+body[data-tutorial-mobile=true] .overlay{top:var(--tutorial-rail-height,170px)}
+body[data-tutorial-mobile=true] .overlay .modal{max-height:calc(100dvh - var(--tutorial-rail-height,170px) - 16px)}
+body[data-tutorial-mobile=true] .recipe-mobile-page{max-height:calc(100dvh - var(--tutorial-rail-height,170px) - 150px)}
+@media(orientation:landscape) and (min-width:600px){
+ body[data-tutorial-mobile=true] .tutorial-card{width:238px;max-height:calc(100dvh - 16px - env(safe-area-inset-top))}
+ body[data-tutorial-mobile=true] .tutorial-card h2{margin-right:0;padding-top:7px}
+ body[data-tutorial-mobile=true] .tutorial-card footer button{padding:8px 7px}
+ body[data-tutorial-mobile=true] .tutorial-card .tutorial-next{min-width:66px}
+ body[data-tutorial-mobile=true] .game:not(.hidden){left:var(--tutorial-side-width,254px);top:0;width:calc(100vw - var(--tutorial-side-width,254px));height:100dvh}
+ body[data-tutorial-mobile=true] .mixing-workspace{left:var(--tutorial-side-width,254px);top:0}
+ body[data-tutorial-mobile=true] .mixing-shell{max-height:calc(100dvh - 12px)}
+ body[data-tutorial-mobile=true] .overlay{left:var(--tutorial-side-width,254px);top:0}
+ body[data-tutorial-mobile=true] .overlay .modal{max-height:calc(100dvh - 16px)}
+ body[data-tutorial-mobile=true] .recipe-mobile-page{max-height:calc(100dvh - 150px)}
+ body[data-tutorial-mobile=true] .tutorial-card.practicing h2{margin-right:0;padding-top:20px}
+}
+@media(orientation:landscape) and (min-width:600px) and (max-width:739px){
+ body[data-tutorial-mobile=true] .game[data-touch=true]:not(.hidden) .canvas-card{left:100px;right:148px}
+ body[data-tutorial-mobile=true] .touch-actions{max-width:132px}
+ body[data-tutorial-mobile=true] .mixing-shell{grid-template-columns:minmax(0,1fr) 184px}
+}

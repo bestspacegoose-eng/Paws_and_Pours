@@ -97,6 +97,7 @@ npm start
 npm run test:multiplayer
 npm run test:seating
 npm run test:keepsakes
+npm run test:chopping
 ```
 
 The smoke test creates two Socket.IO clients and verifies the shared pause, gathering, an independently controlled player during mixing, ordered recipe actions, server-owned timing and quality, drink completion, and serving the matching live order.

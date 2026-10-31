@@ -21,7 +21,7 @@ export class OrderHud {
         const title = document.createElement("strong"); title.textContent = `${orderDestinationLabel(order)} · ${recipe.name}`;
         card.title = order.customer;
         const art = document.createElement("canvas"); art.width = 216; art.height = 52;
-        art.setAttribute("role", "img"); art.setAttribute("aria-label", `${recipe.name}: ${recipe.ingredients.map(ingredientLabel).join(", ")}; cleaver-marked ingredients must be prepared at the chopping board`);
+        art.setAttribute("role", "img"); art.setAttribute("aria-label", `${recipe.name}: ${recipe.ingredients.map(ingredientLabel).join(", ")}${recipe.ingredients.some(isChoppedIngredient)?"; cleaver-marked ingredients must be prepared at the chopping board":""}`);
         const context = art.getContext("2d")!; context.imageSmoothingEnabled = false;
         drawRecipeDrink(context, recipe, 25, 25, 47);
         recipe.ingredients.forEach((ingredient, index) => {

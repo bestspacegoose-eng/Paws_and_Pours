@@ -16,7 +16,8 @@
     "test": "tsx --test tests/*.test.ts",
     "test:multiplayer": "tsx scripts/smoke-multiplayer.ts",
     "test:seating": "tsx scripts/smoke-seating.ts",
-    "test:keepsakes": "tsx scripts/smoke-keepsakes.ts"
+    "test:keepsakes": "tsx scripts/smoke-keepsakes.ts",
+    "test:chopping": "tsx scripts/smoke-chopping.ts"
   },
   "dependencies": {
     "express": "^5.1.0",

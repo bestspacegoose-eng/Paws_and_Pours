@@ -544,4 +544,4 @@ if (existsSync(clientDirectory)) {
 }
 
 const port = Number(process.env.PORT ?? 3001);
-httpServer.listen(port, () => console.log(`Paws & Pours server listening on http://localhost:${port}`));
+httpServer.listen(port, process.env.HOST ?? "0.0.0.0", () => console.log(`Paws & Pours server listening on http://localhost:${port}`));

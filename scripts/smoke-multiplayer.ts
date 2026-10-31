@@ -1,3 +1,4 @@
+import { rawIngredient as pantryIngredient, isChoppedIngredient, CHOPPING_RECIPES } from "../shared/game.js";
 import assert from "node:assert/strict";
 import { io, type Socket } from "socket.io-client";
 import { recipeById, type CatRole, type GameState, type Station } from "../shared/game.js";
@@ -128,16 +129,24 @@ async function main() {
       const selected = recipeById(recipeId);
       for (const ingredient of selected.ingredients) {
         smokeStage = `collect ${ingredient}`;
-        const rawIngredient = ingredient === "chopped-tuna" ? "tuna" : ingredient;
+        const rawIngredient = pantryIngredient(ingredient);
         const station = hostState!.tavern.stations.find((candidate) => candidate.ingredient === rawIngredient);
         assert.ok(station, `missing station for ${ingredient}`);
         await approachStation(station);
         host.emit("interact");
         await waitForState(host, () => hostState, (state) => state.players[hostToken].carrying.includes(rawIngredient));
-        if (ingredient === "chopped-tuna") {
+        if (isChoppedIngredient(ingredient)) {
           const board = hostState!.tavern.stations.find((candidate) => candidate.kind === "chop")!;
           await approachStation(board);
           host.emit("interact");
+          await waitForState(host,()=>hostState,state=>state.mixing[hostToken]?.kind === "chop");
+          const action=CHOPPING_RECIPES.find(recipe=>recipe.ingredients[0]===rawIngredient)!.preparation.actions[0];
+          assert.equal(action.kind,"rhythm");if(action.kind!=="rhythm")throw new Error("chop rhythm missing");
+          for(let hit=0;hit<action.hits;hit++){
+            if(hit)await new Promise(resolve=>setTimeout(resolve,action.intervalMs));
+            host.emit("mix-rhythm-hit",{style:"chop"});
+            if(hit<action.hits-1)await waitForState(host,()=>hostState,state=>state.mixing[hostToken]?.rhythmHits===hit+1);
+          }
           await waitForState(host, () => hostState, (state) => state.tavern.stations.find((candidate) => candidate.id === board.id)?.preparedIngredient === ingredient);
           await waitForState(guest, () => guestState, (state) => state.tavern.stations.find((candidate) => candidate.id === board.id)?.preparedIngredient === ingredient);
           host.emit("interact");

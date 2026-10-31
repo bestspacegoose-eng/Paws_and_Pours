@@ -1,3 +1,4 @@
+import { mobileTutorialLesson, mobileTutorialFeedback } from "./tutorial-mobile";
 import { clipTutorialTarget, tutorialCardPosition, type TutorialRect } from "./tutorial-layout";
 import { TUTORIAL_STEPS, tutorialControls, tutorialPlaysGame, type TutorialStep } from "./tutorial-content";
 import "./tutorial.css";
@@ -28,7 +29,7 @@ export class Tutorial {
     this.root.querySelector<HTMLButtonElement>(".tutorial-reset")!.onclick=()=>{
       if(this.card.classList.contains("practicing"))this.render();else this.practice();
     };
-    this.root.querySelector<HTMLButtonElement>(".tutorial-explain")!.onclick=()=>{this.card.classList.remove("practicing");this.root.querySelector<HTMLButtonElement>(".tutorial-explain")!.hidden=true;this.position();this.schedule();};
+    this.root.querySelector<HTMLButtonElement>(".tutorial-explain")!.onclick=()=>{this.card.classList.remove("practicing");this.root.querySelector<HTMLButtonElement>(".tutorial-explain")!.hidden=true;this.renderWords();this.position();this.schedule();};
     this.root.querySelector<HTMLButtonElement>(".tutorial-back")!.onclick=()=>{if(this.index>0){this.index--;this.render();}};
     this.root.querySelector<HTMLButtonElement>(".tutorial-next")!.onclick=()=>{
       if(this.index===TUTORIAL_STEPS.length-1)this.finish("complete"); else {this.index++;this.render();}
@@ -46,7 +47,8 @@ export class Tutorial {
     },true);
     for(const name of ["pointerdown","click","dblclick","contextmenu"])document.addEventListener(name,event=>{
       if(!this.isOpen||!(event.target instanceof Element)||this.card.contains(event.target))return;
-      if(this.allowed(event.target)){if(name==="pointerdown")this.practice();return;}
+      if(this.allowed(event.target)){if(name===(this.isMobile()?"click":"pointerdown"))this.practice();return;}
+      if(name==="pointerdown"&&!event.target.closest("button,input,select,a,[role=button]"))return;
       event.preventDefault();event.stopImmediatePropagation();
     },true);
     const schedule=()=>this.schedule();
@@ -64,10 +66,10 @@ export class Tutorial {
   refresh(){this.schedule();}
   practice(){
     if(!this.isOpen||this.card.classList.contains("practicing"))return;
-    this.card.classList.add("practicing");this.root.querySelector<HTMLButtonElement>(".tutorial-explain")!.hidden=false;this.position();this.schedule();
+    this.card.classList.add("practicing");this.root.querySelector<HTMLButtonElement>(".tutorial-explain")!.hidden=false;this.renderWords();this.position();this.schedule();
     this.root.querySelector(".tutorial-reset")!.textContent="Reset";
   }
-  report(message:string){if(!this.isOpen||this.feedback===message)return;this.feedback=message;this.root.querySelector("#tutorial-tip")!.textContent=message;this.position();this.schedule();}
+  report(message:string){if(!this.isOpen||this.feedback===message)return;this.feedback=message;this.renderWords();this.position();this.schedule();}
   start(onClose:(result:"complete"|"skipped")=>void){
     if(this.isOpen)return;
     this.focusBefore=document.activeElement instanceof HTMLElement?document.activeElement:undefined;
@@ -83,24 +85,34 @@ export class Tutorial {
     this.root.querySelector(".tutorial-reset")!.textContent="Try it";
     document.body.dataset.tutorialPractice=String(tutorialPlaysGame(step));
     this.options.step(step);
-    this.root.querySelector(".tutorial-step")!.textContent=`Opening tour · ${this.index+1} of ${TUTORIAL_STEPS.length}`;
+    this.renderWords();
     this.root.querySelector<HTMLProgressElement>("progress")!.value=this.index+1;
-    this.root.querySelector("h2")!.textContent=step.title;
-    const touchBody=touch&&["movement","action"].includes(step.id);
-    this.root.querySelector("#tutorial-copy")!.textContent=touchBody
-      ? `${step.id==="movement"?"The kitchen is on the left and the guest tables are on the right. ":""}${step.touchTip}` :step.body;
-    this.root.querySelector("#tutorial-tip")!.textContent=touch&&!touchBody&&step.touchTip?step.touchTip:
-      touch&&step.id==="action"?"One button handles each station. No separate handoff button is needed.":step.tip??"";
     this.root.querySelector<HTMLButtonElement>(".tutorial-back")!.disabled=this.index===0;
     this.root.querySelector(".tutorial-next")!.textContent=this.index===TUTORIAL_STEPS.length-1?"Finish tour":this.index===0?"Show me around":"Next";
     this.card.querySelector(".tutorial-words")!.scrollTop=0;
     this.position();
     this.schedule();
   }
+  private isMobile(){return this.options.touch()&&window.innerWidth<=900;}
+  private renderWords(){
+    const step=this.step,mobile=this.isMobile(),touch=this.options.touch();
+    const lesson=mobileTutorialLesson(step);
+    document.body.dataset.tutorialStep=step.id;
+    this.root.querySelector(".tutorial-step")!.textContent=mobile?`${this.index+1} / ${TUTORIAL_STEPS.length}`:`Opening tour · ${this.index+1} of ${TUTORIAL_STEPS.length}`;
+    this.root.querySelector("h2")!.textContent=mobile?lesson.title:step.title;
+    const touchBody=touch&&["movement","action"].includes(step.id);
+    this.root.querySelector("#tutorial-copy")!.textContent=mobile?lesson.body:touchBody
+      ? `${step.id==="movement"?"The kitchen is on the left and the guest tables are on the right. ":""}${step.touchTip}`:step.body;
+    this.root.querySelector("#tutorial-tip")!.textContent=mobile?(this.feedback?mobileTutorialFeedback(this.feedback):lesson.hint):this.feedback??(touch&&!touchBody&&step.touchTip?step.touchTip:
+      touch&&step.id==="action"?"One button handles each station. No separate handoff button is needed.":step.tip??"");
+    this.root.querySelector(".tutorial-skip")!.textContent=mobile?"Skip":"Skip tutorial";
+    this.root.querySelector(".tutorial-explain")!.textContent=mobile?"Help":"Show instructions";
+  }
   private finish(result:"complete"|"skipped"){
     if(!this.isOpen)return;
     this.root.hidden=true;this.scope.inert=this.inertBefore;
     delete document.body.dataset.tutorialActive;delete document.body.dataset.tutorialPractice;
+    delete document.body.dataset.tutorialMobile;delete document.body.dataset.tutorialStep;document.body.style.removeProperty("--tutorial-rail-height");document.body.style.removeProperty("--tutorial-side-width");
     if(this.frame!==undefined)cancelAnimationFrame(this.frame);
     this.frame=undefined;const done=this.onClose;this.onClose=undefined;done?.(result);
     if(this.focusBefore?.isConnected&&!this.focusBefore.closest(".hidden")&&!(this.focusBefore as HTMLButtonElement).disabled)
@@ -112,16 +124,29 @@ export class Tutorial {
   }
   private position(){
     if(!this.isOpen)return;
+    const mobile=this.isMobile();
+    if(document.body.dataset.tutorialMobile!==String(mobile)){document.body.dataset.tutorialMobile=String(mobile);this.renderWords();}
     const style=getComputedStyle(this.root);
     const viewport={width:document.documentElement.clientWidth,height:window.innerHeight,insets:{
       top:parseFloat(style.paddingTop)||0,right:parseFloat(style.paddingRight)||0,
       bottom:parseFloat(style.paddingBottom)||0,left:parseFloat(style.paddingLeft)||0}};
     const targets=this.options.targets(this.step).map(rect=>clipTutorialTarget(rect,viewport)).filter((r):r is TutorialRect=>Boolean(r));
-    const wide=viewport.height<=520&&viewport.width>viewport.height&&targets.some(r=>r.width>viewport.width*.55);
-    this.card.style.width=wide?`${Math.min(480,viewport.width-24)}px`:"";
-    const avoids=this.card.classList.contains("practicing")?(this.options.avoid?.()??[]):[];
-    const box=this.card.getBoundingClientRect(),p=tutorialCardPosition(viewport,box,[...targets,...avoids]);
-    this.card.style.left=`${p.x}px`;this.card.style.top=`${p.y}px`;
+    if(mobile){
+      const side=viewport.width>=600&&viewport.width>viewport.height;
+      const sideWidth=viewport.width>=740?238:198;
+      document.body.style.setProperty("--tutorial-side-width",`${sideWidth+16+viewport.insets.left}px`);
+      this.card.style.width=side?`${sideWidth}px`:`${viewport.width-16-viewport.insets.left-viewport.insets.right}px`;
+      this.card.style.left=`${8+viewport.insets.left}px`;this.card.style.top=`${8+viewport.insets.top}px`;
+      const rail=Math.ceil(this.card.getBoundingClientRect().height+16+viewport.insets.top);
+      if(document.body.style.getPropertyValue("--tutorial-rail-height")!==`${rail}px`)document.body.style.setProperty("--tutorial-rail-height",`${rail}px`);
+    }else{
+      document.body.style.removeProperty("--tutorial-rail-height");
+      const wide=viewport.height<=520&&viewport.width>viewport.height&&targets.some(r=>r.width>viewport.width*.55);
+      this.card.style.width=wide?`${Math.min(480,viewport.width-24)}px`:"";
+      const avoids=this.card.classList.contains("practicing")?(this.options.avoid?.()??[]):[];
+      const box=this.card.getBoundingClientRect(),p=tutorialCardPosition(viewport,box,[...targets,...avoids]);
+      this.card.style.left=`${p.x}px`;this.card.style.top=`${p.y}px`;
+    }
     const svg=this.root.querySelector("svg")!;svg.setAttribute("viewBox",`0 0 ${viewport.width} ${viewport.height}`);
     const rects=targets.map(r=>`<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="7"/>`).join("");
     this.root.querySelector(".tour-cutouts")!.innerHTML=rects;

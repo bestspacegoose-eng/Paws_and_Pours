@@ -4,7 +4,8 @@
 <script type="module">
 import { loadGameAssets } from '/client/game-assets.ts';
 import { MixingWorkspace } from '/client/mixing-workspace.ts';
-import { initialState, createMixingSession, recipeById, PLAYER_SPAWNS, RECIPES } from '/shared/game.ts';
+import { initialState, createMixingSession, recipeById, PLAYER_SPAWNS, RECIPES, CHOPPING_RECIPES } from '/shared/game.ts';
+import { createChoppingSession } from '/shared/chopping.ts';
 import '/client/style.css'; import '/client/menu-polish.css'; import '/client/mobile.css';
 await loadGameAssets();
 const state=initialState('QA','qa',1); state.phase='shift';
@@ -15,12 +16,12 @@ const workspace=new MixingWorkspace(document.querySelector('#mount'),{
  rhythmHit(){const session=state.mixing.qa;session.rhythmHits=(session.rhythmHits+1)%4;session.rhythmLastHitAt=Date.now();workspace.render(state,'qa');}
 });
 const recipeSelect=document.querySelector('#animation'),stepSelect=document.querySelector('#step');
-recipeSelect.replaceChildren(...RECIPES.map(recipe=>new Option(recipe.name,recipe.id)));
+recipeSelect.replaceChildren(...[...RECIPES,...CHOPPING_RECIPES].map(recipe=>new Option(recipe.name,recipe.id)));
 function action(){
  state.tavern.theme=document.querySelector('#theme').value;
  const recipe=recipeById(recipeSelect.value),index=Number(stepSelect.value),expected=recipe.preparation.actions[index];
- state.players.qa.carrying=[...recipe.ingredients];state.mixing.qa=createMixingSession('qa',recipe.id);
- Object.assign(state.mixing.qa,{stepIndex:3+index,usedIngredients:[...recipe.ingredients],feedback:expected.kind==='timed-tool'?`Hold ${expected.tool} near ${(expected.targetMs/1000).toFixed(1)} seconds.`:`Tap ${expected.style==='chop'?'to chop':'alternating paws'} along with the beat.`});
+ state.players.qa.carrying=[...recipe.ingredients];state.mixing.qa=recipe.id.startsWith("chop-")?createChoppingSession("qa",recipe.ingredients[0],"chop"):createMixingSession('qa',recipe.id);
+ Object.assign(state.mixing.qa,{stepIndex:(recipe.id.startsWith("chop-")?1:3)+index,usedIngredients:[...recipe.ingredients],feedback:expected.kind==='timed-tool'?`Hold ${expected.tool} near ${(expected.targetMs/1000).toFixed(1)} seconds.`:`Tap ${expected.style==='chop'?'to chop':'alternating paws'} along with the beat.`});
  workspace.render(state,'qa');
 }
 function recipe(){stepSelect.replaceChildren(...recipeById(recipeSelect.value).preparation.actions.map((step,index)=>new Option(step.kind==='timed-tool'?step.tool:step.style,String(index))));action();}

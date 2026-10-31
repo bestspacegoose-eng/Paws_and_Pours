@@ -47,16 +47,16 @@ async function main(){
   }finally{socket.disconnect();}
  }
  {
-  const {socket,token}=await savedRoom((state,player)=>{applyKeepsake(state,"bottomless-bag");player.carrying=["catnip","moonmilk","lime","fizz"];});
+  const {socket,token}=await savedRoom((state,player)=>{applyKeepsake(state,"bottomless-bag");player.carrying=["chopped-tuna","tonic","kelp","cream"];});
   try{
-   await resume(socket);let state=await event(socket,"interact",undefined,state=>Boolean(state.mixingChoices?.[token]));assert.deepEqual(state.mixingChoices?.[token],["catnip","lunar-fizz"]);
-   socket.emit("mix-recipe-select","tuna");
-   state=await event(socket,"mix-recipe-select","catnip",state=>Boolean(state.mixing[token]));assert.equal(state.mixing[token].recipeId,"catnip");
-   for(const ingredient of ["fizz","lime","catnip"])state=await event(socket,"mix-ingredient",ingredient,state=>state.mixing[token]?.usedIngredients.includes(ingredient));
-   await event(socket,"mix-tool-start","shaker",state=>Boolean(state.mixing[token]?.toolStartedAt));await new Promise(resolve=>setTimeout(resolve,1800));
-   state=await event(socket,"mix-tool-finish","shaker",state=>state.players[token].drink==="catnip");assert.deepEqual(state.players[token].carrying,["moonmilk"]);assert.ok(state.players[token].drinkQuality!>=.88);
-   state=await event(socket,"interact",undefined,state=>Boolean(state.tavern.stations.find(station=>station.id==="mix")?.drink));assert.deepEqual(state.players[token].carrying,["moonmilk"]);
-   state=await event(socket,"interact",undefined,state=>state.players[token].drink==="catnip");assert.deepEqual(state.players[token].carrying,["moonmilk"]);
+   await resume(socket);let state=await event(socket,"interact",undefined,state=>Boolean(state.mixingChoices?.[token]));assert.deepEqual(state.mixingChoices?.[token],["tuna","kelp-swirl"]);
+   socket.emit("mix-recipe-select","moonmilk");
+   state=await event(socket,"mix-recipe-select","tuna",state=>Boolean(state.mixing[token]));assert.equal(state.mixing[token].recipeId,"tuna");
+   for(const ingredient of ["kelp","tonic","chopped-tuna"])state=await event(socket,"mix-ingredient",ingredient,state=>state.mixing[token]?.usedIngredients.includes(ingredient));
+   await event(socket,"mix-tool-start","pourer",state=>Boolean(state.mixing[token]?.toolStartedAt));await new Promise(resolve=>setTimeout(resolve,1500));
+   state=await event(socket,"mix-tool-finish","pourer",state=>state.players[token].drink==="tuna");assert.deepEqual(state.players[token].carrying,["cream"]);assert.ok(state.players[token].drinkQuality!>=.88);
+   state=await event(socket,"interact",undefined,state=>Boolean(state.tavern.stations.find(station=>station.id==="mix")?.drink));assert.deepEqual(state.players[token].carrying,["cream"]);
+   state=await event(socket,"interact",undefined,state=>state.players[token].drink==="tuna");assert.deepEqual(state.players[token].carrying,["cream"]);
    checks.push("Bottomless Bag: choose valid recipe, reject spoofed choice, mix, retain spare, single-button handoffs");
   }finally{socket.disconnect();}
  }

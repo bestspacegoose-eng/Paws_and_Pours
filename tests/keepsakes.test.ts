@@ -1,7 +1,8 @@
+import { takeChoppedIngredient } from "../shared/chopping.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyKeepsake, isKeepsakeId, keepsakeEffects, remainingIngredients, servingReward } from "../shared/keepsakes.js";
-import { initialState, gridCellCenter, makeTavern, makeOrder, mulberry32, RECIPES, recipesForCarriedIngredients, seededUpgrades, chopTuna, transferCounterDrink, PLAYER_SPAWNS, TAVERN_THEMES, type KeepsakeId, type Player } from "../shared/game.js";
+import { initialState, gridCellCenter, makeTavern, makeOrder, mulberry32, RECIPES, recipesForCarriedIngredients, seededUpgrades, transferCounterDrink, PLAYER_SPAWNS, TAVERN_THEMES, type KeepsakeId, type Player } from "../shared/game.js";
 import { playerMoveSpeed, movementTarget } from "../shared/movement.js";
 import { captureSoloSnapshot, restoreSoloSnapshot } from "../shared/solo-save.js";
 import { THEME_TILES } from "../client/theme-tiles-layout.js";
@@ -39,13 +40,13 @@ test("Bottomless Bag identifies every valid recipe in four ingredients and consu
     assert.ok(recipesForCarriedIngredients(carried).some(match=>match.id===recipe.id));
     assert.deepEqual(remainingIngredients(carried,recipe),[spare]);assert.equal(carried.length,4);
   }
-  assert.deepEqual(recipesForCarriedIngredients(["catnip","moonmilk","lime","fizz"]).map(recipe=>recipe.id),["catnip","lunar-fizz"]);
+  assert.deepEqual(recipesForCarriedIngredients(["chopped-tuna","tonic","kelp","cream"]).map(recipe=>recipe.id),["tuna","kelp-swirl"]);
   assert.deepEqual(recipesForCarriedIngredients(["catnip","lime","lime","cream"]),[]);
 });
 test("Bag capacity applies to prepared tuna and carries spare ingredients through drink handoffs",()=>{
   const tavern=makeTavern(42),chop=tavern.stations.find(station=>station.kind==="chop")!,counter=tavern.stations.find(station=>station.kind==="counter")!;
   const cat={...player,carrying:["kelp","tonic","cream"]};chop.preparedIngredient="chopped-tuna";
-  assert.equal(chopTuna(cat,chop),"full");assert.equal(chopTuna(cat,chop,4),"picked-up");assert.equal(cat.carrying.length,4);
+  assert.equal(takeChoppedIngredient(cat,chop),"full");assert.equal(takeChoppedIngredient(cat,chop,4),"picked-up");assert.equal(cat.carrying.length,4);
   cat.carrying=["cream"];counter.drink={recipeId:"tuna",quality:.93};
   assert.equal(transferCounterDrink(cat,counter),"occupied");assert.equal(transferCounterDrink(cat,counter,4),"picked-up");assert.deepEqual(cat.carrying,["cream"]);
   assert.equal(transferCounterDrink(cat,counter,4),"placed");assert.equal(counter.drink?.quality,.93);
@@ -66,10 +67,10 @@ test("active keepsakes and four-ingredient bags survive fresh-identity solo rest
 test("a saved recipe choice is recomputed from the bag under the new player identity",()=>{
   const state=initialState("OLD",player.id,42);
   applyKeepsake(state,"bottomless-bag");state.phase="shift";
-  state.players[player.id]={...player,...gridCellCenter(2,3),carrying:["catnip","moonmilk","lime","fizz"]};
+  state.players[player.id]={...player,...gridCellCenter(2,3),carrying:["chopped-tuna","tonic","kelp","cream"]};
   state.mixingChoices={[player.id]:["tuna","catnip"]};
   const restored=restoreSoloSnapshot(captureSoloSnapshot(state,player.id),"NEW",{...player,id:"new"})!;
-  assert.deepEqual(restored.mixingChoices,{new:["catnip","lunar-fizz"]});
+  assert.deepEqual(restored.mixingChoices,{new:["tuna","kelp-swirl"]});
   assert.ok(restored.pausedAt!==null);
   const corrupt=JSON.parse(JSON.stringify(captureSoloSnapshot(state,player.id)));
   corrupt.state.activeKeepsake="infinite-coins";
