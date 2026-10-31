@@ -1,7 +1,7 @@
 import { drawThemedWorkbench } from "./theme-tiles";
 import { gameImage } from "./game-assets";
 import {
-  expectedMixingStep, mixingStepsForRecipe, recipeById, type GameState,
+  expectedMixingStep, mixingStepsForRecipe, recipeById, rawIngredient, type GameState,
   type MixingSession, type MixingTool, type Recipe, type RhythmAction, type Theme
 } from "../shared/game";
 import workspaceUrl from "./assets/tilemap/mixing-workspace.png";
@@ -70,6 +70,7 @@ export class MixingWorkspace {
   private paused = false;
   private outcome?: "success" | "failure";
   private outcomeRecipeId?: string;
+  private outcomeIngredient?: string;
   private outcomeTimer?: number;
 
   constructor(mount: HTMLElement, private readonly events: MixingWorkspaceEvents) {
@@ -132,7 +133,7 @@ export class MixingWorkspace {
 
   reset() {
     window.clearTimeout(this.outcomeTimer);this.stopToolTiming();this.stopRhythmTiming();this.stopVisualAnimation();
-    this.session=undefined;this.recipe=undefined;this.outcome=undefined;this.outcomeRecipeId=undefined;
+    this.session=undefined;this.recipe=undefined;this.outcome=undefined;this.outcomeRecipeId=undefined;this.outcomeIngredient=undefined;
     this.toolHolding=false;this.activeTool=undefined;this.rhythmServerHitAt=undefined;this.rhythmLocalHitAt=undefined;
     this.pendingRhythmHitAt=undefined;this.controlsKey="";this.cancelRequested=false;this.paused=false;
     this.actions.innerHTML="";this.root.classList.add("hidden");this.root.classList.remove("tool-holding");
@@ -157,8 +158,11 @@ export class MixingWorkspace {
       this.stopVisualAnimation();
       if (this.session) {
         const cancelled = this.cancelRequested;
-        this.outcome = player?.drink ? "success" : "failure";
-        this.outcomeRecipeId = player?.drink ?? this.recipe?.id;
+        const chopping=this.session.kind === "chop";
+        const prepared=chopping&&state.tavern.stations.find(station=>station.id===this.session!.stationId)?.preparedIngredient===`chopped-${this.session.ingredient}`;
+        this.outcome = (chopping?prepared:player?.drink) ? "success" : "failure";
+        this.outcomeIngredient=prepared?`chopped-${this.session.ingredient}`:undefined;
+        this.outcomeRecipeId = chopping?undefined:player?.drink ?? this.recipe?.id;
         this.session = undefined;
         this.recipe = undefined;
         this.toolHolding = false;
@@ -175,12 +179,12 @@ export class MixingWorkspace {
           this.outcome = undefined;
           this.root.classList.add("hidden");
         } else {
-          this.instruction.textContent = this.outcome === "success" ? "Drink complete — back to the tavern!" : "Mixing failed — back to the tavern.";
+          this.instruction.textContent = this.outcome === "success" ? chopping ? "Chopped! Pick up the pieces at the board." : "Drink complete — back to the tavern!" : "Mixing failed — back to the tavern.";
           this.draw();
           window.clearTimeout(this.outcomeTimer);
           this.outcomeTimer = window.setTimeout(() => {
             this.outcome = undefined;
-            this.outcomeRecipeId = undefined;
+            this.outcomeRecipeId = undefined;this.outcomeIngredient=undefined;
             this.root.classList.add("hidden");
           }, 850);
         }
@@ -197,7 +201,7 @@ export class MixingWorkspace {
     this.theme = state.tavern.theme;
     this.root.dataset.theme = state.tavern.theme;
     this.root.classList.remove("hidden");
-    this.title.textContent = `Prepare ${this.recipe.name}`;
+    this.title.textContent = session.kind === "chop" ? this.recipe.name : `Prepare ${this.recipe.name}`;
     this.instruction.textContent = session.feedback;
     this.timer.textContent = state.code === "TUTORIAL" ? "Practice" : `0:${String(Math.max(0, Math.ceil((session.deadlineAt - Date.now()) / 1000))).padStart(2, "0")}`;
     this.mistakes.textContent = state.code === "TUTORIAL" ? "Free retries" : `${session.mistakes} / 3 mistakes`;
@@ -436,6 +440,7 @@ export class MixingWorkspace {
 
     if (this.outcome) {
       this.drawAtlasContained(this.effectsImage, 3, 2, MIXING_EFFECT_FRAME_INDEX[this.outcome], 400, 280, 260, 230);
+      if(this.outcome === "success" && this.outcomeIngredient)this.drawIngredient(this.outcomeIngredient,400,280,1);
       if (this.outcome === "success" && this.outcomeRecipeId) this.drawFinishedDrink(this.outcomeRecipeId, 400, 280);
       return;
     }
@@ -444,7 +449,7 @@ export class MixingWorkspace {
     const steps = mixingStepsForRecipe(this.recipe);
     const expected = expectedMixingStep(this.session);
     this.drawAtlasContained(this.effectsImage, 3, 2, MIXING_EFFECT_FRAME_INDEX.multiplayer, 64, 70, 88, 78, 0.82);
-    if (!(expected?.kind === "timed-tool" && expected.tool === "pourer")) {
+    if (this.session.kind !== "chop" && !(expected?.kind === "timed-tool" && expected.tool === "pourer")) {
       this.drawGlass(expected?.kind === "ingredient" ? 400 : 600, expected?.kind === "ingredient" ? 302 : 352);
     }
 
@@ -548,11 +553,11 @@ export class MixingWorkspace {
   }
 
   private drawIngredient(ingredient: string, x: number, y: number, alpha: number) {
-    const painted = ({ "chopped-tuna":"tuna", lime:"lime", kelp:"kelp", catnip:"catnip" } as Record<string, MinigameSprite>)[ingredient];
+    const painted = ({ tuna:"tuna", lime:"lime", kelp:"kelp", catnip:"catnip" } as Record<string, MinigameSprite>)[rawIngredient(ingredient)];
     if (painted) {
       drawMinigameSprite(this.context, painted, x, y, 118, 100, alpha); return;
     }
-    const frame = INGREDIENT_FRAMES[ingredient];
+    const frame = INGREDIENT_FRAMES[rawIngredient(ingredient)];
     if (!frame || !this.ingredientsImage.complete || !this.ingredientsImage.naturalWidth) return;
     this.drawFrameContained(this.ingredientsImage, frame, x, y, 118, 112, alpha);
   }

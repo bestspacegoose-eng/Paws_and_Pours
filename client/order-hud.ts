@@ -1,4 +1,4 @@
-import { recipeById, orderDestinationLabel, type Order } from "../shared/game";
+import { recipeById, orderDestinationLabel, isChoppedIngredient, ingredientLabel, type Order } from "../shared/game";
 import { drawRecipeDrink, onDrinkArtReady } from "./drink-art";
 import { drawIngredientIcon } from "./tavern-renderer";
 import { drawChopBadge, onPreparationArtReady } from "./preparation-art";
@@ -21,14 +21,14 @@ export class OrderHud {
         const title = document.createElement("strong"); title.textContent = `${orderDestinationLabel(order)} · ${recipe.name}`;
         card.title = order.customer;
         const art = document.createElement("canvas"); art.width = 216; art.height = 52;
-        art.setAttribute("role", "img"); art.setAttribute("aria-label", `${recipe.name}: ${recipe.ingredients.join(", ")}`);
+        art.setAttribute("role", "img"); art.setAttribute("aria-label", `${recipe.name}: ${recipe.ingredients.map(ingredientLabel).join(", ")}; cleaver-marked ingredients must be prepared at the chopping board`);
         const context = art.getContext("2d")!; context.imageSmoothingEnabled = false;
         drawRecipeDrink(context, recipe, 25, 25, 47);
         recipe.ingredients.forEach((ingredient, index) => {
           const x = 84 + index * 47;
           context.fillStyle = "#f1dfbf"; context.fillRect(x - 19, 5, 38, 39);
           drawIngredientIcon(context, this.ingredients, ingredient, x, 24, 31);
-          if (ingredient === "chopped-tuna") drawChopBadge(context, x + 12, 39, 16);
+          if (isChoppedIngredient(ingredient)) drawChopBadge(context, x + 12, 39, 16);
         });
         const progress = document.createElement("progress"); progress.max = order.maxPatience;
         progress.setAttribute("aria-label", `${recipe.name} remaining patience`);

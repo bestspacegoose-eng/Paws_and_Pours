@@ -1,5 +1,6 @@
 import { keepsakeEffects, isKeepsakeId } from "./keepsakes.js";
-import { TAVERN_THEMES, recipesForCarriedIngredients, nearbyStation, createMixingSession, initialState, makeTavern, mixingStepsForRecipe, PLAYER_SPAWNS, pointCollidesWithCounters, RECIPES, UPGRADES, type GameState, type Player } from "./game.js";
+import { createChoppingSession } from "./chopping.js";
+import { CHOPPING_RECIPES, INGREDIENTS, isChoppedIngredient, recipeById, TAVERN_THEMES, recipesForCarriedIngredients, nearbyStation, createMixingSession, initialState, makeTavern, mixingStepsForRecipe, PLAYER_SPAWNS, pointCollidesWithCounters, RECIPES, UPGRADES, type GameState, type Player } from "./game.js";
 
 export interface SoloSnapshot {
   version: 1;
@@ -26,7 +27,7 @@ export function restoreSoloSnapshot(input: unknown, code: string, player: Player
     if (saved.activeKeepsake !== undefined && !isKeepsakeId(saved.activeKeepsake)) return;
     const activeKeepsake = saved.activeKeepsake ?? (saved.orderPatienceBonus === 12 ? "patient-patrons" : undefined);
     const source = saved.players?.[snapshot.playerId];
-    const ingredients = new Set(RECIPES.flatMap((recipe) => recipe.ingredients).concat("tuna"));
+    const ingredients = new Set(RECIPES.flatMap((recipe) => recipe.ingredients).concat(INGREDIENTS));
     const validRecipe = (id: unknown) => typeof id === "string" && RECIPES.some((recipe) => recipe.id === id);
     if (!source || !Array.isArray(source.carrying) || source.carrying.length > keepsakeEffects(activeKeepsake).carryCapacity || source.carrying.some((item) => !ingredients.has(item)) ||
         (source.drink !== undefined && !validRecipe(source.drink))) return;
@@ -51,18 +52,25 @@ export function restoreSoloSnapshot(input: unknown, code: string, player: Player
     for (const station of state.tavern.stations) {
       const old = saved.tavern.stations?.find((candidate) => candidate.id === station.id);
       if (old?.drink && ["counter", "mix", "pantry"].includes(station.kind) && validRecipe(old.drink.recipeId) && finite(old.drink.quality, 0, 1)) station.drink = { ...old.drink };
-      if (station.kind === "chop" && old?.preparedIngredient === "chopped-tuna") station.preparedIngredient = "chopped-tuna";
+      if (station.kind === "chop" && old?.preparedIngredient && isChoppedIngredient(old.preparedIngredient)) {
+        station.preparedIngredient = old.preparedIngredient;
+        station.preparedQuality = finite(old.preparedQuality,0,1)?old.preparedQuality:1;
+      }
     }
     const position = finite(source.x, 10, 918) && finite(source.y, 10, 628) && !pointCollidesWithCounters(state.tavern, source) ? { x: source.x, y: source.y } : PLAYER_SPAWNS[0];
-    state.players[player.id] = { ...player, ...position, carrying: [...source.carrying], drink: source.drink,
+    state.players[player.id] = { ...player, ...position, carrying: [...source.carrying], ingredientQualities:Object.fromEntries(Object.entries(source.ingredientQualities??{}).filter(([ingredient,quality])=>source.carrying.includes(ingredient)&&isChoppedIngredient(ingredient)&&finite(quality,0,1))), drink: source.drink,
       drinkQuality: finite(source.drinkQuality, 0, 1) ? source.drinkQuality : undefined, score: finite(source.score, 0, 1e7) ? source.score : 0, moving: false };
     const oldMix = saved.mixing?.[snapshot.playerId];
-    if (oldMix && validRecipe(oldMix.recipeId)) {
-      const recipe = RECIPES.find((entry) => entry.id === oldMix.recipeId)!;
+    const board = state.tavern.stations.find(station=>station.kind === "chop")!;
+    const validChop = oldMix?.kind === "chop" && oldMix.stationId === board.id && !board.preparedIngredient &&
+      nearbyStation(state.tavern,state.players[player.id])?.id === board.id &&
+      CHOPPING_RECIPES.some(recipe=>recipe.id===oldMix.recipeId&&recipe.ingredients[0]===oldMix.ingredient);
+    if (oldMix && (validRecipe(oldMix.recipeId) || validChop)) {
+      const recipe = recipeById(oldMix.recipeId);
       const remaining = oldMix.deadlineAt - (saved.pausedAt ?? snapshot.savedAt);
-      if (finite(remaining, 1, 45000) && finite(oldMix.stepIndex, 0, mixingStepsForRecipe(recipe).length - 1) && Number.isInteger(oldMix.stepIndex) &&
+      if (recipe.ingredients.every(ingredient=>source.carrying.includes(ingredient)) && finite(remaining, 1, 45000) && finite(oldMix.stepIndex, 0, mixingStepsForRecipe(recipe).length - 1) && Number.isInteger(oldMix.stepIndex) &&
           Array.isArray(oldMix.usedIngredients) && oldMix.usedIngredients.length <= 3 && oldMix.usedIngredients.every((item) => recipe.ingredients.includes(item))) {
-        const mixing = createMixingSession(player.id, recipe.id, now);
+        const mixing = validChop?createChoppingSession(player.id,oldMix.ingredient!,board.id,now):createMixingSession(player.id, recipe.id, now);
         Object.assign(mixing, { stepIndex: oldMix.stepIndex, usedIngredients: [...oldMix.usedIngredients],
           deadlineAt: now + remaining, mistakes: finite(oldMix.mistakes, 0, 2) ? oldMix.mistakes : 0,
           qualityPoints: finite(oldMix.qualityPoints, 0, 10) ? oldMix.qualityPoints : 0,
@@ -70,9 +78,10 @@ export function restoreSoloSnapshot(input: unknown, code: string, player: Player
         state.mixing[player.id] = mixing;
       }
     }
-    if (!state.mixing[player.id] && saved.mixingChoices?.[snapshot.playerId] && nearbyStation(state.tavern, state.players[player.id])?.kind === "mix") {
-      const choices = recipesForCarriedIngredients(source.carrying);
-      if (choices.length > 1) state.mixingChoices = { [player.id]: choices.map(recipe => recipe.id) };
+    if (!state.mixing[player.id] && saved.mixingChoices?.[snapshot.playerId]) {
+      const station=nearbyStation(state.tavern,state.players[player.id]);
+      const choices=station?.kind === "mix"?recipesForCarriedIngredients(source.carrying):station?.kind === "chop"&&!station.preparedIngredient?CHOPPING_RECIPES.filter(recipe=>source.carrying.includes(recipe.ingredients[0])):[];
+      if(choices.length>1)state.mixingChoices = { [player.id]:choices.map(recipe=>recipe.id) };
     }
     if (saved.hazard && ["napkins", "fire", "ectoplasm"].includes(saved.hazard.kind) && finite(saved.hazard.x, 10, 918) && finite(saved.hazard.y, 10, 628))
       state.hazard = { id: "restored-hazard", kind: saved.hazard.kind, x: saved.hazard.x, y: saved.hazard.y, message: String(saved.hazard.message).slice(0, 100) };

@@ -1,10 +1,11 @@
+import { openChoppingBoard, chooseChoppingIngredient, finishChopping } from "../shared/chopping";
 import {
-  addMixingIngredient, chopTuna, createMixingSession, expectedMixingStep, mixingQuality,
+  addMixingIngredient, createMixingSession, expectedMixingStep, mixingQuality,
   nearbyStation, pauseShift, recipeById, recipesForCarriedIngredients, resumeShift,
   rhythmTimingAccepted, rhythmTimingQuality, servingOrderIndex, toolTimingAccepted,
   toolTimingQuality, transferCounterDrink, type GameState, type MixingSession
 } from "../shared/game";
-import { applyKeepsake, isKeepsakeId, keepsakeEffects, keepsakeSummary, remainingIngredients, servingReward } from "../shared/keepsakes";
+import { applyKeepsake, isKeepsakeId, keepsakeEffects, keepsakeSummary, consumeRecipeIngredients, servingReward } from "../shared/keepsakes";
 import { usesDrinkHandoff } from "../shared/interaction";
 
 // Isolated rehearsal: the real recipes and timing rules, no socket, save writes,
@@ -33,13 +34,15 @@ export class TutorialPractice {
       state.message = "Ingredients kept. You can return to the workbench."; return;
     }
     if (action === "mix-recipe-select" && typeof payload === "string" && state.mixingChoices?.[player.id]?.includes(payload)) {
+      const station=nearbyStation(state.tavern,player);
+      if(station?.kind === "chop"){chooseChoppingIngredient(state,player,station,payload,now);return;}
       state.mixing[player.id] = createMixingSession(player.id, payload, now); delete state.mixingChoices[player.id]; return;
     }
     const session = state.mixing[player.id];
     if (session) {
       const expected = expectedMixingStep(session);
       if (action === "mix-ingredient" && typeof payload === "string") {
-        if (addMixingIngredient(session, player.carrying, payload)) {
+        if (addMixingIngredient(session, player.carrying, payload, player.ingredientQualities)) {
           session.feedback = expectedMixingStep(session)?.kind === "ingredient" ? "Good. Add the other ingredients in any order." : "All ingredients added. Try the highlighted preparation button.";
           state.message = "That’s it. Your ingredients are going into the drink.";
         } else this.retry(session, "That ingredient is already added or isn’t needed.");
@@ -81,8 +84,7 @@ export class TutorialPractice {
       else if (player.carrying.length >= capacity) state.message = "Your paws are full. Bring the ingredients to a mixing counter.";
       else { player.carrying.push(station.ingredient); state.message = `${station.ingredient} collected. You can see it in your paws.`; }
     } else if (station.kind === "chop") {
-      const result = chopTuna(player, station, capacity);
-      state.message = result === "chopped" ? "Tuna chopped. Interact again to pick up the pieces." : result === "picked-up" ? "Chopped tuna collected. Ready for a tuna recipe." : "Bring raw tuna to the board first.";
+      openChoppingBoard(state,player,station,now);
     } else if (station.kind === "mix") {
       const recipes = recipesForCarriedIngredients(player.carrying);
       if (recipes.length === 1) { state.mixing[player.id] = createMixingSession(player.id, recipes[0].id, now); state.message = "Workbench open. Try adding your ingredients."; }
@@ -111,8 +113,9 @@ export class TutorialPractice {
   private advance(session: MixingSession) {
     if (expectedMixingStep(session)) { session.feedback = "Nicely done. Try the next highlighted preparation step."; this.state.message = session.feedback; return; }
     const player = this.state.players[this.playerId], recipe = recipeById(session.recipeId);
+    if(session.kind === "chop"){finishChopping(this.state,player,session);return;}
     player.drink = recipe.id; player.drinkQuality = mixingQuality(session);
-    player.carrying = remainingIngredients(player.carrying, recipe); delete this.state.mixing[this.playerId];
+    consumeRecipeIngredients(player,recipe); delete this.state.mixing[this.playerId];
     this.state.message = `${recipe.name} ready! Choose Next whenever you’re ready.`;
   }
 }

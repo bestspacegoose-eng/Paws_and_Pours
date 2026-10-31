@@ -93,3 +93,6 @@
   .mixing-action{min-height:48px}
 }
 @media(max-width:370px){.touch-pad{width:92px;height:92px}.touch-pad-knob{inset:24px}.touch-actions button{font-size:17px}.shell .pause-actions{grid-template-columns:1fr}}
+
+.ingredient-chop-badge{display:inline-block;width:24px;height:24px;vertical-align:middle;background:transparent}
+.prep-note{display:block;font-size:13px;color:#d8c5b0}

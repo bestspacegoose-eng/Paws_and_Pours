@@ -201,6 +201,7 @@ export class AudioDirector {
       if (previousMix && !nextMix) {
         this.stopTool();
         if (after.drink && after.drink !== before.drink) this.playEffect("success", { gain: 0.8 });
+        else if(previousMix.kind === "chop" && next.tavern.stations.some(station=>station.id===previousMix.stationId&&station.preparedIngredient===`chopped-${previousMix.ingredient}`))this.playEffect("success",{gain:.65});
         else if (!/cancel|stepped away/i.test(next.message)) this.playEffect("failure", { gain: 0.72 });
       }
 

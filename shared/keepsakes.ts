@@ -1,4 +1,4 @@
-import type { GameState, KeepsakeId, Recipe } from "./game.js";
+import type { GameState, KeepsakeId, Recipe, Player } from "./game.js";
 
 const ids = ["swift-paws", "patient-patrons", "lucky-whiskers", "bottomless-bag", "nine-lives"] as const;
 export const isKeepsakeId = (value: unknown): value is KeepsakeId =>
@@ -44,4 +44,10 @@ export function remainingIngredients(carried: string[], recipe: Pick<Recipe, "in
     if (index >= 0) remaining.splice(index, 1);
   }
   return remaining;
+}
+
+export function consumeRecipeIngredients(player: Player, recipe: Pick<Recipe,"ingredients">) {
+  player.carrying = remainingIngredients(player.carrying, recipe);
+  if (player.ingredientQualities) player.ingredientQualities = Object.fromEntries(Object.entries(player.ingredientQualities)
+    .filter(([ingredient]) => player.carrying.includes(ingredient)));
 }

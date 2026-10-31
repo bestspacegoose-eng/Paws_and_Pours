@@ -13,7 +13,7 @@ export interface Vec { x: number; y: number }
 export interface GridCell { gridX: number; gridY: number }
 export interface PreparedDrink { recipeId: string; quality: number }
 export interface Station extends Vec, GridCell {
-  id: string; kind: StationKind; label: string; counterVariant: CounterVariant; ingredient?: string; drink?: PreparedDrink; preparedIngredient?: string;
+  id: string; kind: StationKind; label: string; counterVariant: CounterVariant; ingredient?: string; drink?: PreparedDrink; preparedIngredient?: string; preparedQuality?: number;
   tableId?: string; seatNumber?: number; facing?: FacingDirection; widthCells?: number; serviceStyle?: "bar"
 }
 export interface TimedToolAction {
@@ -29,6 +29,7 @@ export interface Recipe {
   tier: 0 | 1 | 2; preparation: { actions: PreparationAction[] }
 }
 export interface MixingSession {
+  kind?: "chop"; ingredient?: string; stationId?: string;
   playerId: string; recipeId: string; stepIndex: number; mistakes: number;
   startedAt: number; deadlineAt: number; qualityPoints: number;
   usedIngredients: string[]; toolStartedAt?: number; rhythmHits: number;
@@ -40,7 +41,7 @@ export interface Player {
   id: string; name: string; role: CatRole; fur: string; accessory: string;
   x: number; y: number; direction: FacingDirection; moving: boolean; moveSequence: number;
   carrying: string[]; drink?: string; drinkQuality?: number; connected: boolean; score: number
-  ready?: boolean;
+  ready?: boolean; ingredientQualities?: Record<string, number>;
 }
 export interface Tavern { seed: number; theme: Theme; stations: Station[]; decoration: string[] }
 export interface Upgrade { id: KeepsakeId; title: string; body: string }
@@ -89,10 +90,9 @@ export const RECIPES: Recipe[] = [
     preparation: { actions: [{ kind: "timed-tool", tool: "pourer", targetMs: 1_500, toleranceMs: 450 }] }
   },
   {
-    id: "lunar-fizz", name: "Lunar Fizz", ingredients: ["moonmilk", "lime", "fizz"],
+    id: "lunar-fizz", name: "Lunar Fizz", ingredients: ["moonmilk", "chopped-lime", "fizz"],
     color: "#bcb2ed", glass: "tall", tier: 1,
     preparation: { actions: [
-      { kind: "rhythm", style: "chop", ingredient: "lime", hits: 3, intervalMs: 650, toleranceMs: 270 },
       { kind: "timed-tool", tool: "shaker", targetMs: 1_600, toleranceMs: 430 }
     ] }
   },
@@ -104,22 +104,34 @@ export const RECIPES: Recipe[] = [
     ] }
   },
   {
-    id: "star-spritz", name: "Star Spritz", ingredients: ["stardust", "lime", "tonic"],
+    id: "star-spritz", name: "Star Spritz", ingredients: ["stardust", "chopped-lime", "tonic"],
     color: "#dbc1f2", glass: "tall", tier: 2,
     preparation: { actions: [
-      { kind: "rhythm", style: "chop", ingredient: "lime", hits: 4, intervalMs: 570, toleranceMs: 220 },
       { kind: "timed-tool", tool: "pourer", targetMs: 1_750, toleranceMs: 380 }
     ] }
   },
   {
-    id: "seafoam-shake", name: "Seafoam Shake", ingredients: ["chopped-tuna", "kelp", "cream"],
+    id: "seafoam-shake", name: "Seafoam Shake", ingredients: ["chopped-tuna", "chopped-kelp", "cream"],
     color: "#86c9be", glass: "mug", tier: 2,
     preparation: { actions: [
-      { kind: "rhythm", style: "chop", ingredient: "kelp", hits: 3, intervalMs: 560, toleranceMs: 210 },
       { kind: "rhythm", style: "hand-mix", hits: 4, intervalMs: 610, toleranceMs: 230 }
     ] }
   }
 ];
+// Chopping is ingredient preparation at the board, separate from drink mixing.
+export const CHOPPING_RECIPES: Recipe[] = [
+  { id:"chop-tuna", name:"Chop tuna", ingredients:["tuna"], color:"#de8e8c", glass:"board", tier:0,
+    preparation:{actions:[{kind:"rhythm",style:"chop",ingredient:"tuna",hits:3,intervalMs:650,toleranceMs:270}]} },
+  { id:"chop-lime", name:"Chop lime", ingredients:["lime"], color:"#b6d47c", glass:"board", tier:0,
+    preparation:{actions:[{kind:"rhythm",style:"chop",ingredient:"lime",hits:3,intervalMs:650,toleranceMs:270}]} },
+  { id:"chop-kelp", name:"Chop kelp", ingredients:["kelp"], color:"#84bda1", glass:"board", tier:0,
+    preparation:{actions:[{kind:"rhythm",style:"chop",ingredient:"kelp",hits:3,intervalMs:560,toleranceMs:210}]} }
+];
+export const rawIngredient = (ingredient:string) => ingredient.startsWith("chopped-") ? ingredient.slice(8) : ingredient;
+export const isChoppedIngredient = (ingredient:string) => CHOPPING_RECIPES.some(recipe => ingredient === `chopped-${recipe.ingredients[0]}`);
+export const ingredientLabel = (ingredient:string) => ingredient.replaceAll("-"," ");
+export const choppingForIngredient = (ingredient:string) => CHOPPING_RECIPES.find(recipe => recipe.ingredients[0] === rawIngredient(ingredient));
+
 export const INGREDIENTS = ["catnip", "lime", "fizz", "moonmilk", "cream", "stardust", "tuna", "tonic", "kelp"];
 export const UPGRADES: Upgrade[] = [
   { id: "swift-paws", title: "Swift Paws", body: "+20% movement speed next shift" },
@@ -171,7 +183,7 @@ export function makeTavern(seed: number, round = 1): Tavern {
     ...ingredientTable,
     stationAt({ gridX: 3, gridY: 3 }, { id: "mix", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
     stationAt({ gridX: 4, gridY: 5 }, { id: "mix-east", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
-    stationAt({ gridX: 3, gridY: 5 }, { id: "chop", kind: "chop", label: "Chop tuna", counterVariant: "ingredient" }),
+    stationAt({ gridX: 3, gridY: 5 }, { id: "chop", kind: "chop", label: "Chopping", counterVariant: "ingredient" }),
     stationAt({ gridX: 1, gridY: 10 }, { id: "mop", kind: "mop", label: "Clean", counterVariant: "damaged" }),
     stationAt({ gridX: 3, gridY: 10 }, { id: "trash", kind: "trash", label: "Discard", counterVariant: "damaged" })
   ];
@@ -356,7 +368,7 @@ export function expectedMixingStep(session: MixingSession): MixingStep | undefin
   return mixingStepsForRecipe(recipeById(session.recipeId))[session.stepIndex];
 }
 
-export function addMixingIngredient(session: MixingSession, carried: string[], ingredient: string): boolean {
+export function addMixingIngredient(session: MixingSession, carried: string[], ingredient: string, qualities: Record<string, number> = {}): boolean {
   const recipe = recipeById(session.recipeId);
   if (expectedMixingStep(session)?.kind !== "ingredient") return false;
   const used = session.usedIngredients.filter((item) => item === ingredient).length;
@@ -364,23 +376,8 @@ export function addMixingIngredient(session: MixingSession, carried: string[], i
       used >= carried.filter((item) => item === ingredient).length) return false;
   session.usedIngredients.push(ingredient);
   session.stepIndex += 1;
-  session.qualityPoints += 1;
+  session.qualityPoints += Math.max(0,Math.min(1,qualities[ingredient] ?? 1));
   return true;
-}
-
-export function chopTuna(player: Player, station: Station, carryCapacity = 3): "chopped" | "picked-up" | "full" | "needs-tuna" {
-  if (station.kind !== "chop") return "needs-tuna";
-  if (station.preparedIngredient) {
-    if (player.drink || player.carrying.length >= carryCapacity || player.carrying.includes("chopped-tuna")) return "full";
-    player.carrying.push(station.preparedIngredient);
-    delete station.preparedIngredient;
-    return "picked-up";
-  }
-  const index = player.carrying.indexOf("tuna");
-  if (index < 0) return "needs-tuna";
-  player.carrying.splice(index, 1);
-  station.preparedIngredient = "chopped-tuna";
-  return "chopped";
 }
 
 export function toolTimingQuality(elapsedMs: number, action: TimedToolAction): number {
@@ -492,4 +489,4 @@ export function makeOrder(id: string, random: () => number, round = 1, elapsedSe
   return { id, recipeId: recipe.id, customer: customers[Math.floor(random() * customers.length)], patience: maxPatience, maxPatience };
 }
 
-export const recipeById = (id: string) => RECIPES.find((recipe) => recipe.id === id)!;
+export const recipeById = (id: string) => [...RECIPES,...CHOPPING_RECIPES].find((recipe) => recipe.id === id)!;

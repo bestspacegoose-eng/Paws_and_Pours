@@ -1,3 +1,4 @@
+import { createChoppingSession } from "../shared/chopping";
 import { createMixingSession, gridCellCenter, initialState, recipeById, UPGRADES,
   type CatRole, type GameState, type Player, type Vec } from "../shared/game";
 
@@ -55,7 +56,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     body:"This readout shows your ingredients or finished drink. You can carry three ingredients at a time. Once you have a recipe's full set, head to either mixing counter.",
     tip:"You cannot pick up another finished drink while your paws are full." },
   { id:"chop", scene:"chop", title:"A little prep goes a long way.", target:["station:chop"],
-    body:"Tuna recipes need chopped tuna. Bring raw tuna to this board, interact once to chop it, then again to pick up the pieces. The little cleaver badge on a ticket means 'chop first'." },
+    body:"The cleaver badge means chop first. Bring the marked tuna, lime, or kelp here. Interact to open the chopping minigame, follow the beat, then interact again to pick up the pieces. Mixing happens at a mixing counter." },
   { id:"mixer", scene:"mixer", title:"Make a little tavern magic.", target:["station:mix"],
     body:"Bring a recipe's three ingredients here and interact to open your workbench. In multiplayer, the other bartenders keep working while you prepare the drink." },
   { id:"ingredients", scene:"ingredients", title:"First, add your ingredients.", target:[".mixing-actions"],
@@ -67,7 +68,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     body:"Hold the tool button until the moving fill reaches the green sweet spot, then release it to finish the action. A spoon stirs, a shaker shakes, and a pourer fills the glass.",
     tip:"Better timing makes a better drink and can earn a better tip." },
   { id:"chop-beat", scene:"chop-beat", title:"Chop to the beat.", target:[".tool-timing"],
-    body:"Tap Chop once to begin. Then wait for the green beat window before each next tap. The counter tracks your successful chops." },
+    body:"All cutting happens at the chopping board, including tuna. Tap Chop once to begin, then wait for the green beat window before each next tap. Pick up the finished pieces before mixing." },
   { id:"paw-beat", scene:"paw-beat", title:"Left paw, right paw.", target:[".mixing-actions"],
     body:"Paw-mixing recipes use the same beat window, but alternate Left paw and Right paw. Follow the highlighted button. Some drinks combine two preparation steps before they are finished." },
   { id:"serve", scene:"serve", title:"Make your guest feel at home.", target:["station:table-1"],
@@ -93,7 +94,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 
 export function tutorialCameraFocus(scene: TutorialScene): Vec {
   const cells: Partial<Record<TutorialScene, [number, number]>> = {
-    pantry:[1,2], action:[1,2], carry:[3,2], chop:[2,5], mixer:[3,2], handoff:[5,3], tidy:[1,9], serve:[12,3]
+    pantry:[1,2], action:[1,2], carry:[3,2], chop:[2,5], "chop-beat":[2,5], mixer:[3,2], handoff:[5,3], tidy:[1,9], serve:[12,3]
   };
   const [x,y] = cells[scene] ?? [3,8];
   return gridCellCenter(x,y);
@@ -111,13 +112,17 @@ export function tutorialState(playerId: string, profile: { name:string; role:Cat
   if (scene === "chop") player.carrying = ["tuna"];
   if (["serve","handoff"].includes(scene)) player.drink = "catnip";
   const recipeId = scene === "chop-beat" ? "lunar-fizz" : scene === "paw-beat" ? "kelp-swirl" : "catnip";
-  if (["ingredients","timed","chop-beat","paw-beat"].includes(scene)) {
+  if (["ingredients","timed","paw-beat"].includes(scene)) {
     const recipe = recipeById(recipeId), session = createMixingSession(playerId, recipeId);
     player.carrying = [...recipe.ingredients];
     if (scene !== "ingredients") { session.stepIndex = 3; session.usedIngredients = [...recipe.ingredients]; session.qualityPoints = recipe.ingredients.length; }
     session.feedback = scene === "ingredients" ? "Add your three ingredients in any order." : scene === "timed"
       ? "Hold, then release in the green sweet spot." : "Follow the highlighted beat button.";
     state.mixing[playerId] = session;
+  }
+  if(scene === "chop-beat"){
+    player.carrying=["lime"];
+    state.mixing[playerId]=createChoppingSession(playerId,"lime","chop");
   }
   if (["pause","book","settings"].includes(scene)) { state.pausedAt = Date.now(); state.pausedBy = playerId; }
   if (scene === "tidy") state.hazard = { id:"tutorial-spill", kind:"napkins", message:"A mouse has scattered napkins.", ...gridCellCenter(5,8) };

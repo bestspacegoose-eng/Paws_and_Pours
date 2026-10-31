@@ -1,6 +1,6 @@
 import { themeArt, drawThemeFrame } from "./theme-tiles";
 import { gameImage } from "./game-assets";
-import { GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, stationBounds, recipeById, seatForOrder, type Order, type Player, type Station, type Tavern, type Theme } from "../shared/game";
+import { isChoppedIngredient, rawIngredient, GRID_CELL_SIZE, GRID_COLUMNS, GRID_ROWS, stationBounds, recipeById, seatForOrder, type Order, type Player, type Station, type Tavern, type Theme } from "../shared/game";
 import { INGREDIENT_FRAMES } from "./sprite-frames";
 import { seatedCustomerLayout } from "./customer-layout";
 import { drawRecipeDrink } from "./drink-art";
@@ -116,7 +116,7 @@ export function drawTavernFloor(context: CanvasRenderingContext2D, tavern: Taver
 export function drawIngredientIcon(context: CanvasRenderingContext2D, image: HTMLImageElement, ingredient: string,
   x: number, y: number, size: number) {
   if (ingredient === "chopped-tuna") { drawPreparationArt(context, 1, x, y, size); return; }
-  const frame = INGREDIENT_FRAMES[ingredient];
+  const frame = INGREDIENT_FRAMES[rawIngredient(ingredient)];
   if (!frame || !image.complete || !image.naturalWidth) return;
   const scale = Math.min(size / frame.width, size / frame.height);
   const width = Math.round(frame.width * scale), height = Math.round(frame.height * scale);
@@ -208,7 +208,7 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
     drawPreparationArt(context, 0, x, y - 2, 43);
     if (station.preparedIngredient) {
       context.fillStyle = "#ecd7b6"; context.fillRect(x - 15, y - 14, 30, 22);
-      drawPreparationArt(context, 1, x, y - 2, 29);
+      drawIngredientIcon(context, ingredients, station.preparedIngredient, x, y - 2, 29);
     }
   } else if (station.drink) {
     context.fillStyle = "#e1be7f66"; context.beginPath(); context.ellipse(x, y + 10, 14, 5, 0, 0, Math.PI * 2); context.fill();

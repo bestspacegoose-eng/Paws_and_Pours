@@ -13,7 +13,7 @@ import { movementTarget } from "../shared/movement";
 import { advanceWalkAnimation, type WalkAnimation } from "./walk-animation";
 import { io, type Socket } from "socket.io-client";
 import {
-  moveWithCounterCollisions, nearbyStation, stationBounds, RECIPES, recipeById, type CatRole,
+  isChoppedIngredient, ingredientLabel, choppingForIngredient, moveWithCounterCollisions, nearbyStation, stationBounds, RECIPES, recipeById, type CatRole,
   type GameState, type Player, type Recipe
 } from "../shared/game";
 import tabbyPortraitUrl from "./assets/characters/tabby.png";
@@ -266,7 +266,8 @@ function tutorialTargets(step:TutorialStep):TutorialRect[] {
   if(step.id==="book"&&!recipeBookOpen)targets=[state?.pausedAt===null?"#game-menu":"#open-pause-book"];
   if(step.id==="settings"&&pausePanel==="settings")targets=["#pause-brightness"];
   if(step.id==="saves"&&document.querySelector("#tutorial-save-preview")?.getClientRects().length)targets=["#tutorial-save-preview"];
-  if(state?.code==="TUTORIAL"&&["ingredients","timed","chop-beat","paw-beat"].includes(step.scene)&&!state.mixing[token])targets=["carry"];
+  if(state?.code==="TUTORIAL"&&["ingredients","timed","chop-beat","paw-beat"].includes(step.scene)&&!state.mixing[token])targets=step.scene === "chop-beat"?["station:chop"]:["carry"];
+  if(state?.mixing[token]?.kind === "chop")targets=[".tool-timing",".rhythm-action"];
   return targets.flatMap(target=>{
     if(target==="movement")return [...document.querySelectorAll<HTMLElement>(touchLayout?".touch-pad,.touch-map":".controls")].map(node=>node.getBoundingClientRect());
     if(target==="action"||target==="carry"){
@@ -639,10 +640,11 @@ function renderOverlay() {
   if (state.phase === "shift" && state.pausedAt !== null && recipeBookOpen) {
     overlay.classList.remove("hidden");
     const recipe = RECIPES[recipeBookPage];
-    overlay.innerHTML = `<section class="recipe-book" aria-label="Bartender's recipe book"><canvas id="recipe-book-art" class="recipe-book-art" width="1000" height="590" aria-label="Illustrated recipe page for ${recipe.name}"></canvas><div class="recipe-mobile-page"><p class="eyebrow">BARTENDER’S RECIPE BOOK</p><h2>${recipe.name}</h2><h3>Gather</h3><ul>${recipe.ingredients.map(ingredient => `<li>${ingredient.replaceAll("-", " ")}</li>`).join("")}</ul><h3>Prepare</h3><ol>${recipe.preparation.actions.map(action => `<li>${action.kind === "timed-tool" ? `Hold the ${action.tool} for ${(action.targetMs / 1000).toFixed(1)} seconds.` : `${action.style === "chop" ? "Chop" : "Alternate paws"} ${action.hits} times, ${(action.intervalMs / 1000).toFixed(2)} seconds apart.`}</li>`).join("")}</ol></div><div class="recipe-book-controls"><button class="recipe-book-page" id="previous-recipe" ${recipeBookPage === 0 ? "disabled" : ""}>← Previous</button><span aria-live="polite">Recipe ${recipeBookPage + 1} of ${RECIPES.length}</span><button class="recipe-book-page" id="next-recipe" ${recipeBookPage === RECIPES.length - 1 ? "disabled" : ""}>Next →</button></div><button class="recipe-book-close" id="close-book">← Pause menu</button></section>`;
+    overlay.innerHTML = `<section class="recipe-book" aria-label="Bartender's recipe book"><canvas id="recipe-book-art" class="recipe-book-art" width="1000" height="590" aria-label="Illustrated recipe page for ${recipe.name}"></canvas><div class="recipe-mobile-page"><p class="eyebrow">BARTENDER’S RECIPE BOOK</p><h2>${recipe.name}</h2><h3>Gather</h3><ul>${recipe.ingredients.map(ingredient => `<li>${ingredientLabel(ingredient)}${isChoppedIngredient(ingredient)?` <canvas class="ingredient-chop-badge" width="24" height="24" role="img" aria-label="Chop at the chopping board"></canvas><span class="prep-note">Chop at the board first</span>`:""}</li>`).join("")}</ul><h3>Prepare</h3>${recipe.ingredients.some(isChoppedIngredient)?`<p>Use the chopping board for each cleaver-marked ingredient, then pick up the pieces. Mix at a mixing counter.</p>`:""}<ol>${recipe.preparation.actions.map(action => `<li>${action.kind === "timed-tool" ? `Hold the ${action.tool} for ${(action.targetMs / 1000).toFixed(1)} seconds.` : `${action.style === "chop" ? "Chop" : "Alternate paws"} ${action.hits} times, ${(action.intervalMs / 1000).toFixed(2)} seconds apart.`}</li>`).join("")}</ol></div><div class="recipe-book-controls"><button class="recipe-book-page" id="previous-recipe" ${recipeBookPage === 0 ? "disabled" : ""}>← Previous</button><span aria-live="polite">Recipe ${recipeBookPage + 1} of ${RECIPES.length}</span><button class="recipe-book-page" id="next-recipe" ${recipeBookPage === RECIPES.length - 1 ? "disabled" : ""}>Next →</button></div><button class="recipe-book-close" id="close-book">← Pause menu</button></section>`;
     document.querySelector<HTMLButtonElement>("#previous-recipe")!.onclick = () => { recipeBookPage -= 1; renderOverlay(); };
     document.querySelector<HTMLButtonElement>("#next-recipe")!.onclick = () => { recipeBookPage += 1; renderOverlay(); };
     document.querySelector<HTMLButtonElement>("#close-book")!.onclick = () => { recipeBookOpen = false; renderOverlay(); };
+    overlay.querySelectorAll<HTMLCanvasElement>(".ingredient-chop-badge").forEach(canvas=>drawChopBadge(canvas.getContext("2d")!,12,12,23));
     window.requestAnimationFrame(() => drawRecipeBookPage(recipe, recipeBookPage));
   } else if (state.phase === "shift" && state.pausedAt !== null) {
     overlay.classList.remove("hidden");
@@ -671,7 +673,8 @@ function renderOverlay() {
     }
   } else if (state.phase === "shift" && state.mixingChoices?.[token]) {
     overlay.classList.remove("hidden");
-    overlay.innerHTML = `<div class="modal card recipe-choice" role="dialog" aria-modal="true" aria-label="Choose a drink"><p class="eyebrow">BOTTOMLESS BAG</p><h2>What shall we make?</h2><p>Choose a drink. Spare ingredients stay in your bag.</p><div class="recipe-choice-actions">${state.mixingChoices[token].map(id => `<button class="upgrade" data-mix-recipe="${id}"><b>${recipeById(id).name}</b><small>${recipeById(id).ingredients.join(" · ")}</small></button>`).join("")}</div><button id="cancel-recipe-choice" class="secondary" type="button">Back to tavern</button></div>`;
+    const chopping=state.mixingChoices[token].every(id=>id.startsWith("chop-"));
+    overlay.innerHTML = `<div class="modal card recipe-choice" role="dialog" aria-modal="true" aria-label="${chopping?"Choose an ingredient":"Choose a drink"}"><p class="eyebrow">${chopping?"CHOPPING BOARD":"BOTTOMLESS BAG"}</p><h2>${chopping?"What shall we chop?":"What shall we make?"}</h2><p>${chopping?"Choose an ingredient. The others stay in your paws.":"Choose a drink. Spare ingredients stay in your bag."}</p><div class="recipe-choice-actions">${state.mixingChoices[token].map(id => `<button class="upgrade" data-mix-recipe="${id}"><b>${recipeById(id).name}</b><small>${recipeById(id).ingredients.map(ingredientLabel).join(" · ")}</small></button>`).join("")}</div><button id="cancel-recipe-choice" class="secondary" type="button">Back to tavern</button></div>`;
     overlay.querySelectorAll<HTMLButtonElement>("[data-mix-recipe]").forEach(button=>button.onclick=()=>sendGameAction("mix-recipe-select",button.dataset.mixRecipe));
     document.querySelector<HTMLButtonElement>("#cancel-recipe-choice")!.onclick=()=>sendGameAction("cancel-mixing");
   } else if (state.phase === "lobby") {
@@ -873,8 +876,8 @@ function drawRecipeBookPage(recipe: Recipe, page: number) {
   bookContext.font = "600 14px 'DM Mono', monospace";
   const actionSummary = recipe.preparation.actions.map((action) => action.kind === "rhythm"
     ? action.style === "chop" ? "chop" : "paw mix" : action.tool).join(" · ");
-  bookContext.fillText(`Any ingredient order · ${actionSummary} · serve`, 84, 287, 358);
-  bookContext.fillText("Illustrated ingredient notes", 84, 315);
+  bookContext.fillText(`${recipe.ingredients.some(isChoppedIngredient)?"Chop first · ":""}Any ingredient order · ${actionSummary} · serve`, 84, 287, 358);
+  bookContext.fillText(recipe.ingredients.some(isChoppedIngredient)?"Cleaver badge: chop at the board first.":"Gather, mix, and serve.", 84, 315,358);
   bookContext.fillStyle = "rgba(92, 54, 53, .28)";
   bookContext.fillRect(84, 347, 300, 4);
   bookContext.fillText("A house special for thirsty patrons.", 84, 382);
@@ -897,7 +900,7 @@ function drawRecipeBookPage(recipe: Recipe, page: number) {
     bookContext.fillStyle = "#543247";
     bookContext.font = "700 18px 'DM Mono', monospace";
     drawIngredientIcon(bookContext, ingredientsSpritesheet, ingredient, x, 454, 96);
-    if (ingredient === "chopped-tuna") {
+    if (isChoppedIngredient(ingredient)) {
       drawChopBadge(bookContext, x + 38, 491, 34);
       bookContext.fillStyle = "#543247";
       bookContext.font = "600 12px monospace"; bookContext.fillText("CHOP FIRST", x - 35, 531);
