@@ -21,7 +21,7 @@ export function tutorialControls(step: TutorialStep): string[] {
   if (step.scene === "upgrades") return ["[data-upgrade]"];
   if (!tutorialPlaysGame(step)) return [];
   return [".touch-pad", ".touch-interact", ".touch-map", "#game-menu", ".mixing-actions button", ".mixing-pause", ".mixing-cancel",
-    "#resume-shift", "#open-pause-book", "#open-pause-settings", "#previous-recipe", "#next-recipe", "#close-book", "#pause-back",
+    "#resume-shift", "#open-pause-book", "#open-pause-settings", "#open-pause-specials", "#specials-resume", "#previous-recipe", "#next-recipe", "#close-book", "#pause-back",
     ".pause-settings input", ".pause-settings select", ".pause-settings button", "[data-mix-recipe]", "#cancel-recipe-choice"];
 }
 
@@ -41,12 +41,12 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     touchTip:"Drag the movement pad to walk. Map shows the whole tavern; Follow brings the camera back to your cat.",
     tip:"Try it now. Next is always available; Reset starts this practice step again." },
   { id:"action", scene:"action", title:"One action, many helpful paws.", target:["action"],
-    body:"Walk close to a station, then press E. The same action gathers ingredients, prepares and serves drinks, cleans, or places and retrieves a finished drink.",
+    body:"Walk close to a station, then press E. The same action gathers ingredients, prepares and serves drinks, cleans, or places and retrieves ingredients and drinks.",
     touchTip:"Walk close to a station and tap this one button. Its label changes to match the action: Take, Mix, Serve, Place drink, or Pick up drink.",
-    tip:"Q is an optional keyboard shortcut for placing and retrieving drinks." },
+    tip:"Q is an optional keyboard shortcut for placing and retrieving counter items." },
   { id:"orders", scene:"orders", title:"Your first guest has arrived.", target:[".order-ticket:first-child"],
-    body:"Tickets name the drink, three ingredients, and the guest's seat. A and B share a table; Bar 1 means a bar stool. The strip below the pictures shows patience.",
-    touchTip:"Swipe the ticket row sideways to see every order." },
+    body:"Tickets show the drink, ingredients, seat, and remaining patience in seconds. A and B share a table; Bar 1 is a stool. A ✦ star marks a House Special: share preparation for its bonus, or aim for perfect accuracy in solo.",
+    touchTip:"Swipe sideways for more tickets. In a live shift, tap a ticket to pause and read its recipe." },
   { id:"stats", scene:"stats", title:"A shift at a glance.", target:[".stats"],
     body:"Coins are your earnings; stars are your reputation. Hearts belong to the whole team. Each missed order costs a heart. The clock counts down a three-minute shift.",
     tip:"Your opening tour is frozen at 3:00. Take your time." },
@@ -74,7 +74,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   { id:"serve", scene:"serve", title:"Make your guest feel at home.", target:["station:table-1"],
     body:"Bring your finished drink to the matching table, chair, or bar counter and interact. A and B are separate guests. Serving one leaves the other's order; a wrong delivery keeps your drink." },
   { id:"handoff", scene:"handoff", title:"A counter can lend a paw.", target:["station:counter-4-3"],
-    body:"Interact at a free counter to leave a drink or your last collected ingredient. Each counter holds one item. Interact again to collect it, or leave it for a crewmate. Chopped ingredients keep their quality." },
+    body:"Leave a drink or your last ingredient on a free counter. Each holds one item and keeps its quality. Share preparation for House Special bonuses; solo players earn them through accuracy." },
   { id:"tidy", scene:"tidy", title:"A tidy tavern is a happy tavern.", target:["station:mop", "station:trash"],
     body:"When a hazard appears, interact at the cleaning sink to clear it. You do not need to stand on the spill. The nearby scrap bin discards ingredients or a drink when you need a fresh start.",
     tip:"Discarding something does not cancel a guest's order." },

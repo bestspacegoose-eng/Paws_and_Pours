@@ -8,7 +8,7 @@ const lessons:Record<string,[string,string,string?]> = {
   crew:["Invite friends","Create a room or enter a friend's code. Everyone chooses a cat and taps Ready."],
   movement:["Move your cat","Drag the pad to walk. Map shows the room; Follow returns to your cat.","Drag the pad to walk."],
   action:["One action button","Walk near a station and tap the action button. Its label shows what it will do.","Tap the action button."],
-  orders:["Guest orders","Tickets show the drink, ingredients and seat. A/B share a table. Swipe for more orders."],
+  orders:["Guest orders","Tickets show ingredients, seats and patience. A star marks a special. In live shifts, tap tickets for recipes."],
   stats:["Your shift","Coins are earnings; stars are reputation. Missed orders cost hearts. A shift lasts 3 minutes."],
   pantry:["Collect ingredients","Take the three ingredients pictured on the ticket, in any order.","Tap Take near a shelf."],
   carrying:["In your paws","This shows your ingredients or drink. Carry up to three ingredients, then head to Mixing."],
@@ -20,12 +20,12 @@ const lessons:Record<string,[string,string,string?]> = {
   "chop-beat":["Chop to the beat","Tap once to start. Tap again in each green window. Pick up the finished pieces.","Tap in the green window."],
   "paw-beat":["Alternate paws","Follow the highlighted paw: left, right, left, right. Tap in the green window.","Alternate left and right."],
   serve:["Serve the right guest","Bring the drink to its table, chair or bar number. Tap Serve.","Tap Serve by the guest."],
-  handoff:["Place and pick up","Leave a drink or your last ingredient on a free counter. One item per counter. Tap again to collect it.","Tap Place, then Pick up."],
+  handoff:["Place and pick up","Leave one item per free counter. Share preparation for special bonuses; solo uses accuracy.","Tap Place, then Pick up."],
   tidy:["Clean up","Use the cleaning sink to clear spills. The scrap bin discards what's in your paws.","Tap Clean at the sink."],
   pause:["Take a breath","Menu · Pause freezes all clocks. Resume continues the shift for everyone.","Try Resume or Menu · Pause."],
   book:["Recipe book","Turn pages for ingredients and preparation. The back button returns to Pause."],
   settings:["Make it comfortable","Adjust brightness, display, motion and sound here. Replay this tour from Pause."],
-  upgrades:["Choose a keepsake","After a shift, choose one bonus for the next tavern. In multiplayer, the host chooses."],
+  upgrades:["Your shift results","After a shift, review guests and teamwork. Choose one bonus for the next tavern; multiplayer's host chooses."],
   ready:["Open for business","Gather, chop if marked, mix and serve. Juniper says: one order at a time. You're ready!"]
 };
 export function mobileTutorialLesson(step:TutorialStep) {

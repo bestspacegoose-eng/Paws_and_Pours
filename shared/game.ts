@@ -1,3 +1,4 @@
+import type { HospitalityState } from "./hospitality.js";
 export type Theme = "Cozy Village Pub" | "Haunted Moonlit Inn" | "Pirate Cat Tavern";
 export const TAVERN_THEMES: readonly Theme[] = ["Cozy Village Pub", "Haunted Moonlit Inn", "Pirate Cat Tavern"];
 export type KeepsakeId = "swift-paws" | "patient-patrons" | "lucky-whiskers" | "bottomless-bag" | "nine-lives";
@@ -11,11 +12,12 @@ export type HazardKind = "napkins" | "ectoplasm" | "fire";
 
 export interface Vec { x: number; y: number }
 export interface GridCell { gridX: number; gridY: number }
-export interface PreparedDrink { recipeId: string; quality: number }
-export interface CounterIngredient { ingredient: string; quality: number }
+export interface PreparedDrink { recipeId: string; quality: number; contributors?: string[] }
+export interface CounterIngredient { ingredient: string; quality: number; contributors?: string[] }
 export interface Station extends Vec, GridCell {
   id: string; kind: StationKind; label: string; counterVariant: CounterVariant; ingredient?: string; drink?: PreparedDrink; preparedIngredient?: string; preparedQuality?: number;
   counterIngredient?: CounterIngredient;
+  preparedContributors?: string[];
   tableId?: string; seatNumber?: number; facing?: FacingDirection; widthCells?: number; serviceStyle?: "bar"
 }
 export interface TimedToolAction {
@@ -37,13 +39,14 @@ export interface MixingSession {
   usedIngredients: string[]; toolStartedAt?: number; rhythmHits: number;
   rhythmLastHitAt?: number; rhythmQualityPoints: number; feedback: string
 }
-export interface Order { id: string; recipeId: string; customer: string; patience: number; maxPatience: number; tableId?: string; seatId?: string }
+export interface Order { id: string; recipeId: string; customer: string; patience: number; maxPatience: number; tableId?: string; seatId?: string; houseSpecial?: boolean }
 export interface Hazard extends Vec { id: string; kind: HazardKind; message: string }
 export interface Player {
   id: string; name: string; role: CatRole; fur: string; accessory: string;
   x: number; y: number; direction: FacingDirection; moving: boolean; moveSequence: number;
   carrying: string[]; drink?: string; drinkQuality?: number; connected: boolean; score: number
   ready?: boolean; ingredientQualities?: Record<string, number>;
+  ingredientContributors?: Record<string, string[]>; drinkContributors?: string[];
 }
 export interface Tavern { seed: number; theme: Theme; stations: Station[]; decoration: string[] }
 export interface Upgrade { id: KeepsakeId; title: string; body: string }
@@ -53,6 +56,7 @@ export interface GameState {
   reputation: number; health: number; round: number; hazard: Hazard | null;
   upgrades: Upgrade[]; orderPatienceBonus: number; message: string;
   activeKeepsake?: KeepsakeId; mixingChoices?: Record<string, string[]>;
+  hospitality?: HospitalityState;
   pausedAt: number | null; pausedBy: string | null
 }
 
@@ -321,6 +325,8 @@ export function transferCounterItem(player: Player, station: Station, carryCapac
     const { ingredient, quality } = station.counterIngredient;
     if (player.drink || player.carrying.length >= carryCapacity || player.carrying.includes(ingredient)) return "occupied";
     player.carrying.push(ingredient);
+    player.ingredientContributors ??= {};
+    player.ingredientContributors[ingredient] = [...(station.counterIngredient.contributors ?? [player.id])];
     if (isChoppedIngredient(ingredient)) {
       player.ingredientQualities ??= {};
       player.ingredientQualities[ingredient] = quality;
@@ -332,6 +338,7 @@ export function transferCounterItem(player: Player, station: Station, carryCapac
     if (player.drink || (player.carrying.length && carryCapacity <= 3)) return "occupied";
     player.drink = station.drink.recipeId;
     player.drinkQuality = station.drink.quality;
+    player.drinkContributors = station.drink.contributors ? [...station.drink.contributors] : undefined;
     delete station.drink;
     return "picked-up";
   }
@@ -339,13 +346,17 @@ export function transferCounterItem(player: Player, station: Station, carryCapac
     if (station.kind !== "counter" || !player.carrying.length) return "empty";
     // Place the most recently collected ingredient; leave the rest in the bag.
     const ingredient = player.carrying.pop()!;
-    station.counterIngredient = { ingredient, quality: player.ingredientQualities?.[ingredient] ?? 1 };
+    const source = player.ingredientContributors?.[ingredient];
+    station.counterIngredient = { ingredient, quality: player.ingredientQualities?.[ingredient] ?? 1, ...(source ? {contributors:[...source]} : {}) };
     if (player.ingredientQualities) delete player.ingredientQualities[ingredient];
+    if (player.ingredientContributors) delete player.ingredientContributors[ingredient];
     return "placed";
   }
-  station.drink = { recipeId: player.drink, quality: player.drinkQuality ?? 1 };
+  station.drink = { recipeId: player.drink, quality: player.drinkQuality ?? 1,
+    ...(player.drinkContributors ? {contributors:[...player.drinkContributors]} : {}) };
   delete player.drink;
   delete player.drinkQuality;
+  delete player.drinkContributors;
   return "placed";
 }
 

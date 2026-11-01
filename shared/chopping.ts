@@ -1,5 +1,7 @@
-import { CHOPPING_RECIPES, createMixingSession, mixingQuality, type GameState, type MixingSession, type Player, type Station } from "./game.js";
+import { CHOPPING_RECIPES, createMixingSession, ingredientLabel, mixingQuality, type GameState, type MixingSession, type Player, type Station } from "./game.js";
 import { consumeRecipeIngredients, keepsakeEffects } from "./keepsakes.js";
+import { contributors, ingredientContributors } from "./contributions.js";
+import { recordWork } from "./hospitality.js";
 
 export function choppingBoardBusy(state:GameState, stationId:string) {
   return Object.values(state.mixing).some(session=>session.kind === "chop" && session.stationId === stationId);
@@ -14,9 +16,12 @@ export function takeChoppedIngredient(player:Player,station:Station,capacity=3) 
   if(!station.preparedIngredient)return "empty";
   if(player.drink||player.carrying.length>=capacity||player.carrying.includes(station.preparedIngredient))return "full";
   player.carrying.push(station.preparedIngredient);
+  player.ingredientContributors ??= {};
+  player.ingredientContributors[station.preparedIngredient] = [...(station.preparedContributors ?? [player.id])];
   player.ingredientQualities ??= {};
   player.ingredientQualities[station.preparedIngredient]=station.preparedQuality ?? 1;
   delete station.preparedIngredient;delete station.preparedQuality;
+  delete station.preparedContributors;
   return "picked-up";
 }
 export function openChoppingBoard(state:GameState,player:Player,station:Station,now=Date.now()) {
@@ -24,6 +29,7 @@ export function openChoppingBoard(state:GameState,player:Player,station:Station,
   if(choppingBoardBusy(state,station.id)){state.message="The chopping board is in use. Wait for the other bartender.";return;}
   if(station.preparedIngredient){
     const ingredient=station.preparedIngredient.replaceAll("-"," ");
+    if(player.carrying.includes(station.preparedIngredient)){state.message=`Already carrying ${ingredientLabel(station.preparedIngredient)}. The pieces stay on the board.`;return;}
     const result=takeChoppedIngredient(player,station,keepsakeEffects(state.activeKeepsake).carryCapacity);
     state.message=result==="picked-up"?`Picked up ${ingredient}. Ready for mixing.`:"Your paws are full. Make space before picking up the chopped ingredient.";return;
   }
@@ -44,6 +50,8 @@ export function finishChopping(state:GameState,player:Player,session:MixingSessi
   const station=state.tavern.stations.find(station=>station.id===session.stationId&&station.kind==="chop");
   if(!station||station.preparedIngredient||!session.ingredient||!player.carrying.includes(session.ingredient))return false;
   station.preparedIngredient=`chopped-${session.ingredient}`;station.preparedQuality=mixingQuality(session);
+  station.preparedContributors=contributors(ingredientContributors(player,session.ingredient),[player.id]);
+  recordWork(state,player,"chopped");
   consumeRecipeIngredients(player,{ingredients:[session.ingredient]});delete state.mixing[player.id];player.moving=false;
   state.message=`${session.ingredient[0].toUpperCase()+session.ingredient.slice(1)} chopped! Interact at the board to pick up the pieces.`;return true;
 }

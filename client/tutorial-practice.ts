@@ -7,6 +7,8 @@ import {
 } from "../shared/game";
 import { applyKeepsake, isKeepsakeId, keepsakeEffects, keepsakeSummary, consumeRecipeIngredients, servingReward } from "../shared/keepsakes";
 import { usesCounterHandoff } from "../shared/interaction";
+import { drinkContributors } from "../shared/contributions";
+import { recordServedDrink, recordWork } from "../shared/hospitality";
 
 // Isolated rehearsal: the real recipes and timing rules, no socket, save writes,
 // shift clock, guest expiry, or automatic tutorial advancement.
@@ -35,7 +37,12 @@ export class TutorialPractice {
     }
     if (action === "mix-recipe-select" && typeof payload === "string" && state.mixingChoices?.[player.id]?.includes(payload)) {
       const station=nearbyStation(state.tavern,player);
-      if(station?.kind === "chop"){chooseChoppingIngredient(state,player,station,payload,now);return;}
+      if(station?.kind === "chop"){
+        if(!chooseChoppingIngredient(state,player,station,payload,now)){
+          delete state.mixingChoices[player.id];state.message="The board changed. Ingredients kept; interact at the board to try again.";
+        }
+        return;
+      }
       state.mixing[player.id] = createMixingSession(player.id, payload, now); delete state.mixingChoices[player.id]; return;
     }
     const session = state.mixing[player.id];
@@ -82,7 +89,7 @@ export class TutorialPractice {
     } else if (station.kind === "pantry" && station.ingredient) {
       if (player.carrying.includes(station.ingredient)) state.message = "You already have that ingredient. Try another shelf.";
       else if (player.carrying.length >= capacity) state.message = "Your paws are full. Bring the ingredients to a mixing counter.";
-      else { player.carrying.push(station.ingredient); state.message = `${station.ingredient} collected. You can see it in your paws.`; }
+      else { player.carrying.push(station.ingredient); player.ingredientContributors ??= {}; player.ingredientContributors[station.ingredient]=[player.id]; recordWork(state,player,"gathered"); state.message = `${station.ingredient} collected. You can see it in your paws.`; }
     } else if (station.kind === "chop") {
       openChoppingBoard(state,player,station,now);
     } else if (station.kind === "mix") {
@@ -94,14 +101,15 @@ export class TutorialPractice {
       const index = player.drink ? servingOrderIndex(state.tavern, state.orders, station, player.drink) : -1;
       if (index >= 0) {
         const [order] = state.orders.splice(index, 1), reward = servingReward(1, player.drinkQuality ?? 1, state.activeKeepsake);
-        state.coins += reward.tip; state.reputation += reward.reputation; player.score += reward.tip;
-        player.drink = undefined; player.drinkQuality = undefined;
+        recordServedDrink(state,player,order,{recipeId:player.drink!,quality:player.drinkQuality??1,contributors:player.drinkContributors},reward.tip,true,now);
+        state.reputation += reward.reputation;
+        player.drink = undefined; player.drinkQuality = undefined; player.drinkContributors = undefined;
         state.message = `${order.customer} loves it! +${reward.tip} practice coins.`;
       } else state.message = "Match the drink and guest on the ticket. Your drink stays in your paws.";
     } else if (station.kind === "mop") {
       state.hazard = null; state.message = "All clean! You can clear a spill from the cleaning sink.";
     } else if (station.kind === "trash") {
-      player.carrying = []; player.drink = undefined; player.drinkQuality = undefined;
+      player.carrying = []; player.ingredientQualities = {}; player.ingredientContributors = {}; player.drink = undefined; player.drinkQuality = undefined; player.drinkContributors = undefined;
       state.message = "Paws empty. The guest’s order stays on the board.";
     }
     player.moving = false;
@@ -115,6 +123,7 @@ export class TutorialPractice {
     const player = this.state.players[this.playerId], recipe = recipeById(session.recipeId);
     if(session.kind === "chop"){finishChopping(this.state,player,session);return;}
     player.drink = recipe.id; player.drinkQuality = mixingQuality(session);
+    player.drinkContributors = drinkContributors(player,recipe.ingredients); recordWork(this.state,player,"mixed");
     consumeRecipeIngredients(player,recipe); delete this.state.mixing[this.playerId];
     this.state.message = `${recipe.name} ready! Choose Next whenever you’re ready.`;
   }

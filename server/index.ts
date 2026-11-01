@@ -7,12 +7,16 @@ import { Server } from "socket.io";
 import { restoreSoloSnapshot } from "../shared/solo-save.js";
 import { applyKeepsake, keepsakeEffects, keepsakeSummary, consumeRecipeIngredients, servingReward } from "../shared/keepsakes.js";
 import { openChoppingBoard, chooseChoppingIngredient, finishChopping } from "../shared/chopping.js";
-import { usesCounterHandoff } from "../shared/interaction.js";
+import { counterBlockReason, usesCounterHandoff } from "../shared/interaction.js";
+import { disconnectPlayer, resetPreparationGesture, validProfile } from "../shared/recovery.js";
+import { roomExpired } from "../shared/room-lifecycle.js";
+import { drinkContributors } from "../shared/contributions.js";
+import { designateHouseSpecial, finishHospitalityShift, hospitalityFor, recordServedDrink, recordWork, startHospitalityShift } from "../shared/hospitality.js";
 import {
   applyMissedOrderPenalty, createMixingSession, expectedMixingStep, type CatRole, type FacingDirection, type GameState,
   initialState, makeOrder, makeTavern, MIXING_MAX_MISTAKES, mixingQuality,
   moveWithCounterCollisions, mulberry32, pauseShift, recipeById, recipesForCarriedIngredients, resumeShift, seededUpgrades,
-  nearbyStation, transferCounterItem, ingredientLabel, RECIPES, PLAYER_SPAWNS, addMixingIngredient, rawIngredient, nextCustomerSeat, servingOrderIndex,
+  nearbyStation, transferCounterItem, ingredientLabel, orderDestinationLabel, RECIPES, PLAYER_SPAWNS, addMixingIngredient, rawIngredient, nextCustomerSeat, servingOrderIndex,
   rhythmTimingAccepted, rhythmTimingQuality, shiftDurationForRound, toolTimingAccepted, toolTimingQuality,
   TAVERN_THEMES, type KeepsakeId, type Hazard, type MixingSession, type MixingTool, type Player, type RhythmAction, type Station
 } from "../shared/game.js";
@@ -25,6 +29,9 @@ const soloRooms = new Set<string>();
 const seeds = new Map<string, number>();
 const orderCounters = new Map<string, number>();
 const hazardCounters = new Map<string, number>();
+const playerSockets = new Map<string, string>();
+const pendingMovement = new Set<string>();
+const emptyRooms = new Map<string, number>();
 const random = () => Math.random();
 
 app.get("/health", (_request, response) => response.json({ ok: true, rooms: rooms.size }));
@@ -34,7 +41,20 @@ function roomCode() {
   while (!code || rooms.has(code)) code = Math.random().toString(36).slice(2, 6).toUpperCase();
   return code;
 }
-function broadcast(state: GameState) { io.to(state.code).emit("state", state); }
+function broadcast(state: GameState) { pendingMovement.delete(state.code); io.to(state.code).emit("state", state); }
+function releaseRoom(state: GameState) {
+  rooms.delete(state.code);soloRooms.delete(state.code);seeds.delete(state.code);
+  orderCounters.delete(state.code);hazardCounters.delete(state.code);emptyRooms.delete(state.code);pendingMovement.delete(state.code);
+  for(const id of Object.keys(state.players))playerSockets.delete(`${state.code}:${id}`);
+}
+// Four cats can send 80 movement packets/sec. Share one authoritative snapshot
+// per room at 20Hz; inventory, preparation, pause, and service still send at once.
+setInterval(()=>{
+  for(const code of pendingMovement) {
+    const state=rooms.get(code);
+    if(state)broadcast(state);else pendingMovement.delete(code);
+  }
+},50);
 function findState(socketId: string) {
   const socket = io.sockets.sockets.get(socketId);
   const code = socket?.data.code as string | undefined;
@@ -42,17 +62,18 @@ function findState(socketId: string) {
 }
 function playerFor(socketId: string, state: GameState) {
   const token = io.sockets.sockets.get(socketId)?.data.token as string | undefined;
-  return token ? state.players[token] : undefined;
+  return token && playerSockets.get(`${state.code}:${token}`) === socketId ? state.players[token] : undefined;
 }
 function setMessage(state: GameState, message: string) { state.message = message; }
 function counterHandoff(state: GameState, player: Player, station: Station) {
+  const blocked = counterBlockReason(player,station,keepsakeEffects(state.activeKeepsake).carryCapacity);
   const ingredient = station.counterIngredient?.ingredient ?? (!station.drink && !player.drink ? player.carrying.at(-1) : undefined);
   const item = ingredient ? ingredientLabel(ingredient) : "drink";
   const result = transferCounterItem(player, station, keepsakeEffects(state.activeKeepsake).carryCapacity);
   const messages = {
     placed: `${player.name} left ${item} on the counter for the crew.`,
     "picked-up": `${player.name} picked up ${item}.`,
-    occupied: "That surface or your paws are full. Use an empty counter first.",
+    occupied: blocked ?? "Counter occupied. Pick up its item with space in your paws first.",
     empty: "Bring an ingredient or a finished drink to leave on this counter.",
     unavailable: "Use an empty counter to set down ingredients or drinks."
   };
@@ -97,6 +118,8 @@ function completeMixing(state: GameState, player: Player, session: MixingSession
   const quality = mixingQuality(session, recipe);
   player.drink = recipe.id;
   player.drinkQuality = quality;
+  player.drinkContributors = drinkContributors(player,recipe.ingredients);
+  recordWork(state,player,"mixed");
   consumeRecipeIngredients(player,recipe);
   player.moving = false;
   delete state.mixing[player.id];
@@ -113,9 +136,10 @@ function startShift(state: GameState) {
   state.shiftSeconds = shiftDurationForRound(state.round);
   state.orders = [];
   state.hazard = null;
+  startHospitalityShift(state);
   Object.values(state.players).forEach((player, index) => {
     Object.assign(player, PLAYER_SPAWNS[index % PLAYER_SPAWNS.length]);
-    player.carrying = []; player.ingredientQualities = {}; player.drink = undefined; player.drinkQuality = undefined; player.moving = false;
+    player.carrying = []; player.ingredientQualities = {}; player.ingredientContributors = {}; player.drink = undefined; player.drinkQuality = undefined; player.drinkContributors = undefined; player.moving = false;
   });
   state.message = `${state.tavern.theme}: shift ${state.round} is on!`;
   spawnOrder(state);
@@ -126,12 +150,15 @@ function spawnOrder(state: GameState) {
   if (!seat) return;
   orderCounters.set(state.code, counter);
   const elapsed = shiftDurationForRound(state.round) - state.shiftSeconds;
-  state.orders.push({ ...makeOrder(`order-${counter}`, mulberry32((seeds.get(state.code) ?? 1) + counter * 31),
-    state.round, elapsed, state.orderPatienceBonus), tableId: seat.tableId, seatId: seat.id });
+  const order = { ...designateHouseSpecial(makeOrder(`order-${counter}`, mulberry32((seeds.get(state.code) ?? 1) + counter * 31),
+    state.round, elapsed, state.orderPatienceBonus),counter,state.round,elapsed), tableId: seat.tableId, seatId: seat.id };
+  state.orders.push(order);
+  if(order.houseSpecial)setMessage(state,`✦ House Special at ${orderDestinationLabel(order)}. ${soloRooms.has(state.code)?"Perfect preparation":"Shared preparation"} earns +4 coins and one warmth.`);
 }
 function loseOrders(state: GameState, count: number, reason: string) {
   if (!count) return;
   applyMissedOrderPenalty(state, count);
+  hospitalityFor(state).stats.missed += count;
   setMessage(state, `${reason} ${count} team heart${count === 1 ? "" : "s"} lost — ${state.health} left.`);
 }
 function spawnHazard(state: GameState): Hazard {
@@ -147,6 +174,7 @@ function spawnHazard(state: GameState): Hazard {
   return hazard;
 }
 function endShift(state: GameState) {
+  finishHospitalityShift(state,true);
   state.mixing = {};
   state.mixingChoices = {};
   state.phase = "upgrades";
@@ -154,6 +182,7 @@ function endShift(state: GameState) {
   state.message = "Shift complete! The crew chooses one keepsake for the next tavern.";
 }
 function failRun(state: GameState) {
+  finishHospitalityShift(state,false);
   state.mixing = {};
   state.mixingChoices = {};
   state.phase = "complete";
@@ -172,6 +201,7 @@ function resetForRound(state: GameState, upgradeId: KeepsakeId) {
 
 io.on("connection", (socket) => {
   socket.on("create-room", (payload: { token: string; name: string; role: CatRole; fur: string; accessory: string; solo?: boolean; snapshot?: unknown }) => {
+    if (!validProfile(payload) || socket.data.code) return socket.emit("error-message", "Choose a valid bartender before opening a room.");
     const code = roomCode();
     const seed = Math.floor(Math.random() * 2 ** 31);
     const state = initialState(code, payload.token, seed);
@@ -183,6 +213,7 @@ io.on("connection", (socket) => {
         const restored = restoreSoloSnapshot(payload.snapshot, code, state.players[payload.token]);
         if (!restored) {
           rooms.delete(code); soloRooms.delete(code); seeds.delete(code); orderCounters.delete(code); hazardCounters.delete(code);
+          playerSockets.delete(`${code}:${payload.token}`);
           socket.leave(code); socket.data.code = undefined;
           socket.emit("error-message", "This save could not be restored. Your stored save has not been changed."); return;
         }
@@ -194,10 +225,12 @@ io.on("connection", (socket) => {
   });
 
   socket.on("join-room", (payload: { code: string; token: string; name: string; role: CatRole; fur: string; accessory: string }) => {
+    if (!validProfile(payload) || typeof payload.code !== "string" || !/^[A-Z0-9]{4}$/i.test(payload.code)) return socket.emit("error-message", "Enter a valid four-character room code.");
+    if (socket.data.code && socket.data.code !== payload.code.toUpperCase()) return socket.emit("error-message", "Leave your current room before joining another.");
     const state = rooms.get(payload.code.toUpperCase());
     if (!state) return socket.emit("error-message", "That room code does not exist.");
     if (soloRooms.has(state.code) && payload.token !== state.hostId) return socket.emit("error-message", "Local solo saves cannot be joined as multiplayer rooms.");
-    if (state.phase === "complete") return socket.emit("error-message", "This run is over—please create a fresh room.");
+    if (state.phase === "complete" && !state.players[payload.token]) return socket.emit("error-message", "This run is over—please create a fresh room.");
     if (!state.players[payload.token] && Object.keys(state.players).length >= 4) return socket.emit("error-message", "This tavern is full (4 cats maximum).");
     joinRoom(socket.id, state, payload, false);
   });
@@ -205,8 +238,8 @@ io.on("connection", (socket) => {
   socket.on("start-shift", () => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.hostId !== player.id || state.phase !== "lobby") return;
-    const crew = Object.values(state.players);
-    if (crew.length < 2 || crew.some((cat) => !cat.connected || !cat.ready))
+    const crew = Object.values(state.players).filter(cat=>cat.connected);
+    if (crew.length < 2 || crew.some((cat) => !cat.ready))
       return socket.emit("error-message", "At least two bartenders must be connected and ready to start.");
     startShift(state); broadcast(state);
   });
@@ -231,9 +264,10 @@ io.on("connection", (socket) => {
     const state = findState(socket.id); const player = state && playerFor(socket.id, state);
     if (!state || !player || state.phase !== "lobby") return;
     delete state.players[player.id]; socket.leave(state.code); socket.data.code = undefined; socket.data.token = undefined;
+    playerSockets.delete(`${state.code}:${player.id}`);
     if (state.hostId === player.id) state.hostId = Object.values(state.players).find((cat) => cat.connected)?.id ?? Object.keys(state.players)[0] ?? "";
     if (!Object.keys(state.players).length) {
-      rooms.delete(state.code); seeds.delete(state.code); orderCounters.delete(state.code); hazardCounters.delete(state.code);
+      releaseRoom(state);
     } else broadcast(state);
     socket.emit("left-lobby");
   });
@@ -254,7 +288,7 @@ io.on("connection", (socket) => {
       if (player.moving) { player.moving = false; broadcast(state); }
       return;
     }
-    if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
+    if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
     const lastSequence = player.moveSequence ?? 0;
     const sequence = Number.isSafeInteger(position.sequence) && position.sequence! >= 0 ? position.sequence! : lastSequence + 1;
     if (sequence <= lastSequence) return;
@@ -263,7 +297,7 @@ io.on("connection", (socket) => {
     player.y = resolved.y;
     if (["down", "left", "right", "up"].includes(position.direction ?? "")) player.direction = position.direction!;
     player.moving = Boolean(position.moving); player.moveSequence = sequence;
-    broadcast(state);
+    pendingMovement.add(state.code);
   });
 
   socket.on("interact", () => {
@@ -271,7 +305,7 @@ io.on("connection", (socket) => {
     if (!state || !player || state.phase !== "shift" || state.pausedAt !== null) return;
     if (state.mixing[player.id] || state.mixingChoices?.[player.id]) return;
     const nearby = nearbyStation(state.tavern, player);
-    if (!nearby) return setMessage(state, "Walk up to a brightly colored station, then press E.");
+    if (!nearby) { setMessage(state, "Walk up to a brightly colored station, then press E."); broadcast(state); return; }
     if (usesCounterHandoff(player, nearby)) {
       counterHandoff(state, player, nearby); broadcast(state); return;
     }
@@ -282,7 +316,7 @@ io.on("connection", (socket) => {
         const ingredient = nearby.ingredient;
         if (!ingredient) return setMessage(state, "Choose an ingredient from the prep table.");
         if (player.carrying.includes(ingredient)) setMessage(state, `${player.name} already has ${ingredient}. Choose another ingredient.`);
-        else { player.carrying.push(ingredient); setMessage(state, `${player.name} selected ${ingredient}.`); }
+        else { player.carrying.push(ingredient); player.ingredientContributors ??= {}; player.ingredientContributors[ingredient]=[player.id]; recordWork(state,player,"gathered"); setMessage(state, `${player.name} selected ${ingredient}.`); }
       }
     }
     if (nearby.kind === "mix") {
@@ -292,10 +326,7 @@ io.on("connection", (socket) => {
       const unpreparedMatch = !recipe && RECIPES.some(candidate=>candidate.ingredients.every(ingredient=>player.carrying.some(item=>rawIngredient(item)===rawIngredient(ingredient))));
       if(unpreparedMatch){setMessage(state,"Chop the marked ingredients at the chopping board, then bring the prepared recipe here.");broadcast(state);return;}
       if (!recipe) {
-        if (player.carrying.length >= 3) {
-          player.carrying = [];
-          setMessage(state, "That combination is not on tonight's menu, so it was discarded. Gather a fresh recipe.");
-        } else setMessage(state, "Gather all three recipe ingredients before opening the workbench.");
+        setMessage(state, player.carrying.length >= 3 ? "No matching recipe. Ingredients kept: use a free counter to change your set, or check the recipe book." : "Gather all three recipe ingredients before opening the workbench.");
       }
       else if (player.drink) setMessage(state, `${player.name} is already carrying a finished drink.`);
       else if (recipes.length > 1) {
@@ -322,24 +353,25 @@ io.on("connection", (socket) => {
           const patienceQuality = order.patience / order.maxPatience;
           const preparationQuality = player.drinkQuality ?? 1;
           const { tip, reputation, bonus } = servingReward(patienceQuality, preparationQuality, state.activeKeepsake);
-          state.coins += tip; state.reputation += reputation; player.score += tip;
-          player.drink = undefined; player.drinkQuality = undefined;
-          setMessage(state, `${order.customer} purrs with delight! +${tip} coins.${bonus ? ` Includes +${bonus} from Lucky Whiskers.` : ""}`);
+          const special = recordServedDrink(state,player,order,{recipeId:player.drink,quality:preparationQuality,contributors:player.drinkContributors},tip,soloRooms.has(state.code));
+          state.reputation += reputation;
+          player.drink = undefined; player.drinkQuality = undefined; player.drinkContributors = undefined;
+          setMessage(state, `${order.customer} purrs with delight! +${special.total} coins.${bonus ? ` Includes +${bonus} from Lucky Whiskers.` : ""}${special.bonus ? ` House Special: +${special.bonus} for ${special.method === "accuracy" ? "perfect preparation" : "teamwork"}.` : order.houseSpecial ? " Special served; earn its bonus with shared preparation, or perfect accuracy in solo." : ""}${special.celebration ? " A toast to the tavern! +6 shared coins." : ""}`);
         }
       }
     }
     if (nearby.kind === "trash") {
       if (player.drink) {
         const drink = recipeById(player.drink).name;
-        player.drink = undefined; player.drinkQuality = undefined;
+        player.drink = undefined; player.drinkQuality = undefined; player.drinkContributors = undefined;
         setMessage(state, `${player.name} discarded the ${drink}.`);
       } else if (player.carrying.length) {
         const discarded = player.carrying.join(", ");
-        player.carrying = []; player.ingredientQualities = {};
+        player.carrying = []; player.ingredientQualities = {}; player.ingredientContributors = {};
         setMessage(state, `${player.name} tossed ${discarded} into the scrap bin.`);
       } else setMessage(state, "Nothing to toss out. Your paws are clear.");
     }
-    if (nearby.kind === "mop" && state.hazard) { state.hazard = null; setMessage(state, `${player.name} cleaned up the hazard. Good kitty!`); }
+    if (nearby.kind === "mop" && state.hazard) { state.hazard = null; hospitalityFor(state).stats.hazardsCleaned++; setMessage(state, `${player.name} cleaned up the hazard. Good kitty!`); }
     broadcast(state);
   });
 
@@ -357,7 +389,13 @@ io.on("connection", (socket) => {
     if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || player.drink || !state.mixingChoices?.[player.id]?.includes(recipeId)) return;
     const station=nearbyStation(state.tavern,player);
     if(!station)return;
-    if(station.kind === "chop") {if(chooseChoppingIngredient(state,player,station,recipeId))broadcast(state);return;}
+    if(station.kind === "chop") {
+      if(!chooseChoppingIngredient(state,player,station,recipeId)) {
+        delete state.mixingChoices[player.id];
+        setMessage(state,"The chopping board changed while you were choosing. Ingredients kept; interact at the board to try again.");
+      }
+      broadcast(state);return;
+    }
     if(station.kind!=="mix")return;
     const recipe = recipesForCarriedIngredients(player.carrying).find(recipe => recipe.id === recipeId);
     if (!recipe) return;
@@ -473,23 +511,38 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    const state = findState(socket.id); const player = state && playerFor(socket.id, state);
+    // Socket.IO removes a socket from the namespace before this event fires.
+    // Its retained data and ownership record are the authoritative lookup here.
+    const code = socket.data.code as string | undefined, token = socket.data.token as string | undefined;
+    const state = code ? rooms.get(code) : undefined;
+    const player = state && token && playerSockets.get(`${code}:${token}`) === socket.id ? state.players[token] : undefined;
     if (!state || !player) return;
-    player.connected = false; player.moving = false; player.ready = false;
-    setMessage(state, `${player.name} disconnected. Their cat will wait for a reconnection.`);
+    playerSockets.delete(`${state.code}:${player.id}`);
+    disconnectPlayer(state, player.id);
+    if(!Object.values(state.players).some(cat=>cat.connected))emptyRooms.set(state.code,Date.now());
     broadcast(state);
   });
 });
 
 function joinRoom(socketId: string, state: GameState, payload: { token: string; name: string; role: CatRole; fur: string; accessory: string }, isHost: boolean, notify = true) {
   const socket = io.sockets.sockets.get(socketId)!;
+  emptyRooms.delete(state.code);
   const existing = state.players[payload.token];
+  const key = `${state.code}:${payload.token}`, previousSocket = playerSockets.get(key);
+  playerSockets.set(key, socketId);
+  if (previousSocket && previousSocket !== socketId) {
+    const oldSocket = io.sockets.sockets.get(previousSocket);
+    oldSocket?.emit("error-message", "Your bartender opened in another tab. Continue there or rejoin here.");
+    oldSocket?.disconnect(true);
+  }
   state.players[payload.token] = existing ?? {
     id: payload.token, name: payload.name.slice(0, 16) || "Mittens", role: payload.role, fur: payload.fur,
     accessory: payload.accessory, ...PLAYER_SPAWNS[Object.keys(state.players).length % PLAYER_SPAWNS.length],
     direction: "down", moving: false, moveSequence: 0, carrying: [], connected: true, score: 0
   } as Player;
   Object.assign(state.players[payload.token], { name: payload.name.slice(0, 16) || "Mittens", role: payload.role, fur: payload.fur, accessory: payload.accessory, connected: true });
+  if (existing) resetPreparationGesture(state, payload.token);
+  if (!state.players[state.hostId]?.connected) state.hostId = payload.token;
   if (state.phase === "lobby") state.players[payload.token].ready = false;
   socket.data.code = state.code; socket.data.token = payload.token; socket.join(state.code);
   if (!isHost) setMessage(state, existing ? `${payload.name} rejoined the tavern.` : `${payload.name} padded into the tavern.`);
@@ -498,6 +551,7 @@ function joinRoom(socketId: string, state: GameState, payload: { token: string; 
 
 setInterval(() => {
   for (const state of rooms.values()) {
+    if(roomExpired(state,emptyRooms.get(state.code),Date.now())){releaseRoom(state);continue;}
     if (state.phase !== "shift" || state.pausedAt !== null) continue;
     const now = Date.now();
     for (const [playerId, session] of Object.entries(state.mixing)) {

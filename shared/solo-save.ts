@@ -1,5 +1,6 @@
 import { keepsakeEffects, isKeepsakeId } from "./keepsakes.js";
 import { createChoppingSession } from "./chopping.js";
+import { restoreHospitality } from "./hospitality.js";
 import { CHOPPING_RECIPES, INGREDIENTS, isChoppedIngredient, recipeById, TAVERN_THEMES, recipesForCarriedIngredients, nearbyStation, createMixingSession, initialState, makeTavern, mixingStepsForRecipe, PLAYER_SPAWNS, pointCollidesWithCounters, RECIPES, UPGRADES, type GameState, type Player } from "./game.js";
 
 export interface SoloSnapshot {
@@ -29,7 +30,7 @@ export function restoreSoloSnapshot(input: unknown, code: string, player: Player
     const source = saved.players?.[snapshot.playerId];
     const ingredients = new Set(RECIPES.flatMap((recipe) => recipe.ingredients).concat(INGREDIENTS));
     const validRecipe = (id: unknown) => typeof id === "string" && RECIPES.some((recipe) => recipe.id === id);
-    if (!source || !Array.isArray(source.carrying) || source.carrying.length > keepsakeEffects(activeKeepsake).carryCapacity || source.carrying.some((item) => !ingredients.has(item)) ||
+    if (!source || !Array.isArray(source.carrying) || source.carrying.length > keepsakeEffects(activeKeepsake).carryCapacity || new Set(source.carrying).size !== source.carrying.length || source.carrying.some((item) => !ingredients.has(item)) ||
         (source.drink !== undefined && !validRecipe(source.drink))) return;
     const state = initialState(code, player.id, saved.tavern.seed);
     state.tavern = makeTavern(saved.tavern.seed, saved.round);
@@ -37,6 +38,10 @@ export function restoreSoloSnapshot(input: unknown, code: string, player: Player
     Object.assign(state, { round: saved.round, phase: saved.phase, coins: saved.coins, reputation: saved.reputation,
       health: saved.health, shiftSeconds: saved.shiftSeconds, activeKeepsake, orderPatienceBonus: keepsakeEffects(activeKeepsake).patienceBonus });
     state.upgrades = UPGRADES.filter((upgrade) => saved.upgrades?.some((entry) => entry.id === upgrade.id));
+    if (saved.hospitality !== undefined) {
+      state.hospitality = restoreHospitality(saved.hospitality,snapshot.playerId,player);
+      if (!state.hospitality) return;
+    }
     const assigned = new Set<string>();
     for (const order of saved.orders) {
       if (!validRecipe(order.recipeId) || !finite(order.patience, 0, 2000) || !finite(order.maxPatience, 1, 2000) ||
@@ -47,23 +52,28 @@ export function restoreSoloSnapshot(input: unknown, code: string, player: Player
       if (!seat) return;
       assigned.add(seat.id);
       state.orders.push({ id: `restored-${state.orders.length}`, tableId: order.tableId, seatId: seat.id, recipeId: order.recipeId,
-        customer: order.customer.slice(0, 60), patience: order.patience, maxPatience: order.maxPatience });
+        customer: order.customer.slice(0, 60), patience: order.patience, maxPatience: order.maxPatience,
+        ...(order.houseSpecial === true ? {houseSpecial:true} : {}) });
     }
     for (const station of state.tavern.stations) {
       const old = saved.tavern.stations?.find((candidate) => candidate.id === station.id);
-      if (old?.drink && ["counter", "mix", "pantry"].includes(station.kind) && validRecipe(old.drink.recipeId) && finite(old.drink.quality, 0, 1)) station.drink = { ...old.drink };
+      if (old?.drink && ["counter", "mix", "pantry"].includes(station.kind) && validRecipe(old.drink.recipeId) && finite(old.drink.quality, 0, 1)) station.drink = { recipeId:old.drink.recipeId,quality:old.drink.quality,
+        ...(old.drink.contributors ? {contributors:[player.id]} : {}) };
       // Rebuild a single occupied slot; a stored ingredient never overlaps a drink.
       if (station.kind === "counter" && !station.drink && old?.counterIngredient &&
           ingredients.has(old.counterIngredient.ingredient) && finite(old.counterIngredient.quality, 0, 1)) {
         station.counterIngredient = { ingredient: old.counterIngredient.ingredient, quality: old.counterIngredient.quality };
+        if (old.counterIngredient.contributors) station.counterIngredient.contributors = [player.id];
       }
       if (station.kind === "chop" && old?.preparedIngredient && isChoppedIngredient(old.preparedIngredient)) {
         station.preparedIngredient = old.preparedIngredient;
         station.preparedQuality = finite(old.preparedQuality,0,1)?old.preparedQuality:1;
+        if (old.preparedContributors) station.preparedContributors = [player.id];
       }
     }
     const position = finite(source.x, 10, 918) && finite(source.y, 10, 628) && !pointCollidesWithCounters(state.tavern, source) ? { x: source.x, y: source.y } : PLAYER_SPAWNS[0];
     state.players[player.id] = { ...player, ...position, carrying: [...source.carrying], ingredientQualities:Object.fromEntries(Object.entries(source.ingredientQualities??{}).filter(([ingredient,quality])=>source.carrying.includes(ingredient)&&isChoppedIngredient(ingredient)&&finite(quality,0,1))), drink: source.drink,
+      ingredientContributors:Object.fromEntries(source.carrying.map(ingredient=>[ingredient,[player.id]])),drinkContributors:source.drink?[player.id]:undefined,
       drinkQuality: finite(source.drinkQuality, 0, 1) ? source.drinkQuality : undefined, score: finite(source.score, 0, 1e7) ? source.score : 0, moving: false };
     const oldMix = saved.mixing?.[snapshot.playerId];
     const board = state.tavern.stations.find(station=>station.kind === "chop")!;

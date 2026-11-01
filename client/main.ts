@@ -3,12 +3,17 @@ import { TutorialPractice } from "./tutorial-practice";
 import { Tutorial } from "./tutorial";
 import { rememberTutorial, tutorialSeen, tutorialState, tutorialPlaysGame, type TutorialStep } from "./tutorial-content";
 import type { TutorialRect } from "./tutorial-layout";
-import { gameImage, loadGameAssets } from "./game-assets";
+import { gameArtRevision, gameImage, loadGameAssets } from "./game-assets";
+import { CanvasLayerCache, tavernLayoutKey } from "./canvas-cache";
 import { loadMenuScene } from "./menu-scene";
 import { interactionLabel } from "../shared/interaction";
+import { reconcilePrediction, type LocalPrediction } from "./state-reconciliation";
+import { overlayRenderKey } from "./overlay-state";
 import { mobileCamera } from "./mobile-camera";
 import { recolorFurPixels, walkingFurMask } from "./fur-color";
-import { keepsakeEffects, keepsakeSummary } from "../shared/keepsakes";
+import { keepsakeDetail, keepsakeEffects, keepsakeSummary } from "../shared/keepsakes";
+import { WARMTH_TARGET } from "../shared/hospitality";
+import { renderShiftReport } from "./shift-report";
 import { movementTarget } from "../shared/movement";
 import { advanceWalkAnimation, type WalkAnimation } from "./walk-animation";
 import { io, type Socket } from "socket.io-client";
@@ -39,6 +44,7 @@ import "./title-menu.css";
 import "./menu-flow.css";
 import "./menu-polish.css";
 import "./mobile.css";
+import "./rubric-polish.css";
 import { drawChopBadge, onPreparationArtReady } from "./preparation-art";
 import { AudioDirector } from "./audio";
 
@@ -61,19 +67,20 @@ let touchMove = { x: 0, y: 0 };
 const movementInput = () => ({ x: Math.max(-1, Math.min(1, move.x + touchMove.x)), y: Math.max(-1, Math.min(1, move.y + touchMove.y)) });
 let lastMove = 0;
 let lastStateMessage = "";
-type LocalPrediction = Pick<Player, "x" | "y" | "direction" | "moving" | "moveSequence">;
 let localPrediction: LocalPrediction | null = null;
 let lastSentMoveSequence = 0;
 let recipeBookOpen = false;
 let recipeBookPage = 0;
-let pausePanel: "main" | "settings" = "main";
+let pausePanel: "main" | "settings" | "specials" = "main";
 let activeSaveSlot = Number(sessionStorage.getItem("paws-pours-save-slot") ?? -1);
 let pendingSave: SoloSave | undefined;
 let lastSaveAt = 0;
 let saveStorageFailed = false;
 let menuStep: "intro" | "selection" | "game" = "intro";
 let connectionPending = false;
+let lastOverlayKey = "";
 let sendPendingConnection: (() => void) | undefined;
+let awaitingRejoin = false;
 
 const catPortraits: Record<CatRole, string> = {
   "Tabby": tabbyPortraitUrl, "Siamese": siamesePortraitUrl, "Maine Coon": maineCoonPortraitUrl,
@@ -95,8 +102,8 @@ onDrinkArtReady(refreshOpenRecipeBook);
 
 const roles: { role: CatRole; perk: string }[] = [
   { role: "Tabby", perk: "Balanced" }, { role: "Siamese", perk: "Quick paws" },
-  { role: "Maine Coon", perk: "Heavy lifter" }, { role: "Black Cat", perk: "Lucky tips" },
-  { role: "Calico", perk: "Team spirit" }
+  { role: "Maine Coon", perk: "Gentle giant" }, { role: "Black Cat", perk: "Midnight coat" },
+  { role: "Calico", perk: "Patchwork coat" }
 ];
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -134,7 +141,7 @@ app.innerHTML = `
       <div class="game-header"><div><span class="eyebrow" id="theme">THE TAVERN</span><strong id="room-display">ROOM ----</strong><small id="active-keepsake" class="active-keepsake" hidden></small></div><div class="stats"><span>🪙 <b id="coins">0</b></span><span>★ <b id="rep">0</b></span><span class="heart-status" id="heart-status" aria-label="3 team hearts"><span id="heart-icons" aria-hidden="true">♥♥♥</span><b id="health">3</b></span><span class="timer" id="timer">3:00</span></div><button class="leave" id="game-menu" type="button">Menu · Pause</button></div>
       <section id="order-hud" class="order-hud" aria-label="Current orders and required ingredients"></section>
       <div class="canvas-card"><canvas id="board" width="1088" height="680" aria-label="Paws and Pours game board"></canvas><div id="toast" class="toast"></div></div>
-      <p class="controls"><kbd>WASD</kbd> move · <kbd>E</kbd> interact · <kbd>Q</kbd> place / pick up drink · <span id="interaction"></span> · <span id="carry">Paws empty</span></p>
+      <p class="controls"><kbd>WASD</kbd> move · <kbd>E</kbd> interact · <kbd>Q</kbd> place / pick up item · <span id="interaction"></span> · <span id="carry">Paws empty</span></p>
     </section>
     <section id="overlay" class="overlay hidden"></section>
     <dialog id="save-dialog" class="save-dialog" aria-labelledby="save-title"><p class="eyebrow">LOCAL ADVENTURES</p><h2 id="save-title">Choose a save</h2><p>Your progress stays in this browser. Loaded shifts begin paused.</p><div id="save-slots" class="save-slots"></div><p id="save-error" role="status"></p><button id="close-saves" type="button">Back to title</button></dialog>
@@ -148,11 +155,41 @@ const selection = document.querySelector<HTMLElement>("#bartender-selection")!;
 void loadMenuScene(menu, "intro");
 const game = document.querySelector<HTMLElement>("#game")!;
 const overlay = document.querySelector<HTMLElement>("#overlay")!;
+const celebration = document.createElement("aside");celebration.className="tavern-celebration";celebration.hidden=true;
+celebration.setAttribute("role","status");celebration.setAttribute("aria-live","polite");
+celebration.innerHTML="<strong>A toast to the tavern!</strong><span>Three warmth · +6 shared coins</span>";
+game.querySelector(".canvas-card")!.append(celebration);
+let celebrateUntil=0;
+const warmthButton = document.createElement("button"); warmthButton.type="button"; warmthButton.id="tavern-warmth";
+warmthButton.className="warmth-readout"; warmthButton.textContent="Tavern warmth · 0/3";
+warmthButton.setAttribute("aria-label","Tavern warmth, zero of three. Learn about House Specials.");
+game.querySelector(".game-header>div")!.append(warmthButton);
+warmthButton.onclick=()=>{pausePanel="specials"; if(state?.pausedAt===null)sendGameAction("set-pause",true);else renderOverlay();};
+const connectionNotice = document.createElement("section");
+connectionNotice.className = "connection-notice"; connectionNotice.hidden = true;
+connectionNotice.setAttribute("aria-label", "Connection status");
+connectionNotice.innerHTML = `<p role="status" aria-live="polite"></p><div><button type="button" data-retry>Retry connection</button><button type="button" data-return>Return to title</button></div>`;
+app.append(connectionNotice);
+connectionNotice.querySelector<HTMLButtonElement>("[data-retry]")!.onclick = () => {
+  awaitingRejoin = true;
+  if (socket.connected) socket.emit("join-room", { ...profile(), code: roomCode }); else socket.connect();
+};
+connectionNotice.querySelector<HTMLButtonElement>("[data-return]")!.onclick = () => { persistSoloSave(); sessionStorage.removeItem("paws-pours-room"); location.reload(); };
+function showConnectionNotice(message: string) {
+  connectionNotice.querySelector("p")!.textContent = message; connectionNotice.hidden = false;
+  move = { x: 0, y: 0 }; touchControls.reset(); localPrediction = null; audio.stopTool();
+  touchControls.setEnabled(false);
+  connectionNotice.querySelector<HTMLButtonElement>("[data-retry]")!.focus({preventScroll:true});
+}
+function gameConnected() { return tutorial.isOpen || (socket.connected && !awaitingRejoin); }
 const canvas = document.querySelector<HTMLCanvasElement>("#board")!;
 const displayContext = canvas.getContext("2d")!;
 const worldCanvas = document.createElement("canvas"); worldCanvas.id = "tavern-world";
 worldCanvas.width = TAVERN_VIEW.width; worldCanvas.height = TAVERN_VIEW.height;
 const context = worldCanvas.getContext("2d")!;
+const floorLayer=new CanvasLayerCache(TAVERN_VIEW.width,TAVERN_VIEW.height);
+let floorLayout="";
+const interactionReadout=document.querySelector<HTMLElement>("#interaction")!,carryReadout=document.querySelector<HTMLElement>("#carry")!;
 let boardProjection: { source:TutorialRect; destination:TutorialRect } | undefined;
 canvas.width = TAVERN_VIEW.width; canvas.height = TAVERN_VIEW.height;
 const touchControls = new TouchControls(game, input => { touchMove = input; },
@@ -161,13 +198,27 @@ if ("ResizeObserver" in window) new ResizeObserver(entries => {
   const height = entries[0].target.getBoundingClientRect().height;
   if (height > 0) game.style.setProperty("--touch-controls-height", `${height}px`);
 }).observe(touchControls.root);
+// Keepsake labels and translated/font-scaled text can change header height.
+// Lay out tickets and the board from its measured edge instead of overlapping.
+if ("ResizeObserver" in window) {
+  const header=game.querySelector<HTMLElement>(".game-header")!,tickets=document.querySelector<HTMLElement>("#order-hud")!;
+  const insets=new ResizeObserver(()=>{
+    const top=header.offsetTop+header.offsetHeight+6;
+    game.style.setProperty("--orders-top",`${top}px`);
+    game.style.setProperty("--board-top",`${top+tickets.offsetHeight+6}px`);
+  });
+  insets.observe(header);insets.observe(tickets);
+}
 let touchLayout = false;
 function syncTouchLayout() {
   touchLayout = navigator.maxTouchPoints > 0 || matchMedia("(pointer: coarse), (max-width: 900px)").matches;
   game.dataset.touch = String(touchLayout); touchControls.reset();
 }
 window.addEventListener("resize", syncTouchLayout); syncTouchLayout();
-const orderHud = new OrderHud(document.querySelector<HTMLElement>("#order-hud")!, ingredientsSpritesheet);
+const orderHud = new OrderHud(document.querySelector<HTMLElement>("#order-hud")!, ingredientsSpritesheet, order => {
+  recipeBookPage = RECIPES.findIndex(recipe=>recipe.id===order.recipeId); recipeBookOpen=true;
+  if(state?.pausedAt===null)sendGameAction("set-pause",true);else renderOverlay();
+});
 const audio = new AudioDirector(settings);
 const mixingWorkspace = new MixingWorkspace(game, {
   addIngredient: (ingredient) => { audio.playIngredient(); sendGameAction("mix-ingredient", ingredient); },
@@ -181,7 +232,7 @@ const mixingWorkspace = new MixingWorkspace(game, {
 let tutorialStarting=false;
 let practice: TutorialPractice | undefined;
 let tutorialReturn: { source:"menu"|"first"|"pause"; state:GameState|null; mode:"single"|"multiplayer";
-  step:"intro"|"selection"|"game"; overview:boolean; book:boolean; panel:"main"|"settings"; message:string; scroll:number; settings:DisplayAudioSettings; profile:ReturnType<typeof profile>; roomInput:string } | undefined;
+  step:"intro"|"selection"|"game"; overview:boolean; book:boolean; panel:"main"|"settings"|"specials"; message:string; scroll:number; settings:DisplayAudioSettings; profile:ReturnType<typeof profile>; roomInput:string } | undefined;
 const tutorial = new Tutorial(app, { touch:()=>touchLayout, step:applyTutorialStep, targets:tutorialTargets,
   avoid:()=>[...document.querySelectorAll<HTMLElement>(".touch-pad,.touch-interact,.touch-map,.mixing-actions,.tool-timing:not(.hidden)")]
     .filter(node=>node.getClientRects().length).map(node=>node.getBoundingClientRect()), escape:()=>{
@@ -193,7 +244,7 @@ const tutorial = new Tutorial(app, { touch:()=>touchLayout, step:applyTutorialSt
 learnButton.onclick=()=>{void startTutorial("menu");};
 
 function sendGameAction(action:string,payload?:unknown) {
-  if(!tutorial.isOpen){socket.emit(action,payload);return;}
+  if(!tutorial.isOpen){if (gameConnected()) socket.emit(action,payload);return;}
   if(!practice||!state)return;
   tutorial.practice();
   const previous=structuredClone(state);
@@ -219,6 +270,9 @@ async function startTutorial(source:"menu"|"first"|"pause") {
   tutorial.start(result=>{
     const saved=tutorialReturn; if(!saved)return;
     rememberTutorial(result);audio.stopTool();practice=undefined;move={x:0,y:0};touchControls.reset();localPrediction=null;mixingWorkspace.reset();state=saved.state;recipeBookOpen=saved.book;pausePanel=saved.panel;
+    floorLayout=state?tavernLayoutKey(state.tavern):"";
+    clearTimeout(toastTimer);document.querySelector("#toast")!.classList.remove("show");
+    for(const id of ["#menu-status","#selection-status"]){const status=document.querySelector(id)!;if(status.textContent==="Opening the tavern tour…")status.textContent="";}
     lastStateMessage=saved.message;setMenuMode(saved.mode,false);touchControls.setOverview(saved.overview);
     tutorialReturn=undefined;
     settings={...saved.settings};applySettings();syncSettingsForm();
@@ -238,10 +292,12 @@ async function startTutorial(source:"menu"|"first"|"pause") {
 }
 
 function applyTutorialStep(step:TutorialStep) {
+  lastOverlayKey = "";
   audio.stopTool();mixingWorkspace.reset();move={x:0,y:0};touchControls.reset();localPrediction=null;
   document.querySelector("#toast")!.classList.remove("show");
   setMenuMode(step.id==="crew"?"multiplayer":"single",false);
   state=tutorialState(token,profile(),step.scene);practice=new TutorialPractice(state,token);lastStateMessage="";recipeBookOpen=step.scene==="book";recipeBookPage=0;pausePanel="main";
+  floorLayout=tavernLayoutKey(state.tavern);
   touchControls.setOverview(["welcome","ready"].includes(step.scene));
   const title=step.scene==="title",choosing=step.scene==="selection";
   menuStep=title?"intro":choosing?"selection":"game";
@@ -358,7 +414,7 @@ function showSelection() {
   if (entering) {
     for (const { role } of roles) if (!titlePortraitImages[role].getAttribute("src")) titlePortraitImages[role].src = catPortraits[role];
     // Let the selection backdrop finish first; warm game art while choosing a cat.
-    void loadMenuScene(selection, "selection").then(loadGameAssets).catch(() => undefined);
+    void loadMenuScene(selection, "selection").then(() => loadGameAssets()).catch(() => undefined);
   }
   menu.classList.add("hidden"); selection.classList.remove("hidden"); game.classList.add("hidden"); overlay.classList.add("hidden");
   audio.syncMenu();
@@ -395,9 +451,10 @@ function renderSelection() {
   readyButton.classList.toggle("hidden", !multiplayer); readyButton.textContent = localPlayer()?.ready ? "Change selection" : "Ready";
   const startButton = document.querySelector<HTMLButtonElement>("#selection-start")!;
   const isHost = state?.hostId === token;
+  const connectedCrew=crew.filter(cat=>cat.connected);
   startButton.textContent = !multiplayer ? pendingSave?.snapshot ? "Load shift →" : "Start solo shift →" : isHost ? "Start shift →" : "Waiting for host";
-  startButton.disabled = connectionPending || (multiplayer && (!isHost || crew.length < 2 || crew.some((cat) => !cat.connected || !cat.ready)));
-  document.querySelector("#crew-status")!.textContent = !multiplayer ? "Choose your cat, then enter the tavern." : crew.length < 2 ? "Share your room code · waiting for players" : `${crew.filter((cat) => cat.connected && cat.ready).length}/${crew.length} bartenders ready`;
+  startButton.disabled = connectionPending || (multiplayer && (!isHost || connectedCrew.length < 2 || connectedCrew.some((cat) => !cat.ready)));
+  document.querySelector("#crew-status")!.textContent = !multiplayer ? "Choose your cat, then enter the tavern." : connectedCrew.length < 2 ? "Share your room code · waiting for players" : `${connectedCrew.filter(cat=>cat.ready).length}/${connectedCrew.length} connected bartenders ready${crew.length>connectedCrew.length ? " · disconnected seats reserved" : ""}`;
   renderTitlePreviews();
 }
 function renderTitlePreviews() {
@@ -456,8 +513,9 @@ async function connect(action: "create" | "join") {
   const payload = { ...profile(), solo: sessionMode === "single", snapshot: sessionMode === "single" ? pendingSave?.snapshot : undefined };
   setConnectionPending(true);
   setToast(action === "join" ? "Joining the tavern…" : "Opening the tavern…");
-  try { await loadGameAssets(); }
+  try { await loadGameAssets((loaded, total) => setToast(`Preparing the tavern… ${loaded}/${total} illustrations ready.`)); }
   catch { setConnectionPending(false); setToast("The tavern art could not load. Check your connection and try again."); return; }
+  setToast("Connecting to the tavern… The first connection may take a moment.");
   sendPendingConnection = () => {
     sendPendingConnection = undefined;
     socket.emit(action === "create" ? "create-room" : "join-room", action === "create" ? payload : { ...payload, code });
@@ -551,6 +609,8 @@ socket.on("state", (next: GameState) => {
   if(tutorial.isOpen&&tutorialReturn){tutorialReturn.state=next;return;}
   const previousState = state;
   const authoritativePlayer = next.players[token];
+  const input = movementInput();
+  localPrediction = reconcilePrediction(previousState,next,token,localPrediction,Boolean(input.x||input.y),awaitingRejoin);
   if (authoritativePlayer) {
     if (next.pausedAt !== null) {
       move = { x: 0, y: 0 }; touchControls.reset();
@@ -564,14 +624,15 @@ socket.on("state", (next: GameState) => {
       const acknowledgedSequence = authoritativePlayer.moveSequence ?? 0;
       lastSentMoveSequence = Math.max(lastSentMoveSequence, acknowledgedSequence);
       if (localPrediction) {
-        const input = movementInput(); const inputActive = Boolean(input.x || input.y);
-        const awaitingAcknowledgement = acknowledgedSequence < localPrediction.moveSequence;
-        if (inputActive || localPrediction.moving || awaitingAcknowledgement) Object.assign(authoritativePlayer, localPrediction);
-        else localPrediction = null;
+        Object.assign(authoritativePlayer, localPrediction);
       }
     }
   }
   state = next;
+  floorLayout=tavernLayoutKey(next.tavern);
+  awaitingRejoin = false; connectionNotice.hidden = true;
+  if(previousState?.round===next.round&&(next.hospitality?.celebrationCount??0)>(previousState.hospitality?.celebrationCount??0))celebrateUntil=performance.now()+4200;
+  if(previousState?.round!==next.round)celebrateUntil=0;
   audio.syncState(previousState, next, token);
   if (next.phase === "lobby") { showSelection(); }
   else { menuStep = "game"; menu.classList.add("hidden"); selection.classList.add("hidden"); game.classList.remove("hidden"); }
@@ -582,6 +643,7 @@ socket.on("state", (next: GameState) => {
   }
 });
 socket.on("error-message", (message: string) => {
+  if (awaitingRejoin && state) showConnectionNotice(`${message} Your local solo save, if enabled, is available from the title screen.`);
   setConnectionPending(false);
   setToast(message); document.querySelector("#save-error")!.textContent = message;
   document.querySelectorAll<HTMLButtonElement>(".save-slot").forEach((button) => button.disabled = false);
@@ -594,20 +656,27 @@ function persistSoloSave() {
   if (!success && !saveStorageFailed) { saveStorageFailed = true; setToast("Local storage is unavailable or full. This run cannot be saved."); }
 }
 window.addEventListener("pagehide", persistSoloSave);
-socket.on("connect", () => { if (sendPendingConnection) sendPendingConnection(); else if (roomCode && state) socket.emit("join-room", { ...profile(), code: roomCode }); });
-socket.on("connect_error", () => { sendPendingConnection = undefined; setConnectionPending(false); setToast("The tavern server is unavailable. Please try again shortly."); });
-socket.on("disconnect", () => setToast("Reconnecting to the tavern…"));
+socket.on("connect", () => { if (sendPendingConnection) sendPendingConnection(); else if (roomCode && state) { awaitingRejoin = true; socket.emit("join-room", { ...profile(), code: roomCode }); } });
+socket.on("connect_error", () => { sendPendingConnection = undefined; setConnectionPending(false); if (state) showConnectionNotice("The tavern is unavailable. Reconnecting… Your controls will return when the room is restored."); else setToast("The tavern server is unavailable. Please try again shortly."); });
+socket.on("disconnect", () => { awaitingRejoin = true; if (state) showConnectionNotice("Connection lost. Reconnecting… Your bartender and inventory stay in the room."); });
 
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
 function setToast(message: string) {
   const status = document.querySelector(menuStep === "selection" ? "#selection-status" : "#menu-status")!;
   status.textContent = message;
-  const element = document.querySelector("#toast")!; element.textContent = message; element.classList.add("show"); window.setTimeout(() => element.classList.remove("show"), 2800);
+  const element = document.querySelector("#toast")!; element.textContent = message; element.classList.add("show");
+  element.setAttribute("role","status");element.setAttribute("aria-live","polite");
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>element.classList.remove("show"),Math.min(8500,Math.max(3800,message.length*42)));
 }
 function localPlayer() { return state?.players[token]; }
 function time(seconds: number) { return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; }
 function renderUi() {
   if (!state) return;
-  orderHud.render(state.orders);
+  orderHud.render(state.orders,sessionMode==="single");
+  const warmth=state.hospitality?.warmth??0;
+  warmthButton.textContent=`Tavern warmth · ${warmth}/${WARMTH_TARGET}`;
+  warmthButton.setAttribute("aria-label",`Tavern warmth, ${warmth} of ${WARMTH_TARGET}. Learn about House Specials.`);
+  warmthButton.hidden=tutorial.isOpen||state.phase!=="shift";
   document.querySelector("#theme")!.textContent = state.tavern.theme.toUpperCase();
   document.querySelector("#room-display")!.textContent = tutorial.isOpen ? "OPENING TOUR" : sessionMode === "single" ? "SOLO SHIFT" : `ROOM ${state.code}`;
   const keepsake=document.querySelector<HTMLElement>("#active-keepsake")!;
@@ -623,19 +692,26 @@ function renderUi() {
   heartStatus.setAttribute("aria-label", `${hearts} team heart${hearts === 1 ? "" : "s"}`);
   heartStatus.classList.toggle("critical", hearts <= 1);
   document.querySelector("#timer")!.textContent = tutorial.isOpen ? "Ⅱ 3:00" : state.phase === "shift" ? `${state.pausedAt !== null ? "Ⅱ " : ""}${time(state.shiftSeconds)}` : state.phase.toUpperCase();
+  const timer=document.querySelector<HTMLElement>("#timer")!;
+  timer.classList.toggle("closing-time",state.phase==="shift"&&state.shiftSeconds<=30&&!tutorial.isOpen);
+  timer.setAttribute("aria-label",`${state.shiftSeconds} seconds remaining${state.shiftSeconds<=30?", last orders":""}`);
+  timer.title=state.shiftSeconds<=30?"Last orders: serve your remaining guests before closing.":"Time remaining in this shift";
   document.querySelector<HTMLButtonElement>("#game-menu")!.disabled = state.phase !== "shift" || state.pausedAt !== null;
   const player = localPlayer();
-  document.querySelector("#carry")!.textContent = state.mixing[token] ? `Preparing: ${recipeById(state.mixing[token].recipeId).name}` : player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.join(", ")}${state.activeKeepsake === "bottomless-bag" ? ` · ${player.carrying.length}/4 slots` : ""}` : "Paws empty";
+  document.querySelector("#carry")!.textContent = state.mixing[token] ? `Preparing: ${recipeById(state.mixing[token].recipeId).name}` : player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.map(ingredientLabel).join(", ")}${state.activeKeepsake === "bottomless-bag" ? ` · ${player.carrying.length}/4 slots` : ""}` : "Paws empty";
   if (state.message !== lastStateMessage) {
     lastStateMessage = state.message;
     if(!tutorial.isOpen)setToast(state.message);
   }
-  touchControls.setEnabled(state.phase === "shift" && state.pausedAt === null && !state.mixing[token] && !state.mixingChoices?.[token]);
+  touchControls.setEnabled(gameConnected() && state.phase === "shift" && state.pausedAt === null && !state.mixing[token] && !state.mixingChoices?.[token]);
   renderOverlay();
   mixingWorkspace.render(state, token);
 }
 function renderOverlay() {
   if (!state) return;
+  const key=overlayRenderKey(state,token,{panel:pausePanel,book:recipeBookOpen,page:recipeBookPage,mode:sessionMode});
+  if(key===lastOverlayKey)return;
+  lastOverlayKey=key;
   overlay.classList.toggle("pause-overlay", state.phase === "shift" && state.pausedAt !== null);
   if (state.phase === "shift" && state.pausedAt !== null && recipeBookOpen) {
     overlay.classList.remove("hidden");
@@ -649,7 +725,10 @@ function renderOverlay() {
   } else if (state.phase === "shift" && state.pausedAt !== null) {
     overlay.classList.remove("hidden");
     const pauser = state.players[state.pausedBy ?? ""]?.name ?? "A player";
-    if (pausePanel === "settings") {
+    if (pausePanel === "specials") {
+      overlay.innerHTML = `<section class="modal card specials-help" role="dialog" aria-modal="true" aria-labelledby="specials-heading"><p class="eyebrow">A LITTLE HOSPITALITY</p><h2 id="specials-heading">House Specials</h2><p>Look for the ✦ star on an order. Every third arrival brings a special, with extra patience for preparation.</p><p>${sessionMode === "single" ? "Prepare a special with at least 88% accuracy to earn +4 coins and one warmth." : "Have two bartenders contribute to a special: gather or chop ingredients for a friend, mix their ingredients, or serve their drink. Earn +4 coins and one warmth."}</p><p>Three warmth earns a tavern toast and +6 shared coins. Specials can always be served normally, even without the bonus.</p><button id="specials-resume" class="primary" type="button">Back to the shift</button></section>`;
+      document.querySelector<HTMLButtonElement>("#specials-resume")!.onclick=()=>{pausePanel="main";sendGameAction("set-pause",false);};
+    } else if (pausePanel === "settings") {
       overlay.innerHTML = `<div class="modal card pause-menu"><p class="eyebrow">SHIFT PAUSED FOR EVERYONE</p><h2>Settings</h2><div class="pause-settings settings-panel">
         <label>Display scale<select id="pause-scale"><option value="1">100%</option><option value="0.85">85%</option><option value="1.15">115%</option></select></label>
         <label>Brightness<input id="pause-brightness" type="range" min="50" max="150" step="5" /></label>
@@ -663,11 +742,12 @@ function renderOverlay() {
       document.querySelector<HTMLButtonElement>("#pause-reset")!.onclick = () => { settings = { ...defaultSettings }; applySettings(); syncPauseSettingsForm(); syncSettingsForm(); };
       document.querySelector<HTMLButtonElement>("#pause-back")!.onclick = () => { pausePanel = "main"; renderOverlay(); };
     } else {
-      overlay.innerHTML = `<div class="modal card pause-menu" role="dialog" aria-modal="true" aria-label="Paused game menu"><p class="eyebrow">SHIFT PAUSED FOR EVERYONE</p><h2>Pause menu</h2><p><span id="pause-by-name"></span> paused the tavern. The shift, orders, and preparation timers are frozen for all cats.</p><div class="pause-actions"><button class="primary" id="resume-shift" type="button">Resume for everyone</button><button id="open-pause-book" type="button">Recipe book</button><button id="open-pause-settings" type="button">Settings</button>${sessionMode === "single" ? '<button id="replay-tutorial" type="button">Replay tutorial</button>' : ""}<button id="leave-game" type="button">Leave game</button></div></div>`;
+      overlay.innerHTML = `<div class="modal card pause-menu" role="dialog" aria-modal="true" aria-label="Paused game menu"><p class="eyebrow">SHIFT PAUSED FOR EVERYONE</p><h2>Pause menu</h2><p><span id="pause-by-name"></span> paused the tavern. The shift, orders, and preparation timers are frozen for all cats.</p><div class="pause-actions"><button class="primary" id="resume-shift" type="button">Resume for everyone</button><button id="open-pause-book" type="button">Recipe book</button><button id="open-pause-settings" type="button">Settings</button><button id="open-pause-specials" type="button">House Specials</button>${sessionMode === "single" ? '<button id="replay-tutorial" type="button">Replay tutorial</button>' : ""}<button id="leave-game" type="button">Leave game</button></div></div>`;
       document.querySelector("#pause-by-name")!.textContent = pauser;
       document.querySelector<HTMLButtonElement>("#resume-shift")!.onclick = () => sendGameAction("set-pause", false);
       document.querySelector<HTMLButtonElement>("#open-pause-book")!.onclick = () => { recipeBookPage = 0; recipeBookOpen = true; renderOverlay(); };
       document.querySelector<HTMLButtonElement>("#open-pause-settings")!.onclick = () => { pausePanel = "settings"; renderOverlay(); };
+      document.querySelector<HTMLButtonElement>("#open-pause-specials")!.onclick = () => { pausePanel = "specials"; renderOverlay(); };
       const replay=document.querySelector<HTMLButtonElement>("#replay-tutorial");if(replay)replay.onclick=()=>{void startTutorial("pause");};
       document.querySelector<HTMLButtonElement>("#leave-game")!.onclick = () => { sessionStorage.removeItem("paws-pours-room"); location.reload(); };
     }
@@ -681,14 +761,21 @@ function renderOverlay() {
     overlay.classList.add("hidden");
   } else if (state.phase === "upgrades") {
     overlay.classList.remove("hidden"); const host = state.hostId === token;
-    overlay.innerHTML = `<div class="modal card"><p class="eyebrow">SHIFT ${state.round} COMPLETE</p><h2>Choose a keepsake</h2><p>Choose your next shift’s bonus. It replaces the last keepsake.</p><div class="upgrade-grid">${state.upgrades.map((upgrade) => `<button class="upgrade" data-upgrade="${upgrade.id}" ${host && !(upgrade.id === "nine-lives" && state!.health >= 3) ? "" : "disabled"}><b>${upgrade.title}</b><small>${upgrade.body}</small></button>`).join("")}</div>${host ? "" : "<p class=waiting>The host is choosing…</p>"}</div>`;
+    overlay.innerHTML = `<section class="modal card shift-results" role="dialog" aria-modal="true" aria-labelledby="shift-result-title"><p class="eyebrow">SHIFT ${state.round} COMPLETE</p><h2 id="shift-result-title">A tavern to call home.</h2><div id="shift-report-slot"></div><section class="keepsake-choice" aria-labelledby="keepsake-heading"><h3 id="keepsake-heading">Choose a keepsake</h3><p>One bonus for the next tavern. It replaces your current keepsake.</p><div class="upgrade-grid">${state.upgrades.map((upgrade) => `<button class="upgrade" data-upgrade="${upgrade.id}" ${host && !(upgrade.id === "nine-lives" && state!.health >= 3) ? "" : "disabled"}><b>${upgrade.title}</b><small>${keepsakeDetail(upgrade.id,state!.health)}</small></button>`).join("")}</div>${host ? "" : "<p class=waiting>The host is choosing for the crew…</p>"}</section></section>`;
+    if(state.hospitality?.lastShift)document.querySelector("#shift-report-slot")!.append(renderShiftReport(state.hospitality.lastShift));
     document.querySelectorAll<HTMLButtonElement>("[data-upgrade]").forEach((button) => button.onclick = () => sendGameAction("choose-upgrade", button.dataset.upgrade));
   } else if (state.phase === "complete") {
-    overlay.classList.remove("hidden"); overlay.innerHTML = `<div class="modal card"><p class="eyebrow">RUN OVER</p><h2>A furry good effort.</h2><p>You earned ${state.coins} coins and ${state.reputation} reputation across ${state.round} tavern${state.round > 1 ? "s" : ""}.</p><button class="primary" onclick="location.reload()">Return to menu</button></div>`;
+    overlay.classList.remove("hidden"); overlay.innerHTML = `<section class="modal card shift-results" role="dialog" aria-modal="true" aria-labelledby="shift-result-title"><p class="eyebrow">THE LAST CALL</p><h2 id="shift-result-title">A furry good effort.</h2><p>You earned ${state.coins} coins and ${state.reputation} reputation across ${state.round} tavern${state.round > 1 ? "s" : ""}.</p><div id="shift-report-slot"></div><button class="primary" id="results-return" type="button">Return to menu</button></section>`;
+    if(state.hospitality?.lastShift)document.querySelector("#shift-report-slot")!.append(renderShiftReport(state.hospitality.lastShift));
+    document.querySelector<HTMLButtonElement>("#results-return")!.onclick=()=>{sessionStorage.removeItem("paws-pours-room");location.reload();};
   } else {
     recipeBookOpen = false;
     pausePanel = "main";
     overlay.classList.add("hidden");
+  }
+  if(!tutorial.isOpen&&!overlay.classList.contains("hidden")&&!overlay.contains(document.activeElement)) {
+    overlay.tabIndex=-1;
+    (overlay.querySelector<HTMLElement>("button:not(:disabled),input,select")??overlay).focus({preventScroll:true});
   }
 }
 
@@ -723,6 +810,7 @@ function rememberLocalPrediction(player: Player) {
 }
 function emitMovement(player: Player, moving: boolean) {
   if(tutorial.isOpen){player.moving=moving;return;}
+  if(!gameConnected())return;
   lastSentMoveSequence += 1; player.moveSequence = lastSentMoveSequence; player.moving = moving;
   rememberLocalPrediction(player);
   socket.emit("move", {
@@ -731,6 +819,7 @@ function emitMovement(player: Player, moving: boolean) {
   });
 }
 function movePlayer(elapsedMs: number) {
+  if (!gameConnected()) return;
   if(tutorial.isOpen&&!tutorialPlaysGame(tutorial.step))return;
   const player = localPlayer();
   if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || state.mixing[token] || state.mixingChoices?.[token]) return;
@@ -758,11 +847,21 @@ function movePlayer(elapsedMs: number) {
 }
 const movementKeys: Record<string, keyof typeof move> = { w: "y", ArrowUp: "y", s: "y", ArrowDown: "y", a: "x", ArrowLeft: "x", d: "x", ArrowRight: "x" };
 window.addEventListener("keydown", (event) => {
+  if(event.key === "Tab" && !tutorial.isOpen) {
+    const surface = !connectionNotice.hidden ? connectionNotice : !overlay.classList.contains("hidden") ? overlay : game.querySelector<HTMLElement>(".mixing-workspace:not(.hidden)");
+    if(surface) {
+      const controls = [...surface.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex='0']")].filter(element=>element.getClientRects().length);
+      const index = controls.indexOf(document.activeElement as HTMLElement);
+      if(controls.length && (index<0 || (event.shiftKey && index===0) || (!event.shiftKey && index===controls.length-1))) {
+        event.preventDefault();controls[event.shiftKey ? controls.length-1 : 0].focus();return;
+      }
+    }
+  }
   if(tutorial.isOpen&&!tutorialPlaysGame(tutorial.step))return;
   if (event.key === "Escape" && state?.phase === "shift") {
     event.preventDefault();
     if (state.pausedAt === null) sendGameAction("set-pause", true);
-    else if (recipeBookOpen || pausePanel === "settings") { recipeBookOpen = false; pausePanel = "main"; renderOverlay(); }
+    else if (recipeBookOpen || pausePanel !== "main") { recipeBookOpen = false; pausePanel = "main"; renderOverlay(); }
     else sendGameAction("set-pause", false);
     return;
   }
@@ -931,15 +1030,17 @@ let lastBoardFrame = performance.now();
 function renderBoard(now = performance.now()) {
   const elapsedMs = now - lastBoardFrame; lastBoardFrame = now;
   requestAnimationFrame(renderBoard); movePlayer(elapsedMs); context.imageSmoothingEnabled = false;
+  const hideCelebration=now>=celebrateUntil;
+  if(celebration.hidden!==hideCelebration)celebration.hidden=hideCelebration;
   if (!state || state.phase === "lobby" || game.classList.contains("hidden")) return;
-  drawTavernFloor(context, state.tavern);
+  floorLayer.draw(context,`${floorLayout}|${gameArtRevision()}`,layer=>drawTavernFloor(layer,state!.tavern));
   const player = localPlayer();
   const nearby = player && nearbyStation(state.tavern, player);
-  document.querySelector("#interaction")!.textContent = player && nearby
-    ? `E · ${interactionLabel(player, nearby)}` : "Approach a counter";
+  const label=player?interactionLabel(player,nearby):"Interact";
+  const instruction=player&&nearby?`E · ${label}`:"Approach a counter";
+  if(interactionReadout.textContent!==instruction)interactionReadout.textContent=instruction;
   if (touchLayout) {
-    touchControls.setStatus(document.querySelector("#carry")!.textContent ?? "Paws empty",
-      player ? interactionLabel(player, nearby) : "Interact");
+    touchControls.setStatus(carryReadout.textContent??"Paws empty",label);
   }
   const objects = [
     ...state.tavern.stations.map((station) => ({ depth: stationBounds(station).bottom, draw: () =>

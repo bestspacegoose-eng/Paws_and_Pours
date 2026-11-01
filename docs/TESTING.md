@@ -79,7 +79,7 @@ Expected output includes `"ok": true`, the completed recipe, awarded coins, and 
 - **Extreme tool timing:** release much too early or late and verify a mistake is recorded.
 - **Duplicate pickup:** interact with the same ingredient twice and verify the second item is refused.
 - **Discarding ingredients:** collect one or more ingredients, use the Scrap Bin, and verify only the carried ingredients are cleared; a finished drink must remain in paw.
-- **Invalid full set:** take three ingredients that do not make a recipe, use the mixer, and verify the set is discarded so the player cannot become softlocked.
+- **Invalid full set:** take three ingredients that do not make a recipe, use the mixer, and verify the ingredients are kept and the message explains how to change the set using empty counters or the recipe book.
 - **Reconnect:** disconnect during a session, rejoin with the same browser session, and verify the server-owned session is restored if it has not timed out.
 - **Collision:** approach all four sides and a corner of standard, end-cap, corner, ingredient, mixing, service, and damaged blocks. Visible base and collision footprint must remain one cell.
 - **Pause during preparation:** begin a tool hold or rhythm sequence, pause, wait more than the action's normal timing, then resume. The current gesture should restart without a mistake or deadline loss.
@@ -103,4 +103,4 @@ Expected output includes `"ok": true`, the completed recipe, awarded coins, and 
 
 - Further action types such as heating, freeform stirring, garnishing, and manual serving. The preparation-action union is the extension point.
 - Theme-specific workspace backgrounds; the first slice uses one neutral workspace with runtime theme tinting.
-- Controller/touch mappings, remapping UI, playable audio, persistence, host migration, spectators, and production rate limiting.
+- Controller mappings, remapping UI, spectators, and production rate limiting. Touch controls, audio, solo persistence, and connected-host migration are implemented.

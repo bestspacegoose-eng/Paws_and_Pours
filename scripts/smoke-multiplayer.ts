@@ -137,12 +137,12 @@ async function main() {
     host.emit("interact"); guest.emit("interact");
     const oneCounterItem = (state: GameState) => {
       const counter = state.tavern.stations.find(station => station.id === emptyCounter.id)!;
-      return counter.counterIngredient?.ingredient === "lime" && !counter.drink && /full/.test(state.message) &&
+      return counter.counterIngredient?.ingredient === "lime" && !counter.drink && /Already carrying/.test(state.message) &&
         state.players[hostToken].carrying.length + state.players[guestToken].carrying.length === 1;
     };
     await waitForState(host, () => hostState, oneCounterItem);
     await waitForState(guest, () => guestState, oneCounterItem);
-    assert.match(guestState!.message, /full/);
+    assert.match(guestState!.message, /Already carrying/);
     const collector = hostState!.players[hostToken].carrying.length ? guest : host;
     collector.emit("interact");
     await waitForState(host, () => hostState, state => !state.tavern.stations.find(station => station.id === emptyCounter.id)!.counterIngredient &&
@@ -157,6 +157,7 @@ async function main() {
     const collectRecipe = async (recipeId: string) => {
       const selected = recipeById(recipeId);
       for (const ingredient of selected.ingredients) {
+        if (hostState!.players[hostToken].carrying.includes(ingredient)) continue;
         smokeStage = `collect ${ingredient}`;
         const rawIngredient = pantryIngredient(ingredient);
         const station = hostState!.tavern.stations.find((candidate) => candidate.ingredient === rawIngredient);
@@ -286,6 +287,50 @@ async function main() {
     await waitForState(guest, () => guestState, (state) => state.players[hostToken].drink === "seafoam-shake");
     assert.equal(guestState!.players[hostToken].drink, "seafoam-shake");
 
+    smokeStage = "House Special shared preparation";
+    await approachStation(hostState!.tavern.stations.find(station=>station.kind==="trash")!);
+    host.emit("interact");
+    await waitForState(host,()=>hostState,state=>!state.players[hostToken].drink);
+    const specialState=await waitForState(host,()=>hostState,state=>state.orders.some(order=>order.houseSpecial),35000);
+    const houseOrder=specialState.orders.find(order=>order.houseSpecial)!;
+    const houseRecipe=recipeById(houseOrder.recipeId);
+    const sharedIngredient=houseRecipe.ingredients.find(ingredient=>!isChoppedIngredient(ingredient))!;
+    await approachStation(hostState!.tavern.stations.find(station=>station.kind==="pantry"&&station.ingredient===sharedIngredient)!,guest,guestToken);
+    guest.emit("interact");await waitForState(host,()=>hostState,state=>state.players[guestToken].carrying.includes(sharedIngredient));
+    await approachStation(emptyCounter,guest,guestToken);
+    guest.emit("interact");await waitForState(host,()=>hostState,state=>state.tavern.stations.find(station=>station.id===emptyCounter.id)?.counterIngredient?.ingredient===sharedIngredient);
+    await approachStation(emptyCounter);
+    host.emit("interact");await waitForState(host,()=>hostState,state=>state.players[hostToken].carrying.includes(sharedIngredient));
+    assert.deepEqual(hostState!.players[hostToken].ingredientContributors?.[sharedIngredient],[guestToken]);
+    await collectRecipe(houseRecipe.id);await prepareRecipe(houseRecipe.id);
+    assert.ok(hostState!.players[hostToken].drinkContributors?.includes(guestToken));
+    const beforeSpecial=hostState!.coins;
+    await approachStation(hostState!.tavern.stations.find(station=>station.id===houseOrder.seatId)!);
+    host.emit("interact");
+    await waitForState(host,()=>hostState,state=>!state.orders.some(order=>order.id===houseOrder.id));
+    await waitForState(guest,()=>guestState,state=>(state.hospitality?.stats.teamwork??0)===1);
+    assert.equal(hostState!.hospitality?.warmth,1);assert.equal(hostState!.hospitality?.stats.specials,1);
+    assert.ok(hostState!.coins-beforeSpecial>=7);assert.match(hostState!.message,/House Special: \+4 for teamwork/);
+    // Repeated service cannot pay the same special twice.
+    const paid=hostState!.coins;
+    host.emit("interact");await waitForState(host,()=>hostState,state=>state.message.includes("No drink"));
+    assert.equal(hostState!.coins,paid);
+
+    smokeStage="chopping chooser recovers when another bartender takes the board";
+    for(const raw of ["tuna","kelp"]){
+      await approachStation(hostState!.tavern.stations.find(s=>s.kind==="pantry"&&s.ingredient===raw)!,guest,guestToken);
+      guest.emit("interact");await waitForState(host,()=>hostState,s=>s.players[guestToken].carrying.includes(raw));
+    }
+    const board=hostState!.tavern.stations.find(s=>s.kind==="chop")!;
+    await approachStation(board,guest,guestToken);
+    guest.emit("interact");await waitForState(host,()=>hostState,s=>Boolean(s.mixingChoices?.[guestToken]));
+    await approachStation(hostState!.tavern.stations.find(s=>s.kind==="pantry"&&s.ingredient==="lime")!);
+    host.emit("interact");await waitForState(host,()=>hostState,s=>s.players[hostToken].carrying.includes("lime"));
+    await approachStation(board);host.emit("interact");await waitForState(host,()=>hostState,s=>s.mixing[hostToken]?.kind==="chop");
+    guest.emit("mix-recipe-select","chop-tuna");
+    await waitForState(guest,()=>guestState,s=>!s.mixingChoices?.[guestToken]&&s.message.includes("board changed"));
+    assert.deepEqual(guestState!.players[guestToken].carrying,["tuna","kelp"]);assert.equal(guestState!.mixing[hostToken].ingredient,"lime");
+
     console.log(JSON.stringify({
       ok: true,
       room: code,
@@ -298,7 +343,10 @@ async function main() {
       advancedRhythmActionsCompleted: true,
       sharedPauseVerified: true,
       counterHandoffVerified: true,
-      singleActionHandoffsVerified: true
+      singleActionHandoffsVerified: true,
+      houseSpecialTeamworkVerified: true,
+      specialCannotPayTwice: true,
+      staleChoppingChoiceRecovers: true
     }, null, 2));
   } finally {
     host.disconnect();

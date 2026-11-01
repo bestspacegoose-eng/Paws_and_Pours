@@ -11,6 +11,8 @@ export class TouchControls {
   readonly root: HTMLElement;
   private readonly pad: HTMLElement;
   private readonly knob: HTMLElement;
+  private readonly carry: HTMLElement;
+  private readonly interactButton: HTMLButtonElement;
   private pointer?: number;
   private enabled = false;
   overview = false;
@@ -22,6 +24,7 @@ export class TouchControls {
       <div class="touch-inputs"><div><div class="touch-pad" role="group" aria-label="Drag to move your cat"><span class="touch-pad-knob"></span><span class="touch-pad-cross" aria-hidden="true">✥</span></div><span class="touch-hint">Drag to move</span></div>
       <div class="touch-actions"><button type="button" class="touch-interact">Interact</button></div></div>`;
     mount.append(this.root); this.pad = this.root.querySelector(".touch-pad")!; this.knob = this.root.querySelector(".touch-pad-knob")!;
+    this.carry=this.root.querySelector(".touch-carry")!;this.interactButton=this.root.querySelector(".touch-interact")!;
     const point = (event: PointerEvent) => {
       const rect = this.pad.getBoundingClientRect(), radius = rect.width / 2;
       const vector = joystickVector(event.clientX - rect.left - radius, event.clientY - rect.top - radius, radius * .75);
@@ -46,13 +49,14 @@ export class TouchControls {
     map.setAttribute("aria-pressed",String(value));map.textContent=value?"Follow":"Map";
   }
   setEnabled(enabled: boolean) {
+    if(this.enabled===enabled&&this.pad.hasAttribute("aria-disabled"))return;
     if (this.enabled && !enabled) this.reset();
     this.enabled = enabled; this.pad.setAttribute("aria-disabled", String(!enabled));
-    this.root.querySelectorAll<HTMLButtonElement>(".touch-actions button").forEach(button => button.disabled = !enabled);
+    this.interactButton.disabled = !enabled;
   }
   setStatus(carry: string, interaction: string) {
-    this.root.querySelector(".touch-carry")!.textContent = carry;
-    const button = this.root.querySelector<HTMLButtonElement>(".touch-interact")!;
-    button.textContent = interaction || "Interact";
+    if(this.carry.textContent!==carry)this.carry.textContent = carry;
+    const label=interaction||"Interact";
+    if(this.interactButton.textContent!==label)this.interactButton.textContent = label;
   }
 }

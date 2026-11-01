@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CHOPPING_RECIPES, INGREDIENTS, TAVERN_THEMES, ingredientLabel, makeTavern, transferCounterItem, type Player } from "../shared/game.js";
-import { interactionLabel, usesCounterHandoff } from "../shared/interaction.js";
+import { counterBlockReason, interactionLabel, usesCounterHandoff } from "../shared/interaction.js";
 
 test("one interaction places and retrieves finished drinks on all handoff surfaces", () => {
   for (const kind of ["counter", "pantry", "mix"]) {
@@ -44,6 +44,18 @@ test("the unified action never overwrites a surface drink or takes it into full 
 
 const allIngredients = [...INGREDIENTS, ...CHOPPING_RECIPES.map(recipe => `chopped-${recipe.ingredients[0]}`)];
 const carryingPlayer = (carrying: string[] = []): Player => ({ carrying, ingredientQualities: {} } as Player);
+
+test("counter feedback identifies the exact inventory or surface problem",()=>{
+  const counter=makeTavern(42).stations.find(station=>station.kind==="counter")!;
+  counter.counterIngredient={ingredient:"lime",quality:1};
+  assert.match(counterBlockReason(carryingPlayer(["lime"]),counter)!,/Already carrying lime/);
+  assert.match(counterBlockReason(carryingPlayer(["cream","tonic","kelp"]),counter)!,/3\/3/);
+  assert.equal(counterBlockReason(carryingPlayer(["cream","tonic","kelp"]),counter,4),undefined);
+  const cat=carryingPlayer();cat.drink="tuna";
+  assert.match(counterBlockReason(cat,counter)!,/occupied by an ingredient/);
+  delete counter.counterIngredient;counter.drink={recipeId:"catnip",quality:1};
+  assert.match(counterBlockReason(cat,counter)!,/occupied by a drink/);
+});
 
 test("every raw and chopped ingredient fits one slot on every empty counter in every theme", () => {
   for (let round = 1; round <= TAVERN_THEMES.length; round++) {

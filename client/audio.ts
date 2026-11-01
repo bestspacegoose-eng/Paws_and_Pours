@@ -177,6 +177,7 @@ export class AudioDirector {
     }
 
     const previousOrderIds = new Set(previous.orders.map(({ id }) => id));
+    if(previous.round===next.round&&(next.hospitality?.celebrationCount??0)>(previous.hospitality?.celebrationCount??0))this.playEffect("success",{gain:.6,playbackRate:1});
     if (next.orders.some(({ id }) => !previousOrderIds.has(id))) {
       this.playEffect("new-order", { gain: 0.7, playbackRate: 1.05 });
     }

@@ -1,0 +1,38 @@
+[
+  {
+    "theme": "Cozy Village Pub",
+    "floorDifferences": 0,
+    "differentPixels": 0,
+    "maxChannelDifference": 0,
+    "overTwo": 0,
+    "samples": [],
+    "frames": 120,
+    "directMs": 96.7,
+    "cachedMs": 5.8,
+    "floorRepaints": 1
+  },
+  {
+    "theme": "Haunted Moonlit Inn",
+    "floorDifferences": 0,
+    "differentPixels": 0,
+    "maxChannelDifference": 0,
+    "overTwo": 0,
+    "samples": [],
+    "frames": 120,
+    "directMs": 87.3,
+    "cachedMs": 8.7,
+    "floorRepaints": 1
+  },
+  {
+    "theme": "Pirate Cat Tavern",
+    "floorDifferences": 0,
+    "differentPixels": 0,
+    "maxChannelDifference": 0,
+    "overTwo": 0,
+    "samples": [],
+    "frames": 120,
+    "directMs": 99.8,
+    "cachedMs": 11.4,
+    "floorRepaints": 1
+  }
+]

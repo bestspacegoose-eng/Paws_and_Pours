@@ -2,6 +2,8 @@
 type GameImage = { image: HTMLImageElement; source: string; loading?: Promise<void> };
 const images: GameImage[] = [];
 let started = false;
+let revision = 0;
+export const gameArtRevision = () => revision;
 
 function load(entry: GameImage): Promise<void> {
   if (entry.loading) return entry.loading;
@@ -19,12 +21,16 @@ function load(entry: GameImage): Promise<void> {
 
 export function gameImage(source: string): HTMLImageElement {
   const image = new Image(); image.decoding = "async";
+  image.addEventListener("load",()=>revision++);
   const entry = { image, source }; images.push(entry);
   if (started) void load(entry).catch(() => undefined);
   return image;
 }
 
-export async function loadGameAssets() {
+export async function loadGameAssets(onProgress?: (loaded: number, total: number) => void) {
   started = true;
-  await Promise.all(images.map(load));
+  let loaded = 0;
+  const entries = [...images];
+  onProgress?.(loaded, entries.length);
+  await Promise.all(entries.map(async entry => { await load(entry); onProgress?.(++loaded, entries.length); }));
 }

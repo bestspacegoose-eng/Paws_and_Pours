@@ -52,6 +52,14 @@ npm test
 - Bundled pixel-font menu controls with clear Solo/Multiplayer actions, world-space hazards, seven illustrated drinks, and discard support for ingredients or completed drinks.
 - Responsive desktop/smaller-screen interface with no art-asset download required.
 
+## House Specials and shift reports
+
+Every third guest requests a star-marked House Special with extra preparation time. In multiplayer, share gathering, chopping, mixing, or delivery across two bartenders for 4 bonus coins and one tavern warmth. Solo players earn the same bonus with at least 88% preparation accuracy. Three warmth triggers a tavern toast and 6 shared coins. Passing items repeatedly creates no additional contributors.
+
+At closing, review served guests, perfect drinks, specials, shift earnings, cleanup, and each bartender's work. Choose a keepsake with its exact effect for the next themed tavern. Tap a ticket during play to pause and read its recipe; the warmth readout and pause menu explain specials.
+
+See [the category-by-category implementation and verification notes](docs/RUBRIC_IMPROVEMENTS.md).
+
 ## Controls
 
 Choose **How to play** on the title screen for a skippable, story-led opening tour. It appears automatically before your first new solo shift and can be replayed from the solo pause menu. Existing saves load directly. The tour uses a separate preview, so clocks, saved progress, unfinished drinks, and multiplayer rooms are unaffected. See [`docs/TUTORIAL.md`](docs/TUTORIAL.md).

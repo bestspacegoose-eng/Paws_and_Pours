@@ -31,6 +31,16 @@ export function keepsakeSummary(id: KeepsakeId) {
   }[id];
 }
 
+export function keepsakeDetail(id: KeepsakeId, health: number) {
+  return {
+    "swift-paws":"Your cat walks 20% faster for the next shift.",
+    "patient-patrons":"Every new guest waits 12 seconds longer next shift.",
+    "lucky-whiskers":"Every perfect drink earns 2 extra coins next shift, including House Specials.",
+    "bottomless-bag":"Carry 4 ingredients next shift. Mixing uses the recipe and keeps the spare.",
+    "nine-lives":`Restore one shared heart now (${health} → ${Math.min(3,health+1)}). Carry capacity and speed return to normal.`
+  }[id];
+}
+
 export function servingReward(patienceQuality: number, preparationQuality: number, id?: KeepsakeId) {
   const bonus = preparationQuality >= .88 ? keepsakeEffects(id).perfectDrinkBonus : 0;
   const tip = Math.max(3, (patienceQuality > .6 ? 8 : 5) + (preparationQuality >= .88 ? 2 : preparationQuality < .45 ? -2 : 0));
@@ -49,5 +59,7 @@ export function remainingIngredients(carried: string[], recipe: Pick<Recipe, "in
 export function consumeRecipeIngredients(player: Player, recipe: Pick<Recipe,"ingredients">) {
   player.carrying = remainingIngredients(player.carrying, recipe);
   if (player.ingredientQualities) player.ingredientQualities = Object.fromEntries(Object.entries(player.ingredientQualities)
+    .filter(([ingredient]) => player.carrying.includes(ingredient)));
+  if (player.ingredientContributors) player.ingredientContributors = Object.fromEntries(Object.entries(player.ingredientContributors)
     .filter(([ingredient]) => player.carrying.includes(ingredient)));
 }

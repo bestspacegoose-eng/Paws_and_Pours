@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Paws & Pours rendering verification</title>
+<style>body{margin:20px;background:#201828;color:#f1dfc7;font:14px/1.5 system-ui}h1{font-size:24px}table{border-collapse:collapse;margin:16px 0}td,th{padding:7px 12px;text-align:left;border:1px solid #67546e}.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}canvas{width:100%;height:auto;image-rendering:pixelated;background:#201828}figure{margin:0}output{white-space:pre-wrap}button{padding:10px} @media(max-width:700px){.pair{grid-template-columns:1fr}}</style>
+<h1>Rendering verification</h1><p>The same scene, rendered directly and through the bounded floor cache. Pixel differences must be zero in every theme.</p><output id="status">Loading artwork…</output><div id="scenes"></div><output id="results"></output>
+<script type="module">
+import { gameArtRevision, loadGameAssets } from '/client/game-assets.ts';
+import { CanvasLayerCache, tavernLayoutKey } from '/client/canvas-cache.ts';
+import { makeTavern, TAVERN_THEMES, stationBounds, nextCustomerSeat } from '/shared/game.ts';
+import { drawTavernFloor, drawTavernCounter, drawBarGate, TAVERN_VIEW } from '/client/tavern-renderer.ts';
+const load=async source=>{const image=new Image();image.src=source;await image.decode();return image;};
+await loadGameAssets();
+const [ingredients,bin,cats]=await Promise.all([load('/client/assets/tilemap/ingredients-spritesheet.png'),load('/client/assets/props/scrap-bin.png'),load('/client/assets/tilemap/cat-bartender-spritesheet.png')]);
+await document.fonts.ready;
+const results=[];
+for(const theme of TAVERN_THEMES){
+  const tavern=makeTavern(42);tavern.theme=theme;
+  const counters=tavern.stations.filter(s=>s.kind==='counter');
+  counters[0].drink={recipeId:'catnip',quality:1};counters[1].counterIngredient={ingredient:'chopped-lime',quality:.9};
+  tavern.stations.find(s=>s.kind==='chop').preparedIngredient='chopped-tuna';
+  const orders=[];for(let i=0;i<3;i++){const seat=nextCustomerSeat(tavern,orders,i);orders.push({id:`guest-${i}`,recipeId:'tuna',tableId:seat.tableId,seatId:seat.id,customer:'Guest',patience:60,maxPatience:80});}
+  const section=document.createElement('section'),heading=document.createElement('h2');heading.textContent=theme;section.append(heading);
+  const pair=document.createElement('div');pair.className='pair';section.append(pair);document.querySelector('#scenes').append(section);
+  const surfaces=['Direct rendering','Cached floor'].map(label=>{const f=document.createElement('figure'),caption=document.createElement('figcaption'),canvas=document.createElement('canvas');caption.textContent=label;canvas.width=TAVERN_VIEW.width;canvas.height=TAVERN_VIEW.height;f.append(caption,canvas);pair.append(f);return canvas;});
+  const contexts=surfaces.map(c=>c.getContext('2d'));
+  const cache=new CanvasLayerCache(TAVERN_VIEW.width,TAVERN_VIEW.height),key=`${tavernLayoutKey(tavern)}|${gameArtRevision()}`;
+  contexts.forEach((context,index)=>{
+    context.imageSmoothingEnabled=false;
+    if(index)cache.draw(context,key,c=>drawTavernFloor(c,tavern));else drawTavernFloor(context,tavern);
+  });
+  // Read each backdrop before its foreground pass: both GPU command streams
+  // cross the same readback boundary, making raster comparisons deterministic.
+  const fa=contexts[0].getImageData(0,0,TAVERN_VIEW.width,TAVERN_VIEW.height).data,fb=contexts[1].getImageData(0,0,TAVERN_VIEW.width,TAVERN_VIEW.height).data;
+  let floorDifferences=0;for(let i=0;i<fa.length;i+=4)if(fa[i]!==fb[i]||fa[i+1]!==fb[i+1]||fa[i+2]!==fb[i+2]||fa[i+3]!==fb[i+3])floorDifferences++;
+  contexts.forEach(context=>{
+    [...tavern.stations].sort((a,b)=>stationBounds(a).bottom-stationBounds(b).bottom).forEach(s=>drawTavernCounter(context,tavern,s,ingredients,bin,s===counters[1],orders,cats));
+    drawBarGate(context,[],true,theme);
+  });
+  const a=contexts[0].getImageData(0,0,TAVERN_VIEW.width,TAVERN_VIEW.height).data,b=contexts[1].getImageData(0,0,TAVERN_VIEW.width,TAVERN_VIEW.height).data;
+  let differentPixels=0,maxChannelDifference=0,overTwo=0;const samples=[];
+  for(let i=0;i<a.length;i+=4){const delta=Math.max(...[0,1,2,3].map(c=>Math.abs(a[i+c]-b[i+c])));if(delta){differentPixels++;maxChannelDifference=Math.max(maxChannelDifference,delta);if(delta>2)overTwo++;if(samples.length<3)samples.push({x:i/4%TAVERN_VIEW.width,y:Math.floor(i/4/TAVERN_VIEW.width),a:Array.from(a.slice(i,i+4)),b:Array.from(b.slice(i,i+4))});}}
+  const scratch=document.createElement('canvas');scratch.width=TAVERN_VIEW.width;scratch.height=TAVERN_VIEW.height;
+  const context=scratch.getContext('2d');context.imageSmoothingEnabled=false;
+  const run=paint=>{const start=performance.now();for(let frame=0;frame<120;frame++)paint();context.getImageData(0,0,1,1);return Math.round((performance.now()-start)*100)/100;};
+  const directMs=run(()=>drawTavernFloor(context,tavern)),cachedMs=run(()=>cache.draw(context,key,c=>drawTavernFloor(c,tavern)));
+  results.push({theme,floorDifferences,differentPixels,maxChannelDifference,overTwo,samples,frames:120,directMs,cachedMs,floorRepaints:cache.rebuilds});
+}
+document.querySelector('#status').textContent=results.every(r=>r.differentPixels===0)?'PASS: zero pixel differences in all three complete scenes.':'FAIL: cached rendering differs.';
+document.querySelector('#results').textContent=JSON.stringify(results,null,2);
+</script></html>
