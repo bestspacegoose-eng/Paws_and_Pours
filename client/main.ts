@@ -5,6 +5,8 @@ import { rememberTutorial, tutorialSeen, tutorialState, tutorialPlaysGame, type 
 import type { TutorialRect } from "./tutorial-layout";
 import { gameArtRevision, gameImage, loadGameAssets } from "./game-assets";
 import { CanvasLayerCache, tavernLayoutKey } from "./canvas-cache";
+import { StationScene } from "./station-scene";
+import { FramePacer, mobileBackingSize } from "./mobile-performance";
 import { loadMenuScene } from "./menu-scene";
 import { interactionLabel } from "../shared/interaction";
 import { reconcilePrediction, type LocalPrediction } from "./state-reconciliation";
@@ -32,7 +34,7 @@ import ingredientsSpritesheetUrl from "./assets/tilemap/ingredients-spritesheet.
 import { MixingWorkspace } from "./mixing-workspace";
 import { drawRecipeDrink, onDrinkArtReady } from "./drink-art";
 import { INGREDIENT_FRAMES, PLAYER_FRAMES } from "./sprite-frames";
-import { boardPoint, drawTavernFloor, drawTavernCounter, drawIngredientIcon, drawBarGate, TAVERN_VIEW } from "./tavern-renderer";
+import { boardPoint, drawTavernFloor, drawTavernCounter, drawStationHighlight, drawIngredientIcon, drawBarGate, TAVERN_VIEW } from "./tavern-renderer";
 import { OrderHud } from "./order-hud";
 import { PLAYER_ANCHORS, transformAnchors } from "./character-anchors";
 import { drawCatAccessory } from "./accessory-art";
@@ -188,8 +190,20 @@ const worldCanvas = document.createElement("canvas"); worldCanvas.id = "tavern-w
 worldCanvas.width = TAVERN_VIEW.width; worldCanvas.height = TAVERN_VIEW.height;
 const context = worldCanvas.getContext("2d")!;
 const floorLayer=new CanvasLayerCache(TAVERN_VIEW.width,TAVERN_VIEW.height);
+const stationScene=new StationScene();
+const framePacer=new FramePacer();
+let sceneUpdate=0;
+let boardRect:DOMRect|undefined;
+const invalidateBoardRect=()=>{boardRect=undefined;};
+if("ResizeObserver" in window)new ResizeObserver(invalidateBoardRect).observe(canvas);
+window.addEventListener("resize",invalidateBoardRect);
+window.addEventListener("scroll",invalidateBoardRect,{capture:true,passive:true});
 let floorLayout="";
 const interactionReadout=document.querySelector<HTMLElement>("#interaction")!,carryReadout=document.querySelector<HTMLElement>("#carry")!;
+const hudNodes=Object.fromEntries(["theme","room-display","active-keepsake","coins","rep","health","heart-icons","heart-status","timer","game-menu"]
+  .map(id=>[id,document.getElementById(id)!])) as Record<string,HTMLElement>;
+function setNodeText(node:HTMLElement,text:string){if(node.textContent!==text)node.textContent=text;}
+function setNodeAttribute(node:HTMLElement,name:string,value:string){if(node.getAttribute(name)!==value)node.setAttribute(name,value);}
 let boardProjection: { source:TutorialRect; destination:TutorialRect } | undefined;
 canvas.width = TAVERN_VIEW.width; canvas.height = TAVERN_VIEW.height;
 const touchControls = new TouchControls(game, input => { touchMove = input; },
@@ -211,8 +225,9 @@ if ("ResizeObserver" in window) {
 }
 let touchLayout = false;
 function syncTouchLayout() {
-  touchLayout = navigator.maxTouchPoints > 0 || matchMedia("(pointer: coarse), (max-width: 900px)").matches;
-  game.dataset.touch = String(touchLayout); touchControls.reset();
+  const next = navigator.maxTouchPoints > 0 || matchMedia("(pointer: coarse), (max-width: 900px)").matches;
+  if(next!==touchLayout){touchLayout=next;touchControls.reset();framePacer.reset();}
+  game.dataset.touch = String(touchLayout);
 }
 window.addEventListener("resize", syncTouchLayout); syncTouchLayout();
 const orderHud = new OrderHud(document.querySelector<HTMLElement>("#order-hud")!, ingredientsSpritesheet, order => {
@@ -361,6 +376,7 @@ function profile() {
   };
 }
 function applySettings() {
+  invalidateBoardRect();
   document.documentElement.style.setProperty("--game-scale", String(settings.scale));
   document.body.dataset.pixelPerfect = String(settings.pixelPerfect);
   document.body.dataset.reducedMotion = String(settings.reducedMotion);
@@ -672,33 +688,36 @@ function localPlayer() { return state?.players[token]; }
 function time(seconds: number) { return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; }
 function renderUi() {
   if (!state) return;
+  sceneUpdate++;
   orderHud.render(state.orders,sessionMode==="single");
   const warmth=state.hospitality?.warmth??0;
-  warmthButton.textContent=`Tavern warmth · ${warmth}/${WARMTH_TARGET}`;
-  warmthButton.setAttribute("aria-label",`Tavern warmth, ${warmth} of ${WARMTH_TARGET}. Learn about House Specials.`);
-  warmthButton.hidden=tutorial.isOpen||state.phase!=="shift";
-  document.querySelector("#theme")!.textContent = state.tavern.theme.toUpperCase();
-  document.querySelector("#room-display")!.textContent = tutorial.isOpen ? "OPENING TOUR" : sessionMode === "single" ? "SOLO SHIFT" : `ROOM ${state.code}`;
-  const keepsake=document.querySelector<HTMLElement>("#active-keepsake")!;
-  keepsake.hidden=!state.activeKeepsake;
-  keepsake.textContent=state.activeKeepsake ? keepsakeSummary(state.activeKeepsake) : "";
-  keepsake.title=keepsake.textContent;
-  document.querySelector("#coins")!.textContent = String(state.coins);
-  document.querySelector("#rep")!.textContent = String(state.reputation);
+  setNodeText(warmthButton,`Tavern warmth · ${warmth}/${WARMTH_TARGET}`);
+  setNodeAttribute(warmthButton,"aria-label",`Tavern warmth, ${warmth} of ${WARMTH_TARGET}. Learn about House Specials.`);
+  const hideWarmth=tutorial.isOpen||state.phase!=="shift";
+  if(warmthButton.hidden!==hideWarmth)warmthButton.hidden=hideWarmth;
+  setNodeText(hudNodes.theme,state.tavern.theme.toUpperCase());
+  setNodeText(hudNodes["room-display"],tutorial.isOpen?"OPENING TOUR":sessionMode==="single"?"SOLO SHIFT":`ROOM ${state.code}`);
+  const keepsake=hudNodes["active-keepsake"];
+  if(keepsake.hidden!==!state.activeKeepsake)keepsake.hidden=!state.activeKeepsake;
+  setNodeText(keepsake,state.activeKeepsake?keepsakeSummary(state.activeKeepsake):"");
+  if(keepsake.title!==keepsake.textContent)keepsake.title=keepsake.textContent??"";
+  setNodeText(hudNodes.coins,String(state.coins));
+  setNodeText(hudNodes.rep,String(state.reputation));
   const hearts = Math.max(0, Math.min(3, state.health));
-  document.querySelector("#health")!.textContent = String(hearts);
-  document.querySelector("#heart-icons")!.textContent = "♥".repeat(hearts) + "♡".repeat(3 - hearts);
-  const heartStatus = document.querySelector<HTMLElement>("#heart-status")!;
-  heartStatus.setAttribute("aria-label", `${hearts} team heart${hearts === 1 ? "" : "s"}`);
+  setNodeText(hudNodes.health,String(hearts));
+  setNodeText(hudNodes["heart-icons"],"♥".repeat(hearts)+"♡".repeat(3-hearts));
+  const heartStatus=hudNodes["heart-status"];
+  setNodeAttribute(heartStatus,"aria-label",`${hearts} team heart${hearts===1?"":"s"}`);
   heartStatus.classList.toggle("critical", hearts <= 1);
-  document.querySelector("#timer")!.textContent = tutorial.isOpen ? "Ⅱ 3:00" : state.phase === "shift" ? `${state.pausedAt !== null ? "Ⅱ " : ""}${time(state.shiftSeconds)}` : state.phase.toUpperCase();
-  const timer=document.querySelector<HTMLElement>("#timer")!;
+  const timer=hudNodes.timer;
+  setNodeText(timer,tutorial.isOpen?"Ⅱ 3:00":state.phase==="shift"?`${state.pausedAt!==null?"Ⅱ ":""}${time(state.shiftSeconds)}`:state.phase.toUpperCase());
   timer.classList.toggle("closing-time",state.phase==="shift"&&state.shiftSeconds<=30&&!tutorial.isOpen);
-  timer.setAttribute("aria-label",`${state.shiftSeconds} seconds remaining${state.shiftSeconds<=30?", last orders":""}`);
-  timer.title=state.shiftSeconds<=30?"Last orders: serve your remaining guests before closing.":"Time remaining in this shift";
-  document.querySelector<HTMLButtonElement>("#game-menu")!.disabled = state.phase !== "shift" || state.pausedAt !== null;
+  setNodeAttribute(timer,"aria-label",`${state.shiftSeconds} seconds remaining${state.shiftSeconds<=30?", last orders":""}`);
+  setNodeAttribute(timer,"title",state.shiftSeconds<=30?"Last orders: serve your remaining guests before closing.":"Time remaining in this shift");
+  const pauseButton=hudNodes["game-menu"] as HTMLButtonElement,disabled=state.phase!=="shift"||state.pausedAt!==null;
+  if(pauseButton.disabled!==disabled)pauseButton.disabled=disabled;
   const player = localPlayer();
-  document.querySelector("#carry")!.textContent = state.mixing[token] ? `Preparing: ${recipeById(state.mixing[token].recipeId).name}` : player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.map(ingredientLabel).join(", ")}${state.activeKeepsake === "bottomless-bag" ? ` · ${player.carrying.length}/4 slots` : ""}` : "Paws empty";
+  setNodeText(carryReadout,state.mixing[token] ? `Preparing: ${recipeById(state.mixing[token].recipeId).name}` : player?.drink ? `Carrying: ${recipeById(player.drink).name}` : player?.carrying.length ? `Carrying: ${player.carrying.map(ingredientLabel).join(", ")}${state.activeKeepsake === "bottomless-bag" ? ` · ${player.carrying.length}/4 slots` : ""}` : "Paws empty");
   if (state.message !== lastStateMessage) {
     lastStateMessage = state.message;
     if(!tutorial.isOpen)setToast(state.message);
@@ -1028,13 +1047,21 @@ function drawHazard() {
 }
 let lastBoardFrame = performance.now();
 function renderBoard(now = performance.now()) {
+  requestAnimationFrame(renderBoard);
+  if(!framePacer.shouldRender(now,touchLayout?60:Infinity))return;
   const elapsedMs = now - lastBoardFrame; lastBoardFrame = now;
-  requestAnimationFrame(renderBoard); movePlayer(elapsedMs); context.imageSmoothingEnabled = false;
   const hideCelebration=now>=celebrateUntil;
   if(celebration.hidden!==hideCelebration)celebration.hidden=hideCelebration;
-  if (!state || state.phase === "lobby" || game.classList.contains("hidden")) return;
+  if(document.hidden||!state||state.phase==="lobby"||game.classList.contains("hidden"))return;
+  // The private workspace has its own animation loop. Avoid painting a second
+  // complete tavern behind it, or behind an opaque pause/results dialog.
+  if(mixingWorkspace.isOpen()||!overlay.classList.contains("hidden")){if(tutorial.isOpen)tutorial.refresh();return;}
+  movePlayer(elapsedMs);context.imageSmoothingEnabled=false;
+  const player=localPlayer(),rect=boardRect??=canvas.getBoundingClientRect();
+  const view=touchLayout&&player&&!touchControls.overview?mobileCamera(boardPoint(player.x,player.y),rect.width,rect.height):{x:0,y:0,width:TAVERN_VIEW.width,height:TAVERN_VIEW.height};
+  // Integer padding keeps subpixel camera sampling inside freshly painted art.
+  context.save();context.beginPath();context.rect(Math.floor(view.x)-2,Math.floor(view.y)-2,Math.ceil(view.width)+4,Math.ceil(view.height)+4);context.clip();
   floorLayer.draw(context,`${floorLayout}|${gameArtRevision()}`,layer=>drawTavernFloor(layer,state!.tavern));
-  const player = localPlayer();
   const nearby = player && nearbyStation(state.tavern, player);
   const label=player?interactionLabel(player,nearby):"Interact";
   const instruction=player&&nearby?`E · ${label}`:"Approach a counter";
@@ -1042,27 +1069,22 @@ function renderBoard(now = performance.now()) {
   if (touchLayout) {
     touchControls.setStatus(carryReadout.textContent??"Paws empty",label);
   }
-  const objects = [
-    ...state.tavern.stations.map((station) => ({ depth: stationBounds(station).bottom, draw: () =>
-      drawTavernCounter(context, state!.tavern, station, ingredientsSpritesheet, scrapBin, station === nearby, state!.orders, catBartenderSpritesheet) })),
-    ...Object.values(state.players).map((player) => ({ depth: player.y, draw: () => drawPlayer(player) }))
-  ].sort((left, right) => left.depth - right.depth);
-  objects.forEach((object) => object.draw());
-  drawBarGate(context, Object.values(state.players), state.pausedAt !== null, state.tavern.theme);
+  const players=Object.values(state.players);
+  stationScene.prepare(state.tavern,state.orders,gameArtRevision(),sceneUpdate);
+  stationScene.draw(context,players,(layer,station)=>drawTavernCounter(layer,state!.tavern,station,ingredientsSpritesheet,scrapBin,false,state!.orders,catBartenderSpritesheet),
+    drawPlayer,nearby,station=>drawStationHighlight(context,state!.tavern,station),view);
+  drawBarGate(context, players, state.pausedAt !== null, state.tavern.theme);
   drawHazard();
   if (state.hazard) { context.fillStyle = "rgba(119,38,47,.93)"; context.fillRect(300, 678, 488, 26); drawText(`⚠ ${state.hazard.message}`, 544, 695, "bold 12px system-ui", "white"); }
-  presentBoard(player);if(tutorial.isOpen)tutorial.refresh();
+  context.restore();presentBoard(player,rect,view);if(tutorial.isOpen)tutorial.refresh();
 }
-function presentBoard(player: Player | undefined) {
-  const rect = canvas.getBoundingClientRect();
-  const ratio = Math.min(2, window.devicePixelRatio || 1);
-  const width = touchLayout ? Math.max(1, Math.round(rect.width * ratio)) : TAVERN_VIEW.width;
-  const height = touchLayout ? Math.max(1, Math.round(rect.height * ratio)) : TAVERN_VIEW.height;
+function presentBoard(player: Player | undefined,rect:DOMRect,view:{x:number;y:number;width:number;height:number}) {
+  const size=touchLayout?mobileBackingSize(rect.width,rect.height,window.devicePixelRatio):TAVERN_VIEW;
+  const {width,height}=size;
   if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
   displayContext.imageSmoothingEnabled = false;
   displayContext.fillStyle = "#201828"; displayContext.fillRect(0, 0, width, height);
   if (touchLayout && player && !touchControls.overview) {
-    const view = mobileCamera(boardPoint(player.x, player.y), rect.width, rect.height);
     boardProjection={source:view,destination:{x:rect.x,y:rect.y,width:rect.width,height:rect.height}};
     displayContext.drawImage(worldCanvas, view.x, view.y, view.width, view.height, 0, 0, width, height);
   } else {

@@ -11,7 +11,9 @@ import { drawChoppingBoard, drawPreparationArt } from "./preparation-art";
 import { boardPoint, TAVERN_VIEW } from "./tavern-projection";
 import { COUNTER_RISE, drawDepthFloor, drawDepthWalls, drawDepthShadows, drawDepthCounter } from "./depth-tiles";
 import { drawDiningTile, drawDiningRug } from "./dining-art";
+import { furnitureArt } from "./furniture-art";
 export { boardPoint, TAVERN_VIEW } from "./tavern-projection";
+const reducedMotionPreference=window.matchMedia("(prefers-reduced-motion: reduce)");
 
 let gateAmount = 0;
 let gateFrameAt = 0;
@@ -19,7 +21,7 @@ export function drawBarGate(context: CanvasRenderingContext2D, players: Player[]
   const now = performance.now(), dt = Math.min(50, now - gateFrameAt); gateFrameAt = now;
   const target = players.some((player) => Math.abs(player.x - 8.5 * GRID_CELL_SIZE) < 110 && player.y > 5.5 * GRID_CELL_SIZE && player.y < 9.5 * GRID_CELL_SIZE) ? 1 : 0;
   if (!paused) gateAmount += (target - gateAmount) * Math.min(1, dt / 130);
-  const reducedMotion = document.body.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reducedMotion = document.body.dataset.reducedMotion === "true" || reducedMotionPreference.matches;
   const openness = reducedMotion ? target : gateAmount;
   const top = boardPoint(8.5 * GRID_CELL_SIZE, 6 * GRID_CELL_SIZE);
   const bottom = boardPoint(8.5 * GRID_CELL_SIZE, 9 * GRID_CELL_SIZE);
@@ -155,10 +157,7 @@ function drawDiningFurniture(context: CanvasRenderingContext2D, tavern: Tavern, 
       context.fillText(station.seatNumber === 2 ? "B" : "A", x, b.y - 4);
     }
   }
-  if (highlighted) {
-    context.strokeStyle = "#fff0c7"; context.lineWidth = 2;
-    context.strokeRect(a.x + 2, a.y + 1, b.x - a.x - 4, b.y - a.y - 2);
-  }
+  if (highlighted) drawStationHighlight(context,tavern,station);
 }
 
 export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tavern, station: Station,
@@ -240,8 +239,16 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
     context.fillStyle = "#211a32d9"; context.fillRect(x - 27, b.y - 13, 54, 10);
     context.fillStyle = "#ffedc9"; context.fillText(station.kind === "chop" ? "CHOP" : station.label.toUpperCase(), x, b.y - 6);
   }
-  if (highlighted) {
-    context.strokeStyle = "#ffe7a2"; context.lineWidth = 2;
-    context.strokeRect(a.x + 2, a.y + 2 - rise, 54, b.y - a.y - 4);
+  if (highlighted) drawStationHighlight(context,tavern,station);
+}
+
+export function drawStationHighlight(context:CanvasRenderingContext2D,tavern:Tavern,station:Station){
+  const bounds=stationBounds(station),a=boardPoint(bounds.left,bounds.top),b=boardPoint(bounds.right,bounds.bottom);
+  context.lineWidth=2;
+  if((station.kind==="serve"&&station.serviceStyle!=="bar")||station.kind==="seat"){
+    context.strokeStyle="#fff0c7";context.strokeRect(a.x+2,a.y+1,b.x-a.x-4,b.y-a.y-2);
+  }else{
+    const rise=furnitureArt(tavern.theme)?COUNTER_RISE:0;
+    context.strokeStyle="#ffe7a2";context.strokeRect(a.x+2,a.y+2-rise,54,b.y-a.y-4);
   }
 }

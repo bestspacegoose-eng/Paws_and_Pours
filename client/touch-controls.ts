@@ -14,6 +14,7 @@ export class TouchControls {
   private readonly carry: HTMLElement;
   private readonly interactButton: HTMLButtonElement;
   private pointer?: number;
+  private padRect?:DOMRect;
   private enabled = false;
   overview = false;
   constructor(mount: HTMLElement, private readonly move: (input: Vec) => void,
@@ -26,24 +27,29 @@ export class TouchControls {
     mount.append(this.root); this.pad = this.root.querySelector(".touch-pad")!; this.knob = this.root.querySelector(".touch-pad-knob")!;
     this.carry=this.root.querySelector(".touch-carry")!;this.interactButton=this.root.querySelector(".touch-interact")!;
     const point = (event: PointerEvent) => {
-      const rect = this.pad.getBoundingClientRect(), radius = rect.width / 2;
+      const rect = this.padRect??=this.pad.getBoundingClientRect(), radius = rect.width / 2;
       const vector = joystickVector(event.clientX - rect.left - radius, event.clientY - rect.top - radius, radius * .75);
       this.move(vector); this.knob.style.transform = `translate(${vector.x * 28}px,${vector.y * 28}px)`;
     };
     this.pad.addEventListener("pointerdown", event => {
       if (!this.enabled || this.pointer !== undefined) return;
-      event.preventDefault(); this.pointer = event.pointerId; this.pad.setPointerCapture(event.pointerId); point(event);
+      event.preventDefault(); this.padRect=undefined;this.pointer = event.pointerId; this.pad.setPointerCapture(event.pointerId); point(event);
     });
     this.pad.addEventListener("pointermove", event => { if (event.pointerId === this.pointer && this.enabled) point(event); });
-    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) this.pad.addEventListener(name, () => this.reset());
+    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) this.pad.addEventListener(name, event => {if((event as PointerEvent).pointerId===this.pointer)this.reset();});
     this.root.querySelector(".touch-interact")!.addEventListener("click", () => { if (this.enabled) interact(); });
     const map = this.root.querySelector<HTMLButtonElement>(".touch-map")!;
     map.onclick = () => this.setOverview(!this.overview);
     window.addEventListener("blur", () => this.reset());
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.reset(); });
     window.addEventListener("orientationchange", () => this.reset());
+    window.addEventListener("resize",()=>{this.padRect=undefined;});
   }
-  reset() { this.pointer = undefined; this.move({ x: 0, y: 0 }); this.knob.style.transform = "translate(0,0)"; }
+  reset() {
+    const pointer=this.pointer;this.pointer=undefined;this.padRect=undefined;
+    if(pointer!==undefined&&this.pad.hasPointerCapture(pointer))this.pad.releasePointerCapture(pointer);
+    this.move({ x: 0, y: 0 }); this.knob.style.transform = "translate(0,0)";
+  }
   setOverview(value:boolean) {
     this.overview=value;const map=this.root.querySelector<HTMLButtonElement>(".touch-map")!;
     map.setAttribute("aria-pressed",String(value));map.textContent=value?"Follow":"Map";

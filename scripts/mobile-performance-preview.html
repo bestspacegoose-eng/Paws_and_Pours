@@ -1,0 +1,53 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mobile walking rendering verification</title>
+<style>body{background:#201828;color:#eadac4;font:14px/1.5 system-ui;margin:18px}h1{font-size:24px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}canvas{width:100%;height:auto;image-rendering:pixelated}output{display:block;white-space:pre-wrap}@media(max-width:700px){.pair{grid-template-columns:1fr}}</style>
+<h1>Mobile walking rendering verification</h1><p>Full-room drawing compared with reusable station rows. The same artwork, guests, items, highlights, and player depth are used.</p><output id="status">Loading artwork…</output><div id="scenes"></div><output id="results"></output>
+<script type="module">
+import { loadGameAssets,gameArtRevision } from '/client/game-assets.ts';
+import { StationScene } from '/client/station-scene.ts';
+import { CanvasLayerCache,tavernLayoutKey } from '/client/canvas-cache.ts';
+import { makeTavern,TAVERN_THEMES,stationBounds,nextCustomerSeat,gridCellCenter } from '/shared/game.ts';
+import { drawTavernFloor,drawTavernCounter,drawStationHighlight,drawBarGate,boardPoint,TAVERN_VIEW } from '/client/tavern-renderer.ts';
+import { PLAYER_FRAMES } from '/client/sprite-frames.ts';
+const load=async source=>{const i=new Image();i.src=source;await i.decode();return i;};
+await loadGameAssets();
+const [ingredients,bin,cats]=await Promise.all([load('/client/assets/tilemap/ingredients-spritesheet.png'),load('/client/assets/props/scrap-bin.png'),load('/client/assets/tilemap/cat-bartender-spritesheet.png')]);
+const results=[];
+for(const theme of TAVERN_THEMES){
+  const tavern=makeTavern(42);tavern.theme=theme;const orders=[];
+  for(let n=0;n<8;n++){const seat=nextCustomerSeat(tavern,orders,n);orders.push({id:`guest-${n}`,recipeId:'tuna',tableId:seat.tableId,seatId:seat.id,customer:'Guest',patience:60,maxPatience:80});}
+  const counters=tavern.stations.filter(s=>s.kind==='counter');counters[0].drink={recipeId:'catnip',quality:1};counters[1].counterIngredient={ingredient:'chopped-lime',quality:1};
+  const selected=counters[1],players=[{id:'one',...gridCellCenter(2,3)},{id:'two',...gridCellCenter(12,3)},{id:'three',...gridCellCenter(5,8)}];
+  const section=document.createElement('section'),h=document.createElement('h2');h.textContent=theme;section.append(h);
+  const pair=document.createElement('div');pair.className='pair';section.append(pair);document.querySelector('#scenes').append(section);
+  const canvases=['Full-room redraw','Cached rows'].map(label=>{const c=document.createElement('canvas'),p=document.createElement('p');p.textContent=label;c.width=TAVERN_VIEW.width;c.height=TAVERN_VIEW.height;pair.append(p,c);return c;});
+  // Put each caption over its corresponding canvas.
+  pair.style.gridTemplateColumns='repeat(2,minmax(0,1fr))';for(const [index,c] of canvases.entries()){const figure=document.createElement('div');figure.append(c.previousSibling,c);pair.append(figure);}
+  const contexts=canvases.map(c=>c.getContext('2d'));
+  const floor=new CanvasLayerCache(TAVERN_VIEW.width,TAVERN_VIEW.height),key=tavernLayoutKey(tavern),scene=new StationScene();scene.prepare(tavern,orders,gameArtRevision(),1);
+  const drawPlayer=(ctx,p)=>{const foot=boardPoint(p.x,p.y),f=PLAYER_FRAMES.down[0];ctx.drawImage(cats,f.x,f.y,f.width,f.height,Math.round(foot.x-30),Math.round(foot.y-72),60,72);};
+  let fullPaints=0,rowPaints=0;
+  const render=(ctx,cached)=>{
+    ctx.imageSmoothingEnabled=false;floor.draw(ctx,key,c=>drawTavernFloor(c,tavern));
+    if(cached)scene.draw(ctx,players,(layer,s)=>{rowPaints++;drawTavernCounter(layer,tavern,s,ingredients,bin,false,orders,cats);},p=>drawPlayer(ctx,p),selected,s=>drawStationHighlight(ctx,tavern,s),{x:0,y:0,width:1088,height:712});
+    else{
+      const objects=[...tavern.stations.map(s=>({depth:stationBounds(s).bottom,draw:()=>{fullPaints++;drawTavernCounter(ctx,tavern,s,ingredients,bin,s===selected,orders,cats);}})),...players.map(p=>({depth:p.y,draw:()=>drawPlayer(ctx,p)}))].sort((a,b)=>a.depth-b.depth);
+      objects.forEach(o=>o.draw());
+    }
+    drawBarGate(ctx,[],true,theme);
+  };
+  // Walking uses warm textures. Warm both GPU paths before comparing; initial
+  // upload/batching can otherwise dominate a first-frame readback.
+  for(let warm=0;warm<3;warm++){render(contexts[0],false);render(contexts[1],true);}
+  const a=contexts[0].getImageData(0,0,1088,712).data,b=contexts[1].getImageData(0,0,1088,712).data;
+  let changedPixels=0,significantPixels=0,maxDelta=0;const samples=[];
+  for(let i=0;i<a.length;i+=4){let d=0;for(let k=0;k<4;k++)d=Math.max(d,Math.abs(a[i+k]-b[i+k]));if(d){changedPixels++;if(d>12){significantPixels++;if(samples.length<8)samples.push({x:(i/4)%1088,y:Math.floor(i/4/1088),direct:Array.from(a.slice(i,i+4)),cached:Array.from(b.slice(i,i+4))});}maxDelta=Math.max(maxDelta,d);}}
+  const scratch=document.createElement('canvas');scratch.width=1088;scratch.height=712;const ctx=scratch.getContext('2d');
+  const measure=cached=>{const start=performance.now();for(let frame=0;frame<120;frame++)render(ctx,cached);ctx.getImageData(0,0,1,1);return Math.round((performance.now()-start)*100)/100;};
+  fullPaints=0;rowPaints=0;const directMs=measure(false),cachedMs=measure(true);
+  const cachedStationPaints=rowPaints;rowPaints=0;
+  const item=counters[0];item.counterIngredient={ingredient:'lime',quality:1};delete item.drink;scene.prepare(tavern,orders,gameArtRevision(),2);render(ctx,true);
+  results.push({theme,changedPixels,significantPixels,maxDelta,samples,frames:120,directMs,cachedMs,fullStationPaints:fullPaints,cachedStationPaints,cacheBytes:scene.surfacePixels*4,itemUpdatePainted:rowPaints>0,itemUpdateStationPaints:rowPaints});
+}
+document.querySelector('#status').textContent=results.every(r=>r.significantPixels<=4&&r.maxDelta<=24&&r.changedPixels<20000)?'PASS: complete scenes preserved; minor alpha-compositing differences are recorded below.':'CHECK: rendering differences require inspection.';
+document.querySelector('#results').textContent=JSON.stringify(results,null,2);
+</script></html>

@@ -1,7 +1,7 @@
 import type { Tavern } from "../shared/game";
 
 export function tavernLayoutKey(tavern: Tavern) {
-  return JSON.stringify([tavern.seed,tavern.theme,tavern.stations.map(s=>[s.id,s.kind,s.x,s.y,s.widthCells])]);
+  return JSON.stringify([tavern.seed,tavern.theme,tavern.stations.map(s=>[s.id,s.kind,s.x,s.y,s.gridX,s.gridY,s.widthCells,s.serviceStyle])]);
 }
 
 // One offscreen surface, not an ever-growing map of rooms and themes.
