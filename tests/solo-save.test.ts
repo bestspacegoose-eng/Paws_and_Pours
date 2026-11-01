@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initialState, PLAYER_SPAWNS, createMixingSession, type Player } from "../shared/game.js";
+import { INGREDIENTS, CHOPPING_RECIPES, initialState, PLAYER_SPAWNS, createMixingSession, transferCounterItem, type Player } from "../shared/game.js";
 import { captureSoloSnapshot, restoreSoloSnapshot } from "../shared/solo-save.js";
 import { loadSettings, saveSettings, defaultSettings, loadSoloSlots, saveSoloSlot } from "../client/preferences.js";
 
@@ -39,6 +39,39 @@ test("corrupt saves are rejected and stored furniture coordinates are not truste
   assert.notEqual(restoreSoloSnapshot(snapshot, "NEW", player)!.tavern.stations[0].x, -9999);
   snapshot.state.health = NaN;
   assert.equal(restoreSoloSnapshot(snapshot, "NEW", player), undefined);
+});
+
+test("all countertop ingredients survive save and resume with no overlap or lost chopping quality", () => {
+  for (const ingredient of [...INGREDIENTS, ...CHOPPING_RECIPES.map(recipe => `chopped-${recipe.ingredients[0]}`)]) {
+    const state = initialState("OLD", player.id, 12);
+    state.players[player.id] = { ...player, carrying: [] };
+    const counter = state.tavern.stations.find(station => station.kind === "counter")!;
+    counter.counterIngredient = { ingredient, quality: .79 };
+    const restored = restoreSoloSnapshot(captureSoloSnapshot(state, player.id), "NEW", { ...player, id: "new" })!;
+    const stored = restored.tavern.stations.find(station => station.id === counter.id)!;
+    assert.deepEqual(stored.counterIngredient, { ingredient, quality: .79 });
+    assert.equal(stored.drink, undefined);
+    assert.equal(transferCounterItem(restored.players.new, stored), "picked-up");
+    assert.deepEqual(restored.players.new.carrying, [ingredient]);
+    if (ingredient.startsWith("chopped-")) assert.equal(restored.players.new.ingredientQualities?.[ingredient], .79);
+    assert.equal(stored.counterIngredient, undefined);
+  }
+});
+
+test("save restoration cannot create overlapping drinks and ingredients or import invalid counter items", () => {
+  const state = initialState("OLD", player.id, 12);
+  state.players[player.id] = { ...player, carrying: [] };
+  const counters = state.tavern.stations.filter(station => station.kind === "counter");
+  counters[0].drink = { recipeId: "catnip", quality: .9 };
+  counters[0].counterIngredient = { ingredient: "lime", quality: 1 };
+  counters[1].counterIngredient = { ingredient: "fake-lime", quality: 1 };
+  counters[2].counterIngredient = { ingredient: "chopped-lime", quality: NaN };
+  const restored = restoreSoloSnapshot(captureSoloSnapshot(state, player.id), "NEW", player)!;
+  for (const counter of counters.slice(0, 3)) {
+    const stored = restored.tavern.stations.find(station => station.id === counter.id)!;
+    assert.equal(stored.counterIngredient, undefined);
+  }
+  assert.deepEqual(restored.tavern.stations.find(station => station.id === counters[0].id)?.drink, { recipeId: "catnip", quality: .9 });
 });
 
 test("local slots preserve independent saves and migrate legacy profiles without overwriting them", () => {

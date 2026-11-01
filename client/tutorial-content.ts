@@ -56,7 +56,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     body:"This readout shows your ingredients or finished drink. You can carry three ingredients at a time. Once you have a recipe's full set, head to either mixing counter.",
     tip:"You cannot pick up another finished drink while your paws are full." },
   { id:"chop", scene:"chop", title:"A little prep goes a long way.", target:["station:chop"],
-    body:"The cleaver badge means chop first. Bring the marked tuna, lime, or kelp here. Interact to open the chopping minigame, follow the beat, then interact again to pick up the pieces. Mixing happens at a mixing counter." },
+    body:"The cleaver badge means chop first. Bring a marked ingredient to this board. Interact to open the chopping minigame, follow the beat, then interact again to pick up the pieces. Mixing happens at a mixing counter." },
   { id:"mixer", scene:"mixer", title:"Make a little tavern magic.", target:["station:mix"],
     body:"Bring a recipe's three ingredients here and interact to open your workbench. In multiplayer, the other bartenders keep working while you prepare the drink." },
   { id:"ingredients", scene:"ingredients", title:"First, add your ingredients.", target:[".mixing-actions"],
@@ -68,13 +68,13 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     body:"Hold the tool button until the moving fill reaches the green sweet spot, then release it to finish the action. A spoon stirs, a shaker shakes, and a pourer fills the glass.",
     tip:"Better timing makes a better drink and can earn a better tip." },
   { id:"chop-beat", scene:"chop-beat", title:"Chop to the beat.", target:[".tool-timing"],
-    body:"All cutting happens at the chopping board, including tuna. Tap Chop once to begin, then wait for the green beat window before each next tap. Pick up the finished pieces before mixing." },
+    body:"Prepare each cleaver-marked ingredient at the chopping board. Tap Chop once to begin, then wait for the green beat window before each next tap. Pick up the finished pieces before mixing." },
   { id:"paw-beat", scene:"paw-beat", title:"Left paw, right paw.", target:[".mixing-actions"],
     body:"Paw-mixing recipes use the same beat window, but alternate Left paw and Right paw. Follow the highlighted button. Some drinks combine two preparation steps before they are finished." },
   { id:"serve", scene:"serve", title:"Make your guest feel at home.", target:["station:table-1"],
     body:"Bring your finished drink to the matching table, chair, or bar counter and interact. A and B are separate guests. Serving one leaves the other's order; a wrong delivery keeps your drink." },
   { id:"handoff", scene:"handoff", title:"A counter can lend a paw.", target:["station:counter-4-3"],
-    body:"Use Place drink to leave a finished drink on a free work surface. Use Pick up drink to collect it. Crewmates can collect it too, with its quality preserved." },
+    body:"Interact at a free counter to leave a drink or your last collected ingredient. Each counter holds one item. Interact again to collect it, or leave it for a crewmate. Chopped ingredients keep their quality." },
   { id:"tidy", scene:"tidy", title:"A tidy tavern is a happy tavern.", target:["station:mop", "station:trash"],
     body:"When a hazard appears, interact at the cleaning sink to clear it. You do not need to stand on the spill. The nearby scrap bin discards ingredients or a drink when you need a fresh start.",
     tip:"Discarding something does not cancel a guest's order." },
@@ -109,7 +109,8 @@ export function tutorialState(playerId: string, profile: { name:string; role:Cat
   state.orders = [{ id:"tutorial-order", tableId:"table-1", seatId:"table-1-seat", recipeId:"catnip",
     customer:"Aunt Juniper", patience:80, maxPatience:80 }];
   if (["carry","mixer"].includes(scene)) player.carrying = ["catnip","lime","fizz"];
-  if (scene === "chop") player.carrying = ["tuna"];
+  if (scene === "chop") player.carrying = ["lime"];
+  if (["chop","chop-beat"].includes(scene)) state.orders[0].recipeId = "lunar-fizz";
   if (["serve","handoff"].includes(scene)) player.drink = "catnip";
   const recipeId = scene === "chop-beat" ? "lunar-fizz" : scene === "paw-beat" ? "kelp-swirl" : "catnip";
   if (["ingredients","timed","paw-beat"].includes(scene)) {

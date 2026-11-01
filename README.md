@@ -44,7 +44,7 @@ npm test
 - Square one-cell counter primitives with shared client/server collision and seven visual variants per tavern theme.
 - Three-minute shifts and a server-wide pause: any player can pause or resume; clocks, orders, movement, and mixing deadlines freeze together.
 - Seeded tavern themes on a 16 × 11 elevated floor plan, with connected perimeter counters, two preparation islands, and generous aisles.
-- Finished drinks can be placed on counters for teammates, preserving their recipe and preparation quality. Orders and ingredient illustrations stay in a dedicated top strip.
+- All raw and chopped ingredients can be placed on empty counters for teammates, one item per counter. Finished drinks use the same slot, so ingredients and drinks never stack or overwrite each other. Chopping and drink quality are preserved, including in solo saves. Orders and ingredient illustrations stay in a dedicated top strip.
 - Two-step menu: the exterior tavern title screen contains solo/multiplayer controls, local saves, and audio/display/brightness settings. The interior bartender screen shows one customizable cat in solo or four live player seats in multiplayer. Local saves are disabled in multiplayer; at least two connected, ready players are required before the host starts. Editing a multiplayer cat returns that player to Choosing.
 - Load / create local save opens three device-local slots, followed by bartender selection. Saves restore the shift paused, including orders, hands, counter items, and preparation progress. Legacy profiles remain available but cannot reconstruct previously unsaved runs.
 - Separate Cozy, Haunted, and Pirate furniture atlases, four usable bar stools, two guest chairs per dining table, simple lavender rugs, and counters with narrow chair collision bounds. Ingredients stay in the kitchen, clear of guest service.
@@ -56,13 +56,13 @@ npm test
 
 Choose **How to play** on the title screen for a skippable, story-led opening tour. It appears automatically before your first new solo shift and can be replayed from the solo pause menu. Existing saves load directly. The tour uses a separate preview, so clocks, saved progress, unfinished drinks, and multiplayer rooms are unaffected. See [`docs/TUTORIAL.md`](docs/TUTORIAL.md).
 
-On phones and tablets, drag the movement pad and use the single contextual action button to gather, mix, serve, place, or pick up drinks. Its label changes with the nearby station and your carried item. **Map** shows the full tavern; **Follow** returns to the following camera. Touch controls support portrait and landscape.
+On phones and tablets, drag the movement pad and use the single contextual action button to gather, mix, serve, place, or pick up ingredients and drinks. Its label changes with the nearby station and your carried item. **Map** shows the full tavern; **Follow** returns to the following camera. Touch controls support portrait and landscape.
 
 - `WASD` or arrow keys: move your cat.
-- `E`: interact at a station, including placing or retrieving a drink at a preparation, ingredient, or mixing counter.
-- `Q`: optional shortcut for placing or picking up a finished drink. Occupied hands or surfaces never overwrite a drink.
+- `E`: interact at a station. On a free counter, place your finished drink or your most recently collected ingredient; on an occupied counter, pick up its item if there is room in your paws. Dedicated ingredient and mixing stations still support finished-drink handoffs.
+- `Q`: optional shortcut for the same counter handoff. Each counter holds exactly one ingredient or drink; occupied surfaces never overwrite or stack items.
 - `Escape` or **Menu · Pause**: pause the room for everyone. The pause menu contains the illustrated recipe book and local display/audio settings.
-- Pick up three ingredients, open the matching recipe at the mixer, then add them in any order. For tuna recipes, bring raw tuna to the chopping board, press E to chop, and E again to pick up the pieces. The cleaver badge identifies prepared tuna in orders and recipes. Hold timed tools near their target duration; for chopping and hand mixing, tap in rhythm with the highlighted beat.
+- Gather the three ingredients shown on the ticket. Prepare any cleaver-marked ingredient at the chopping board: press E, chop to the beat, then press E again to collect the pieces. Bring the prepared ingredients to a mixing counter and add them in any order. Hold timed tools near their target duration; alternate paws to the highlighted beat for hand mixing.
 - The mixing workspace is private to the active player; the shared online shift continues for everyone else unless anyone pauses the room. An active tool hold or beat sequence restarts after resuming without a mistake.
 - `Cancel` leaves the workspace and keeps the gathered ingredients. Three mistakes or a timeout spoils them.
 - Use the mop bucket to clear a hazard.

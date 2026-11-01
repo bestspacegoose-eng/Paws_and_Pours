@@ -7,12 +7,12 @@ import { Server } from "socket.io";
 import { restoreSoloSnapshot } from "../shared/solo-save.js";
 import { applyKeepsake, keepsakeEffects, keepsakeSummary, consumeRecipeIngredients, servingReward } from "../shared/keepsakes.js";
 import { openChoppingBoard, chooseChoppingIngredient, finishChopping } from "../shared/chopping.js";
-import { usesDrinkHandoff } from "../shared/interaction.js";
+import { usesCounterHandoff } from "../shared/interaction.js";
 import {
   applyMissedOrderPenalty, createMixingSession, expectedMixingStep, type CatRole, type FacingDirection, type GameState,
   initialState, makeOrder, makeTavern, MIXING_MAX_MISTAKES, mixingQuality,
   moveWithCounterCollisions, mulberry32, pauseShift, recipeById, recipesForCarriedIngredients, resumeShift, seededUpgrades,
-  nearbyStation, transferCounterDrink, RECIPES, PLAYER_SPAWNS, addMixingIngredient, rawIngredient, nextCustomerSeat, servingOrderIndex,
+  nearbyStation, transferCounterItem, ingredientLabel, RECIPES, PLAYER_SPAWNS, addMixingIngredient, rawIngredient, nextCustomerSeat, servingOrderIndex,
   rhythmTimingAccepted, rhythmTimingQuality, shiftDurationForRound, toolTimingAccepted, toolTimingQuality,
   TAVERN_THEMES, type KeepsakeId, type Hazard, type MixingSession, type MixingTool, type Player, type RhythmAction, type Station
 } from "../shared/game.js";
@@ -46,13 +46,15 @@ function playerFor(socketId: string, state: GameState) {
 }
 function setMessage(state: GameState, message: string) { state.message = message; }
 function counterHandoff(state: GameState, player: Player, station: Station) {
-  const result = transferCounterDrink(player, station, keepsakeEffects(state.activeKeepsake).carryCapacity);
+  const ingredient = station.counterIngredient?.ingredient ?? (!station.drink && !player.drink ? player.carrying.at(-1) : undefined);
+  const item = ingredient ? ingredientLabel(ingredient) : "drink";
+  const result = transferCounterItem(player, station, keepsakeEffects(state.activeKeepsake).carryCapacity);
   const messages = {
-    placed: `${player.name} left a drink on the counter for the crew.`,
-    "picked-up": `${player.name} picked up the prepared drink.`,
+    placed: `${player.name} left ${item} on the counter for the crew.`,
+    "picked-up": `${player.name} picked up ${item}.`,
     occupied: "That surface or your paws are full. Use an empty counter first.",
-    empty: "Finish mixing a drink, then set it here for another bartender.",
-    unavailable: "Use a preparation counter to set down a drink."
+    empty: "Bring an ingredient or a finished drink to leave on this counter.",
+    unavailable: "Use an empty counter to set down ingredients or drinks."
   };
   setMessage(state, messages[result]);
 }
@@ -270,7 +272,7 @@ io.on("connection", (socket) => {
     if (state.mixing[player.id] || state.mixingChoices?.[player.id]) return;
     const nearby = nearbyStation(state.tavern, player);
     if (!nearby) return setMessage(state, "Walk up to a brightly colored station, then press E.");
-    if (usesDrinkHandoff(player, nearby)) {
+    if (usesCounterHandoff(player, nearby)) {
       counterHandoff(state, player, nearby); broadcast(state); return;
     }
     if (nearby.kind === "pantry") {
@@ -346,7 +348,7 @@ io.on("connection", (socket) => {
     if (!state || !player || state.phase !== "shift" || state.pausedAt !== null || state.mixing[player.id] || state.mixingChoices?.[player.id]) return;
     const station = nearbyStation(state.tavern, player);
     if (station) counterHandoff(state, player, station);
-    else setMessage(state, "Move beside a counter to place or pick up a drink.");
+    else setMessage(state, "Move beside a counter to place or pick up an ingredient or drink.");
     broadcast(state);
   });
 

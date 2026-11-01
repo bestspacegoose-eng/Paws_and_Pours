@@ -29,7 +29,7 @@ export function openChoppingBoard(state:GameState,player:Player,station:Station,
   }
   if(player.drink){state.message="Set down or serve your drink before chopping.";return;}
   const choices=CHOPPING_RECIPES.filter(recipe=>player.carrying.includes(recipe.ingredients[0]));
-  if(!choices.length){state.message="Bring tuna, lime, or kelp to the chopping board. The cleaver badge marks ingredients that need chopping.";return;}
+  if(!choices.length){state.message="Bring a cleaver-marked ingredient to the chopping board. Chop to the beat, then pick up the pieces.";return;}
   if(choices.length>1){state.mixingChoices ??={};state.mixingChoices[player.id]=choices.map(recipe=>recipe.id);state.message="Choose an ingredient to chop. The others stay in your paws.";}
   else {state.mixing[player.id]=createChoppingSession(player.id,choices[0].ingredients[0],station.id,now);state.message=`${player.name} is chopping ${choices[0].ingredients[0]}.`;}
   player.moving=false;

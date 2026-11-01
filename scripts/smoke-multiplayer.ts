@@ -125,6 +125,35 @@ async function main() {
       }
       assert.equal(nearbyStation(hostState!.tavern, hostState!.players[playerId])?.id, station.id);
     };
+    smokeStage = "simultaneous ingredient counter placement";
+    const limeShelf = hostState!.tavern.stations.find(station => station.kind === "pantry" && station.ingredient === "lime")!;
+    const emptyCounter = hostState!.tavern.stations.find(station => station.id === "counter-4-3")!;
+    for (const [client, playerId] of [[host, hostToken], [guest, guestToken]] as const) {
+      await approachStation(limeShelf, client, playerId);
+      client.emit("interact");
+      await waitForState(host, () => hostState, state => state.players[playerId].carrying.includes("lime"));
+      await approachStation(emptyCounter, client, playerId);
+    }
+    host.emit("interact"); guest.emit("interact");
+    const oneCounterItem = (state: GameState) => {
+      const counter = state.tavern.stations.find(station => station.id === emptyCounter.id)!;
+      return counter.counterIngredient?.ingredient === "lime" && !counter.drink && /full/.test(state.message) &&
+        state.players[hostToken].carrying.length + state.players[guestToken].carrying.length === 1;
+    };
+    await waitForState(host, () => hostState, oneCounterItem);
+    await waitForState(guest, () => guestState, oneCounterItem);
+    assert.match(guestState!.message, /full/);
+    const collector = hostState!.players[hostToken].carrying.length ? guest : host;
+    collector.emit("interact");
+    await waitForState(host, () => hostState, state => !state.tavern.stations.find(station => station.id === emptyCounter.id)!.counterIngredient &&
+      state.players[hostToken].carrying.includes("lime") && state.players[guestToken].carrying.includes("lime"));
+    // Restore empty hands before the existing end-to-end drink preparation checks.
+    for (const [client, playerId] of [[host, hostToken], [guest, guestToken]] as const) {
+      await approachStation(hostState!.tavern.stations.find(station => station.kind === "trash")!, client, playerId);
+      client.emit("interact");
+      await waitForState(host, () => hostState, state => state.players[playerId].carrying.length === 0);
+    }
+
     const collectRecipe = async (recipeId: string) => {
       const selected = recipeById(recipeId);
       for (const ingredient of selected.ingredients) {

@@ -20,7 +20,7 @@ const lessons:Record<string,[string,string,string?]> = {
   "chop-beat":["Chop to the beat","Tap once to start. Tap again in each green window. Pick up the finished pieces.","Tap in the green window."],
   "paw-beat":["Alternate paws","Follow the highlighted paw: left, right, left, right. Tap in the green window.","Alternate left and right."],
   serve:["Serve the right guest","Bring the drink to its table, chair or bar number. Tap Serve.","Tap Serve by the guest."],
-  handoff:["Place and pick up","Tap Place drink on a free counter. Tap again to pick it up. A friend can collect it too.","Tap Place, then Pick up."],
+  handoff:["Place and pick up","Leave a drink or your last ingredient on a free counter. One item per counter. Tap again to collect it.","Tap Place, then Pick up."],
   tidy:["Clean up","Use the cleaning sink to clear spills. The scrap bin discards what's in your paws.","Tap Clean at the sink."],
   pause:["Take a breath","Menu · Pause freezes all clocks. Resume continues the shift for everyone.","Try Resume or Menu · Pause."],
   book:["Recipe book","Turn pages for ingredients and preparation. The back button returns to Pause."],

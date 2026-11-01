@@ -2,7 +2,7 @@ import { takeChoppedIngredient } from "../shared/chopping.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyKeepsake, isKeepsakeId, keepsakeEffects, remainingIngredients, servingReward } from "../shared/keepsakes.js";
-import { initialState, gridCellCenter, makeTavern, makeOrder, mulberry32, RECIPES, recipesForCarriedIngredients, seededUpgrades, transferCounterDrink, PLAYER_SPAWNS, TAVERN_THEMES, type KeepsakeId, type Player } from "../shared/game.js";
+import { initialState, gridCellCenter, makeTavern, makeOrder, mulberry32, RECIPES, recipesForCarriedIngredients, seededUpgrades, transferCounterItem, PLAYER_SPAWNS, TAVERN_THEMES, type KeepsakeId, type Player } from "../shared/game.js";
 import { playerMoveSpeed, movementTarget } from "../shared/movement.js";
 import { captureSoloSnapshot, restoreSoloSnapshot } from "../shared/solo-save.js";
 import { THEME_TILES } from "../client/theme-tiles-layout.js";
@@ -48,8 +48,8 @@ test("Bag capacity applies to prepared tuna and carries spare ingredients throug
   const cat={...player,carrying:["kelp","tonic","cream"]};chop.preparedIngredient="chopped-tuna";
   assert.equal(takeChoppedIngredient(cat,chop),"full");assert.equal(takeChoppedIngredient(cat,chop,4),"picked-up");assert.equal(cat.carrying.length,4);
   cat.carrying=["cream"];counter.drink={recipeId:"tuna",quality:.93};
-  assert.equal(transferCounterDrink(cat,counter),"occupied");assert.equal(transferCounterDrink(cat,counter,4),"picked-up");assert.deepEqual(cat.carrying,["cream"]);
-  assert.equal(transferCounterDrink(cat,counter,4),"placed");assert.equal(counter.drink?.quality,.93);
+  assert.equal(transferCounterItem(cat,counter),"occupied");assert.equal(transferCounterItem(cat,counter,4),"picked-up");assert.deepEqual(cat.carrying,["cream"]);
+  assert.equal(transferCounterItem(cat,counter,4),"placed");assert.equal(counter.drink?.quality,.93);
 });
 test("active keepsakes and four-ingredient bags survive fresh-identity solo restore without healing twice",()=>{
   for(const id of ["swift-paws","patient-patrons","lucky-whiskers","bottomless-bag","nine-lives"] as KeepsakeId[]){

@@ -3,10 +3,10 @@ import {
   addMixingIngredient, createMixingSession, expectedMixingStep, mixingQuality,
   nearbyStation, pauseShift, recipeById, recipesForCarriedIngredients, resumeShift,
   rhythmTimingAccepted, rhythmTimingQuality, servingOrderIndex, toolTimingAccepted,
-  toolTimingQuality, transferCounterDrink, type GameState, type MixingSession
+  toolTimingQuality, transferCounterItem, type GameState, type MixingSession
 } from "../shared/game";
 import { applyKeepsake, isKeepsakeId, keepsakeEffects, keepsakeSummary, consumeRecipeIngredients, servingReward } from "../shared/keepsakes";
-import { usesDrinkHandoff } from "../shared/interaction";
+import { usesCounterHandoff } from "../shared/interaction";
 
 // Isolated rehearsal: the real recipes and timing rules, no socket, save writes,
 // shift clock, guest expiry, or automatic tutorial advancement.
@@ -76,9 +76,9 @@ export class TutorialPractice {
     const station = nearbyStation(state.tavern, player);
     if (!station) { state.message = "Walk closer to a station, then interact."; return; }
     const capacity = keepsakeEffects(state.activeKeepsake).carryCapacity;
-    if (action === "counter-drink" || usesDrinkHandoff(player, station)) {
-      const result = transferCounterDrink(player, station, capacity);
-      state.message = result === "placed" ? "Drink placed. Interact again to pick it up." : result === "picked-up" ? "Drink picked up, with its quality preserved." : "Find an empty preparation surface for your drink.";
+    if (action === "counter-drink" || usesCounterHandoff(player, station)) {
+      const result = transferCounterItem(player, station, capacity);
+      state.message = result === "placed" ? "Item placed. Interact again to pick it up." : result === "picked-up" ? "Item picked up, with its quality preserved." : "Use a free counter and leave room in your paws to pick items up.";
     } else if (station.kind === "pantry" && station.ingredient) {
       if (player.carrying.includes(station.ingredient)) state.message = "You already have that ingredient. Try another shelf.";
       else if (player.carrying.length >= capacity) state.message = "Your paws are full. Bring the ingredients to a mixing counter.";

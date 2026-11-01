@@ -7,7 +7,7 @@ import { drawRecipeDrink } from "./drink-art";
 import decorUrl from "./assets/tilemap/cozy-decor-atlas.png";
 import toolsUrl from "./assets/tilemap/mixing-tools-spritesheet.png";
 
-import { drawPreparationArt } from "./preparation-art";
+import { drawChoppingBoard, drawPreparationArt } from "./preparation-art";
 import { boardPoint, TAVERN_VIEW } from "./tavern-projection";
 import { COUNTER_RISE, drawDepthFloor, drawDepthWalls, drawDepthShadows, drawDepthCounter } from "./depth-tiles";
 import { drawDiningTile, drawDiningRug } from "./dining-art";
@@ -205,14 +205,15 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
     context.fillStyle = "#ddc0a8"; context.fillRect(b.x - 10, center.y - 3, 4, 6);
   }
   if (station.kind === "chop") {
-    drawPreparationArt(context, 0, x, y - 2, 43);
+    drawChoppingBoard(context, x, y - 2, 43, Boolean(station.preparedIngredient));
     if (station.preparedIngredient) {
-      context.fillStyle = "#ecd7b6"; context.fillRect(x - 15, y - 14, 30, 22);
-      drawIngredientIcon(context, ingredients, station.preparedIngredient, x, y - 2, 29);
+      drawIngredientIcon(context, ingredients, station.preparedIngredient, x, y - 2, 26);
     }
   } else if (station.drink) {
     context.fillStyle = "#e1be7f66"; context.beginPath(); context.ellipse(x, y + 10, 14, 5, 0, 0, Math.PI * 2); context.fill();
     drawRecipeDrink(context, recipeById(station.drink.recipeId), x, y - 4, 38);
+  } else if (station.counterIngredient) {
+    drawIngredientIcon(context, ingredients, station.counterIngredient.ingredient, x, y - 2, 30);
   } else if (station.ingredient) {
     context.fillStyle = "#f1ddaf"; context.beginPath(); context.ellipse(x, y, 18, 13, 0, 0, Math.PI * 2); context.fill();
     drawIngredientIcon(context, ingredients, station.ingredient, x, y - 2, 30);
@@ -237,7 +238,7 @@ export function drawTavernCounter(context: CanvasRenderingContext2D, tavern: Tav
   if (station.kind !== "counter") {
     context.font = "bold 7px monospace"; context.textAlign = "center";
     context.fillStyle = "#211a32d9"; context.fillRect(x - 27, b.y - 13, 54, 10);
-    context.fillStyle = "#ffedc9"; context.fillText(station.label.toUpperCase(), x, b.y - 6);
+    context.fillStyle = "#ffedc9"; context.fillText(station.kind === "chop" ? "CHOP" : station.label.toUpperCase(), x, b.y - 6);
   }
   if (highlighted) {
     context.strokeStyle = "#ffe7a2"; context.lineWidth = 2;

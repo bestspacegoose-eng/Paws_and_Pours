@@ -17,11 +17,24 @@ test("the music gently accelerates only during the last 30 seconds and caps at 4
   for(const hz of [30,60,144]){let rate=1;for(let frame=0;frame<hz;frame++)rate=approachMusicRate(rate,1.4,1000/hz);assert.ok(Math.abs(rate-1.14)<1e-9);}
   assert.ok(Math.abs(approachMusicRate(1.4,1,100000)-1.386)<1e-10);
 });
+test("tutorial counter practice supports ingredients with the same single interaction button",()=>{
+  const {practice,player,state}=setup("handoff");
+  player.drink=undefined;player.carrying=["cream","chopped-lime"];player.ingredientQualities={"chopped-lime":.87};
+  practice.dispatch("interact");
+  const counter=state.tavern.stations.find(station=>station.id==="counter-4-3")!;
+  assert.deepEqual(counter.counterIngredient,{ingredient:"chopped-lime",quality:.87});
+  assert.deepEqual(player.carrying,["cream"]);
+  practice.dispatch("interact");
+  assert.deepEqual(player.carrying,["cream","chopped-lime"]);
+  assert.equal(player.ingredientQualities["chopped-lime"],.87);
+  assert.equal(counter.counterIngredient,undefined);
+});
+
 test("tutorial practice uses real gathering, chopping, mixing, handoffs and serving without a running shift clock",()=>{
   const pantry=setup("pantry");pantry.practice.dispatch("interact");assert.deepEqual(pantry.player.carrying,["lime"]);
-  const chop=setup("chop");chop.practice.dispatch("interact",undefined,1000);assert.deepEqual(chop.player.carrying,["tuna"]);
+  const chop=setup("chop");chop.practice.dispatch("interact",undefined,1000);assert.deepEqual(chop.player.carrying,["lime"]);
   for(let i=0;i<3;i++)chop.practice.dispatch("mix-rhythm-hit",{style:"chop"},2000+i*650);
-  assert.deepEqual(chop.player.carrying,[]);chop.practice.dispatch("interact");assert.deepEqual(chop.player.carrying,["chopped-tuna"]);
+  assert.deepEqual(chop.player.carrying,[]);chop.practice.dispatch("interact");assert.deepEqual(chop.player.carrying,["chopped-lime"]);
   const mixer=setup("mixer");mixer.practice.dispatch("interact",undefined,1000);assert.equal(mixer.state.mixing.cat.recipeId,"catnip");
   for(const ingredient of ["fizz","catnip","lime"])mixer.practice.dispatch("mix-ingredient",ingredient,1000);
   assert.equal(expectedMixingStep(mixer.state.mixing.cat)?.kind,"timed-tool");

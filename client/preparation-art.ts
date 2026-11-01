@@ -1,4 +1,5 @@
 import { gameImage } from "./game-assets";
+import { drawMinigameSprite } from "./minigame-art";
 import preparationUrl from "./assets/tilemap/tuna-preparation.png";
 
 const atlas = gameImage(preparationUrl);
@@ -7,6 +8,11 @@ atlas.onload = () => listeners.forEach((listener) => listener());
 
 export function onPreparationArtReady(listener: () => void) { listeners.add(listener); if (atlas.complete && atlas.naturalWidth) listener(); }
 const frames = [[40, 70, 745, 560], [875, 175, 575, 430], [1535, 72, 590, 570]];
+// The shared station is an empty board. Food appears only after actual preparation.
+export function drawChoppingBoard(context: CanvasRenderingContext2D, x:number, y:number, size:number, occupied=false) {
+  drawMinigameSprite(context,"board",x,y,size,size*.5);
+  if(!occupied)drawMinigameSprite(context,"cleaver",x+size*.08,y-size*.08,size*.66,size*.26);
+}
 export function drawPreparationArt(context: CanvasRenderingContext2D, index: number, x: number, y: number, size: number) {
   if (!atlas.complete || !atlas.naturalWidth) return;
   const [sx, sy, width, height] = frames[index], scale = size / Math.max(width, height);

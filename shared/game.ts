@@ -12,8 +12,10 @@ export type HazardKind = "napkins" | "ectoplasm" | "fire";
 export interface Vec { x: number; y: number }
 export interface GridCell { gridX: number; gridY: number }
 export interface PreparedDrink { recipeId: string; quality: number }
+export interface CounterIngredient { ingredient: string; quality: number }
 export interface Station extends Vec, GridCell {
   id: string; kind: StationKind; label: string; counterVariant: CounterVariant; ingredient?: string; drink?: PreparedDrink; preparedIngredient?: string; preparedQuality?: number;
+  counterIngredient?: CounterIngredient;
   tableId?: string; seatNumber?: number; facing?: FacingDirection; widthCells?: number; serviceStyle?: "bar"
 }
 export interface TimedToolAction {
@@ -183,7 +185,7 @@ export function makeTavern(seed: number, round = 1): Tavern {
     ...ingredientTable,
     stationAt({ gridX: 3, gridY: 3 }, { id: "mix", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
     stationAt({ gridX: 4, gridY: 5 }, { id: "mix-east", kind: "mix", label: "Mixing", counterVariant: "mixing" }),
-    stationAt({ gridX: 3, gridY: 5 }, { id: "chop", kind: "chop", label: "Chopping", counterVariant: "ingredient" }),
+    stationAt({ gridX: 3, gridY: 5 }, { id: "chop", kind: "chop", label: "Chopping board", counterVariant: "ingredient" }),
     stationAt({ gridX: 1, gridY: 10 }, { id: "mop", kind: "mop", label: "Clean", counterVariant: "damaged" }),
     stationAt({ gridX: 3, gridY: 10 }, { id: "trash", kind: "trash", label: "Discard", counterVariant: "damaged" })
   ];
@@ -310,8 +312,22 @@ export function nearbyStation(tavern: Tavern, player: Vec): Station | undefined 
     });
 }
 
-export function transferCounterDrink(player: Player, station: Station, carryCapacity = 3): "placed" | "picked-up" | "occupied" | "empty" | "unavailable" {
+// Each counter cell has one shared slot: either an ingredient or a drink.
+// Transfers run synchronously on the server, so a second interaction always
+// sees the first transfer's occupancy before it can change either inventory.
+export function transferCounterItem(player: Player, station: Station, carryCapacity = 3): "placed" | "picked-up" | "occupied" | "empty" | "unavailable" {
   if (!["counter", "pantry", "mix"].includes(station.kind)) return "unavailable";
+  if (station.counterIngredient) {
+    const { ingredient, quality } = station.counterIngredient;
+    if (player.drink || player.carrying.length >= carryCapacity || player.carrying.includes(ingredient)) return "occupied";
+    player.carrying.push(ingredient);
+    if (isChoppedIngredient(ingredient)) {
+      player.ingredientQualities ??= {};
+      player.ingredientQualities[ingredient] = quality;
+    }
+    delete station.counterIngredient;
+    return "picked-up";
+  }
   if (station.drink) {
     if (player.drink || (player.carrying.length && carryCapacity <= 3)) return "occupied";
     player.drink = station.drink.recipeId;
@@ -319,7 +335,14 @@ export function transferCounterDrink(player: Player, station: Station, carryCapa
     delete station.drink;
     return "picked-up";
   }
-  if (!player.drink) return "empty";
+  if (!player.drink) {
+    if (station.kind !== "counter" || !player.carrying.length) return "empty";
+    // Place the most recently collected ingredient; leave the rest in the bag.
+    const ingredient = player.carrying.pop()!;
+    station.counterIngredient = { ingredient, quality: player.ingredientQualities?.[ingredient] ?? 1 };
+    if (player.ingredientQualities) delete player.ingredientQualities[ingredient];
+    return "placed";
+  }
   station.drink = { recipeId: player.drink, quality: player.drinkQuality ?? 1 };
   delete player.drink;
   delete player.drinkQuality;

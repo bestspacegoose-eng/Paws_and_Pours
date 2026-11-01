@@ -8,7 +8,7 @@ import {
   recipeForIngredients, resumeShift, rhythmTimingAccepted, rhythmTimingQuality, seededUpgrades, shiftDurationForRound, stationBounds,
   toolTimingAccepted, toolTimingQuality, RECIPES
 } from "../shared/game.js";
-import { PLAYER_SPAWNS, nearbyStation, transferCounterDrink, type Player } from "../shared/game.js";
+import { PLAYER_SPAWNS, nearbyStation, transferCounterItem, type Player } from "../shared/game.js";
 import { boardPoint, TAVERN_VIEW } from "../client/tavern-projection.js";
 import { DRINK_SPRITES } from "../client/drink-sprites.js";
 import { rawIngredient, CHOPPING_RECIPES, addMixingIngredient } from "../shared/game.js";
@@ -203,21 +203,21 @@ test("counter handoffs preserve quality and never overwrite or duplicate drinks"
     ...PLAYER_SPAWNS[0], direction: "down", moving: false, moveSequence: 0, carrying: [], connected: true, score: 0,
     drink: "catnip", drinkQuality: .83 };
   const guest: Player = { ...player, id: "guest", drink: undefined, drinkQuality: undefined, carrying: [] };
-  assert.equal(transferCounterDrink(player, station), "placed");
+  assert.equal(transferCounterItem(player, station), "placed");
   assert.deepEqual(station.drink, { recipeId: "catnip", quality: .83 });
   assert.equal(player.drink, undefined);
   guest.carrying = ["lime"];
-  assert.equal(transferCounterDrink(guest, station), "occupied");
+  assert.equal(transferCounterItem(guest, station), "occupied");
   guest.carrying = [];
-  assert.equal(transferCounterDrink(guest, station), "picked-up");
+  assert.equal(transferCounterItem(guest, station), "picked-up");
   assert.equal(guest.drinkQuality, .83);
-  assert.equal(transferCounterDrink(player, station), "empty");
+  assert.equal(transferCounterItem(player, station), "empty");
   assert.equal(station.drink, undefined);
-  assert.equal(transferCounterDrink(guest, station), "placed");
+  assert.equal(transferCounterItem(guest, station), "placed");
   player.drink = "tuna";
-  assert.equal(transferCounterDrink(player, station), "occupied");
+  assert.equal(transferCounterItem(player, station), "occupied");
   assert.deepEqual(station.drink, { recipeId: "catnip", quality: .83 });
-  assert.equal(transferCounterDrink(player, makeTavern(1).stations.find((candidate) => candidate.kind === "trash")!), "unavailable");
+  assert.equal(transferCounterItem(player, makeTavern(1).stations.find((candidate) => candidate.kind === "trash")!), "unavailable");
 });
 
 test("mixing steps derive ingredient order from the recipe and append preparation actions", () => {

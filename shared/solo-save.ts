@@ -52,6 +52,11 @@ export function restoreSoloSnapshot(input: unknown, code: string, player: Player
     for (const station of state.tavern.stations) {
       const old = saved.tavern.stations?.find((candidate) => candidate.id === station.id);
       if (old?.drink && ["counter", "mix", "pantry"].includes(station.kind) && validRecipe(old.drink.recipeId) && finite(old.drink.quality, 0, 1)) station.drink = { ...old.drink };
+      // Rebuild a single occupied slot; a stored ingredient never overlaps a drink.
+      if (station.kind === "counter" && !station.drink && old?.counterIngredient &&
+          ingredients.has(old.counterIngredient.ingredient) && finite(old.counterIngredient.quality, 0, 1)) {
+        station.counterIngredient = { ingredient: old.counterIngredient.ingredient, quality: old.counterIngredient.quality };
+      }
       if (station.kind === "chop" && old?.preparedIngredient && isChoppedIngredient(old.preparedIngredient)) {
         station.preparedIngredient = old.preparedIngredient;
         station.preparedQuality = finite(old.preparedQuality,0,1)?old.preparedQuality:1;
